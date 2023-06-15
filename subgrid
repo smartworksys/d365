@@ -1,0 +1,39 @@
+function setPastDueCellBackgroundColor(viewName, columnName, backgroundColor) {
+  var gridControl = parent.Xrm.Page.getControl("subgrid_name"); // Replace "subgrid_name" with the name of the subgrid or view control where you want to change the cell background color.
+
+  if (gridControl && gridControl.getGrid) {
+    var grid = gridControl.getGrid();
+
+    // Get the view columns
+    var columns = grid.getColumns();
+
+    // Find the column index based on the column name
+    var columnIndex = columns.findIndex(function(column) {
+      return column.getColumnName() === columnName;
+    });
+
+    if (columnIndex !== -1) {
+      // Get the rows in the view
+      var rows = grid.getRows();
+
+      rows.forEach(function(row) {
+        var cell = row.getCell(columnIndex);
+        var cellText = cell.getText();
+
+        // Convert the cell value to a date object
+        var cellDate = new Date(cellText);
+
+        // Get the current date
+        var currentDate = new Date();
+
+        // Check if the cell date is past due
+        if (cellDate < currentDate) {
+          cell.setCellColors(null, backgroundColor);
+        }
+      });
+    }
+  }
+}
+
+// Example usage:
+setPastDueCellBackgroundColor("Account", "Due Date", "lightcoral");
