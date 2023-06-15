@@ -1,0 +1,24 @@
+$(document).ready(function() {
+  // Select the parent container of the row
+  var container = $("div[aria-label='Press SPACE to deselect this row.'][role='row']").parent()[0];
+
+  // Create a MutationObserver to watch for changes in the container
+  var observer = new MutationObserver(function(mutationsList) {
+    mutationsList.forEach(function(mutation) {
+      // Check if the row has been added to the container
+      if (mutation.addedNodes.length > 0) {
+        // Get the added row element
+        var row = mutation.addedNodes[0];
+
+        // Change the background color of the row
+        $(row).css("background-color", "lightblue");
+
+        // Disconnect the observer once the row is found and modified
+        observer.disconnect();
+      }
+    });
+  });
+
+  // Start observing the container for changes
+  observer.observe(container, { childList: true });
+});
