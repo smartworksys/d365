@@ -35,5 +35,9 @@ function setPastDueCellBackgroundColor(viewName, columnName, backgroundColor) {
   }
 }
 
+document.addEventListener("DOMContentLoaded", function() {
+
+
 // Example usage:
 setPastDueCellBackgroundColor("Account", "Due Date", "lightcoral");
+});
