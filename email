@@ -1,0 +1,31 @@
+<p>We use cookies and other technologies to provide you with a better user experience.</p>
+
+<p><u><strong>Summary:</strong></u></p>
+
+<table border="0" cellpadding="1" cellspacing="1" style="width: 680.333px;">
+    <tbody>
+        <tr>
+            <td style="border-right: 1px solid #000000; vertical-align: top; width: 363px;">
+                Name: {{name}}<br>
+                Address: {{address}}
+            </td>
+            <td style="vertical-align: top; width: 306px;">Account: {{account}}</td>
+        </tr>
+        <tr>
+            <td style="border-right: 1px solid #000000; width: 363px;">&nbsp;</td>
+            <td style="width: 306px;">&nbsp;</td>
+        </tr>
+        <tr>
+            <td style="border-right: 1px solid #000000; vertical-align: top; width: 363px;">
+                Name1: {{name}}<br>
+                Address1: {{address}}
+            </td>
+            <td style="vertical-align: top; width: 306px;">
+                Name: {{name}}<br>
+                Address: {{address}}
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<p>&nbsp;</p>
