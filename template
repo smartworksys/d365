@@ -1,0 +1,37 @@
+<table border="2" cellpadding="20" cellspacing="0" style="border-collapse: collapse; width: 789px;">
+    <tbody>
+        <tr>
+            <td style="text-align: left; width: 700px;">
+                <p>We use cookies and other technologies to provide you with a better user experience.</p>
+
+                <p><u><strong>Summary:</strong></u></p>
+
+                <table border="0" style="width: 680.333px;">
+                    <tbody>
+                        <tr>
+                            <td style="vertical-align: top; width: 363px;">Name: {{name}}<br>
+                                Address: {{address}}</td>
+                            <td style="vertical-align: top; width: 306px;">Account: {{account}}</td>
+                        </tr>
+                        <tr>
+                            <td style="width: 363px;">&nbsp;</td>
+                            <td style="width: 306px;">&nbsp;</td>
+                        </tr>
+                        <tr>
+                            <td style="width: 363px;">&nbsp;</td>
+                            <td style="width: 306px;">&nbsp;</td>
+                        </tr>
+                        <tr>
+                            <td style="vertical-align: top; width: 363px;">Name1: {{name}}<br>
+                                Address1: {{address}}</td>
+                            <td style="vertical-align: top; width: 306px;">Name: {{name}}<br>
+                                Address: {{address}}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </td>
+        </tr>
+    </tbody>
+</table>
+
+<p>&nbsp;</p>
