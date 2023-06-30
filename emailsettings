@@ -1,0 +1,36 @@
+function validateEmailAddresses(emails) {
+  var emailList = emails.split(';');
+  var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  var isValid = true;
+
+  for (var i = 0; i < emailList.length; i++) {
+    var email = emailList[i].trim();
+
+    if (!emailPattern.test(email) || email.indexOf('microsoft.com') === -1) {
+      isValid = false;
+      break;
+    }
+  }
+
+  return isValid;
+}
+
+function onSaveForm(executionContext) {
+  var formContext = executionContext.getFormContext();
+  var emailInput = formContext.getAttribute('emailTextbox').getValue();
+  var isValid = validateEmailAddresses(emailInput);
+
+  if (isValid) {
+    // All email addresses are valid
+    // Perform additional actions here
+    formContext.data.save(); // Save the form
+  } else {
+    // Invalid email format detected
+
+    // Display dialog message
+    formContext.ui.setFormNotification('Invalid email address format. Please enter valid email addresses with the domain "microsoft.com".', 'ERROR');
+
+    // Highlight the textbox
+    formContext.getControl('emailTextbox').setFocus();
+  }
+}
