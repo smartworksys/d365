@@ -1,0 +1,97 @@
+function validateEmails(emails) {
+  // Split the emails by semicolon
+  var emailArray = emails.split(';');
+  
+  // Loop through each email and validate it
+  for (var i = 0; i < emailArray.length; i++) {
+    var email = emailArray[i].trim(); // Trim any leading/trailing whitespace
+    
+    // Regular expression pattern to validate email format
+    var emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    
+    // Check if the email matches the pattern
+    if (!emailPattern.test(email)) {
+      return false; // Invalid email format
+    }
+    
+    // Check if the domain is microsoft.com
+    var domain = email.split('@')[1];
+    if (domain.toLowerCase() !== 'microsoft.com') {
+      return false; // Invalid domain
+    }
+  }
+  
+  return true; // All emails are valid
+}
+
+function onSave(executionContext) {
+  var formContext = executionContext.getFormContext();
+  var emailsInput = formContext.getAttribute('your_email_attribute').getValue(); // Replace 'your_email_attribute' with the logical name of your email attribute
+
+  var isValid = validateEmails(emailsInput);
+
+  if (!isValid) {
+    var errorMessage = 'Invalid email address found.';
+    var emailArray = emailsInput.split(';');
+
+    // Loop through each email and check the domain
+    for (var i = 0; i < emailArray.length; i++) {
+      var email = emailArray[i].trim();
+      var domain = email.split('@')[1];
+
+      if (domain.toLowerCase() !== 'microsoft.com') {
+        errorMessage += ' Email address ' + email + ' has an invalid domain.';
+      }
+    }
+
+    formContext.getControl('your_email_attribute').setNotification(errorMessage, 'emailValidation'); // Replace 'your_email_attribute' with the logical name of your email attribute
+    executionContext.getEventArgs().preventDefault(); // Cancel the save event
+  } else {
+    formContext.getControl('your_email_attribute').clearNotification('emailValidation'); // Replace 'your_email_attribute' with the logical name of your email attribute
+  }
+}
+
+function onSaveAndClose(executionContext) {
+  var formContext = executionContext.getFormContext();
+  var emailsInput = formContext.getAttribute('your_email_attribute').getValue(); // Replace 'your_email_attribute' with the logical name of your email attribute
+
+  var isValid = validateEmails(emailsInput);
+
+  if (!isValid) {
+    var errorMessage = 'Invalid email address found.';
+    var emailArray = emailsInput.split(';');
+
+    // Loop through each email and check the domain
+    for (var i = 0; i < emailArray.length; i++) {
+      var email = emailArray[i].trim();
+      var domain = email.split('@')[1];
+
+      if (domain.toLowerCase() !== 'microsoft.com') {
+        errorMessage += ' Email address ' + email + ' has an invalid domain.';
+      }
+    }
+
+    formContext.getControl('your_email_attribute').setNotification(errorMessage, 'emailValidation'); // Replace 'your_email_attribute' with the logical name of your email attribute
+    executionContext.getEventArgs().preventDefault(); // Cancel the save & close event
+  } else {
+    formContext.getControl('your_email_attribute').clearNotification('emailValidation'); // Replace 'your_email_attribute' with the logical name of your email attribute
+  }
+}
+
+// Attach event handlers to the "Save" and "Save & Close" events
+// Attach event handlers to the "Save" and "Save & Close" events
+function attachEventHandlers() {
+  var saveEventHandler = function (executionContext) {
+    onSave(executionContext);
+  };
+
+  var saveAndCloseEventHandler = function (executionContext) {
+    onSaveAndClose(executionContext);
+  };
+
+  // Replace 'your_entity_name' with the logical name of your entity
+  Xrm.Page.data.entity.addOnSave(saveEventHandler);
+  Xrm.Page.data.entity.addOnSave(saveAndCloseEventHandler);
+}
+
+attachEventHandlers();
