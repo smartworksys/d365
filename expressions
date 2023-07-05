@@ -49,4 +49,6 @@ if(equals(rand(1, 5), 3), 'Finance',
 if(equals(rand(1, 5), 4), 'Marketing',
 if(equals(rand(1, 5), 5), 'Sales', '')))))
 
+if(equals(rand(1, 10), 1), 'John Smith', if(equals(rand(1, 10), 2), 'David Johnson', if(equals(rand(1, 10), 3), 'William Doe', if(equals(rand(1, 10), 4), 'Michael Brown', if(equals(rand(1, 10), 5), 'Robert Jones', if(equals(rand(1, 10), 6), 'John Doe', if(equals(rand(1, 10), 7), 'David Smith', if(equals(rand(1, 10), 8), 'William Johnson', if(equals(rand(1, 10), 9), 'Robert Brown', if(equals(rand(1, 10), 10), 'Michael Jones', '')))))))))))
+
 
