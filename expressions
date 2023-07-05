@@ -22,3 +22,24 @@ concat(
     if(equals(rand(1, 5), 5), 'Davis', ''))))))
 )
 
+
+concat(
+    if(equals(rand(1, 5), 1), 'New',
+    if(equals(rand(1, 5), 2), 'Lake',
+    if(equals(rand(1, 5), 3), 'Spring',
+    if(equals(rand(1, 5), 4), 'West',
+    if(equals(rand(1, 5), 5), 'East', ''))))),
+    ' ',
+    if(equals(rand(1, 5), 1), 'York',
+    if(equals(rand(1, 5), 2), 'ville',
+    if(equals(rand(1, 5), 3), 'field',
+    if(equals(rand(1, 5), 4), 'view',
+    if(equals(rand(1, 5), 5), 'ton', ''))))))
+)
+
+if(equals(outputs('RandomIndex'), 1), 'John',
+if(equals(outputs('RandomIndex'), 2), 'Robert',
+if(equals(outputs('RandomIndex'), 3), 'Michael',
+if(equals(outputs('RandomIndex'), 4), 'William',
+if(equals(outputs('RandomIndex'), 5), 'David', '')))))
+
