@@ -1,0 +1,6 @@
+Branch:
+concat(choose(rand(1, 5), 'New', 'Lake', 'Spring', 'West', 'East'), ' ', choose(rand(1, 5), 'York', 'ville', 'field', 'view', 'ton'))
+
+D: concat('IT ', choose(rand(1, 5), 'Infrastructure', 'Applications', 'Operations', 'Security', 'Data'))
+
+N: concat(choose(rand(1, 5), 'John', 'Robert', 'Michael', 'William', 'David'), ' ', choose(rand(1, 5), 'Doe', 'Johnson', 'Smith', 'Brown', 'Jones'))
