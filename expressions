@@ -7,3 +7,18 @@ N: concat(choose(rand(1, 5), 'John', 'Robert', 'Michael', 'William', 'David'), '
 
 
 concat(choose(rand(1, 5), 'Mary', 'Emily', 'Sophia', 'Emma', 'Olivia'), ' ', choose(rand(1, 5), 'Johnson', 'Smith', 'Brown', 'Jones', 'Davis'))
+
+concat(
+    if(equals(rand(1, 5), 1), 'Mary',
+    if(equals(rand(1, 5), 2), 'Emily',
+    if(equals(rand(1, 5), 3), 'Sophia',
+    if(equals(rand(1, 5), 4), 'Emma',
+    if(equals(rand(1, 5), 5), 'Olivia', ''))))),
+    ' ',
+    if(equals(rand(1, 5), 1), 'Johnson',
+    if(equals(rand(1, 5), 2), 'Smith',
+    if(equals(rand(1, 5), 3), 'Brown',
+    if(equals(rand(1, 5), 4), 'Jones',
+    if(equals(rand(1, 5), 5), 'Davis', ''))))))
+)
+
