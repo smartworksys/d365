@@ -1,0 +1,84 @@
+variables('employees')[rand(0, length(variables('employees'))-1)]
+
+[
+  {
+    "employeeID": "12345",
+    "employeeFullName": "John Doe",
+    "memberFullName": "Jane Smith",
+    "memberID": "12345678",
+    "division": "Accounting",
+    "branch": "London"
+  },
+  {
+    "employeeID": "54321",
+    "employeeFullName": "Alice Johnson",
+    "memberFullName": "David Brown",
+    "memberID": "87654321",
+    "division": "Treasury",
+    "branch": "New York City"
+  },
+  {
+    "employeeID": "98765",
+    "employeeFullName": "Sarah Thompson",
+    "memberFullName": "Michael Davis",
+    "memberID": "56781234",
+    "division": "Financial Planning and Analysis",
+    "branch": "Tokyo"
+  },
+  {
+    "employeeID": "24680",
+    "employeeFullName": "Emily Wilson",
+    "memberFullName": "Robert Lee",
+    "memberID": "43218765",
+    "division": "Risk Management",
+    "branch": "Paris"
+  },
+  {
+    "employeeID": "13579",
+    "employeeFullName": "James Smith",
+    "memberFullName": "Olivia Johnson",
+    "memberID": "87654321",
+    "division": "Internal Audit",
+    "branch": "Sydney"
+  },
+  {
+    "employeeID": "86420",
+    "employeeFullName": "Sophia Davis",
+    "memberFullName": "William Johnson",
+    "memberID": "12348765",
+    "division": "Taxation",
+    "branch": "Dubai"
+  },
+  {
+    "employeeID": "11111",
+    "employeeFullName": "Ethan Brown",
+    "memberFullName": "Ava Wilson",
+    "memberID": "56781234",
+    "division": "Investor Relations",
+    "branch": "Mumbai"
+  },
+  {
+    "employeeID": "22222",
+    "employeeFullName": "Emma Lee",
+    "memberFullName": "Noah Thompson",
+    "memberID": "43218765",
+    "division": "Budgeting and Forecasting",
+    "branch": "Toronto"
+  },
+  {
+    "employeeID": "33333",
+    "employeeFullName": "Aiden Wilson",
+    "memberFullName": "Sophia Davis",
+    "memberID": "87654321",
+    "division": "Corporate Finance",
+    "branch": "Berlin"
+  },
+  {
+    "employeeID": "44444",
+    "employeeFullName": "Mia Johnson",
+    "memberFullName": "James Smith",
+    "memberID": "12348765",
+    "division": "Procurement and Payables",
+    "branch": "Rio de Janeiro"
+  }
+]
