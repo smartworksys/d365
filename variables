@@ -1,1 +1,4 @@
-
+  // Validate length
+  if (emailsInput.length > 2000) {
+    errorMessage += ' The field should not exceed 2000 characters.';
+  }
