@@ -1,0 +1,56 @@
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  D365_URL: 'https://yourorg.crm.dynamics.com'
+  D365_CLIENT_ID: 'your-client-id'
+  D365_CLIENT_SECRET: 'your-client-secret'
+  D365_TENANT_ID: 'your-tenant-id'
+  WEB_RESOURCES_FOLDER: 'WebResources'
+  ZIP_FILE_NAME: 'DynamicsWebResources.zip'
+
+steps:
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '6.x'
+    installationPath: $(Agent.ToolsDirectory)/dotnet
+
+- script: |
+    dotnet tool install -g Microsoft.PowerPlatform.Cds.Client
+    dotnet tool install -g Microsoft.PowerPlatform.Cds.Client.Cli
+  displayName: 'Install Power Platform CLI'
+
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      $env:PAC_CLI_USERNAME=$(D365_CLIENT_ID)
+      $env:PAC_CLI_PASSWORD=$(D365_CLIENT_SECRET)
+      $env:PAC_CLI_ENVIRONMENT=$(D365_URL)
+      $env:PAC_CLI_TENANT=$(D365_TENANT_ID)
+
+      # Authenticate
+      pac auth create --url $env:PAC_CLI_ENVIRONMENT --name "D365Environment" --applicationId $env:PAC_CLI_USERNAME --clientSecret $env:PAC_CLI_PASSWORD --tenant $env:PAC_CLI_TENANT
+
+      # Export Web Resources
+      mkdir $(WEB_RESOURCES_FOLDER)
+      pac solution export --path $(WEB_RESOURCES_FOLDER) --targetFolder $(WEB_RESOURCES_FOLDER) --name "WebResourceSolution" --managed --async
+
+      # Create a zip file
+      Add-Type -assembly "system.io.compression.filesystem"
+      [io.compression.zipfile]::CreateFromDirectory($(WEB_RESOURCES_FOLDER), "$(Build.ArtifactStagingDirectory)/$(ZIP_FILE_NAME)")
+
+      # Clean up
+      Remove-Item -Recurse -Force $(WEB_RESOURCES_FOLDER)
+  displayName: 'Export Web Resources and Create Zip'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    path: '$(Build.ArtifactStagingDirectory)/$(ZIP_FILE_NAME)'
+    artifact: 'DynamicsWebResources'
+    publishLocation: 'Container'
+  displayName: 'Publish Artifacts'
