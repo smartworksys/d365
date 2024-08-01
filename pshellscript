@@ -1,0 +1,85 @@
+param (
+    [string]$D365_URL,
+    [string]$D365_CLIENT_ID,
+    [string]$D365_CLIENT_SECRET,
+    [string]$D365_TENANT_ID,
+    [string]$WEB_RESOURCES_FOLDER,
+    [string]$ZIP_FILE_NAME,
+    [string]$BUILD_ARTIFACT_STAGING_DIRECTORY
+)
+
+Install-Module -Name Microsoft.PowerPlatform.Cds.Client -Force -AllowClobber
+
+$clientId = $D365_CLIENT_ID
+$clientSecret = $D365_CLIENT_SECRET
+$tenantId = $D365_TENANT_ID
+$d365Url = $D365_URL
+
+# Get OAuth token
+$body = @{
+    grant_type    = "client_credentials"
+    client_id     = $clientId
+    client_secret = $clientSecret
+    resource      = $d365Url
+}
+
+$oauthResponse = Invoke-RestMethod -Method Post -Uri "https://login.microsoftonline.com/$tenantId/oauth2/token" -ContentType "application/x-www-form-urlencoded" -Body $body
+$accessToken = $oauthResponse.access_token
+
+# Connect to Dynamics 365
+$headers = @{
+    Authorization = "Bearer $accessToken"
+    Accept        = "application/json"
+    OData-Version = "4.0"
+}
+
+# Retrieve Web Resources
+$webResources = Invoke-RestMethod -Uri "$d365Url/api/data/v9.1/webresourceset" -Headers $headers
+
+# Create folder for web resources
+New-Item -ItemType Directory -Force -Path $WEB_RESOURCES_FOLDER
+
+foreach ($resource in $webResources.value) {
+    $contentBytes = [System.Convert]::FromBase64String($resource.content)
+    $filePath = "$WEB_RESOURCES_FOLDER/$($resource.name)"
+    [System.IO.File]::WriteAllBytes($filePath, $contentBytes)
+}
+
+# Create a zip file
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory($WEB_RESOURCES_FOLDER, "$BUILD_ARTIFACT_STAGING_DIRECTORY/$ZIP_FILE_NAME")
+
+# Clean up
+Remove-Item -Recurse -Force $WEB_RESOURCES_FOLDER
+
+PowerShell Script (Save as ExportWebResources.ps1)
+
+
+trigger:
+- main
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  D365_URL: 'https://yourorg.crm.dynamics.com'
+  D365_CLIENT_ID: 'your-client-id'
+  D365_CLIENT_SECRET: 'your-client-secret'
+  D365_TENANT_ID: 'your-tenant-id'
+  WEB_RESOURCES_FOLDER: 'WebResources'
+  ZIP_FILE_NAME: 'DynamicsWebResources.zip'
+
+steps:
+- task: PowerShell@2
+  inputs:
+    targetType: 'filePath'
+    filePath: '$(Build.SourcesDirectory)/ExportWebResources.ps1'
+    arguments: '-D365_URL "$(D365_URL)" -D365_CLIENT_ID "$(D365_CLIENT_ID)" -D365_CLIENT_SECRET "$(D365_CLIENT_SECRET)" -D365_TENANT_ID "$(D365_TENANT_ID)" -WEB_RESOURCES_FOLDER "$(WEB_RESOURCES_FOLDER)" -ZIP_FILE_NAME "$(ZIP_FILE_NAME)" -BUILD_ARTIFACT_STAGING_DIRECTORY "$(Build.ArtifactStagingDirectory)"'
+  displayName: 'Export Web Resources and Create Zip'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    path: '$(Build.ArtifactStagingDirectory)/$(ZIP_FILE_NAME)'
+    artifact: 'DynamicsWebResources'
+    publishLocation: 'Container'
+  displayName: 'Publish Artifacts'
