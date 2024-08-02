@@ -5,9 +5,9 @@ function setupAutoComplete(executionContext) {
     var textBoxControl = formContext.getControl("new_textboxfieldname"); // Replace with your field name
     autoCompleteControl = textBoxControl;
 
-    textBoxControl.addOnFocus(showAllStaticValues);
+    // Use addOnKeyPress for user input interaction
     textBoxControl.addOnKeyPress(showAllStaticValues);
-    textBoxControl.addOnBlur(clearAutoComplete);
+    formContext.getAttribute("new_textboxfieldname").addOnChange(clearAutoComplete); // Handle when value changes
 }
 
 function showAllStaticValues(executionContext) {
