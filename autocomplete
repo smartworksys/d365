@@ -1,0 +1,52 @@
+var autoCompleteControl;
+
+function setupAutoComplete(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var textBoxControl = formContext.getControl("new_textboxfieldname"); // Replace with your field name
+    autoCompleteControl = textBoxControl;
+
+    textBoxControl.addOnFocus(showAllStaticValues);
+    textBoxControl.addOnKeyPress(showAllStaticValues);
+    textBoxControl.addOnBlur(clearAutoComplete);
+}
+
+function showAllStaticValues(executionContext) {
+    var staticValues = [
+        "Apple",
+        "Banana",
+        "Cherry",
+        "Date",
+        "Elderberry",
+        "Fig",
+        "Grape",
+        "Honeydew"
+    ];
+
+    updateAutoComplete(staticValues);
+}
+
+function updateAutoComplete(values) {
+    var resultSet = {
+        results: [],
+        commands: {
+            id: "sp_commands",
+            label: "Search more...",
+            action: function () {
+                // Define what happens when user clicks "Search more..."
+            }
+        }
+    };
+
+    values.forEach(function(value) {
+        resultSet.results.push({
+            id: value,
+            fields: [value]
+        });
+    });
+
+    autoCompleteControl.showAutoComplete(resultSet);
+}
+
+function clearAutoComplete() {
+    autoCompleteControl.hideAutoComplete();
+}
