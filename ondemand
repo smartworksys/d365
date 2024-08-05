@@ -26,3 +26,28 @@ function setCustomUserLookupOnLoad(executionContext) {
         formContext.getAttribute(customUserLookupField).setValue(null);
     }
 }
+
+
+function setUserLookupOnLoad(executionContext) {
+    var globalContext = Xrm.Utility.getGlobalContext();
+    var userId = globalContext.userSettings.userId; // Get the current user's GUID
+    var userName = globalContext.userSettings.userName; // Get the current user's name
+
+    // Remove the curly braces from the userId
+    userId = userId.replace(/[{}]/g, "");
+
+    console.log("Current User GUID: " + userId);
+    console.log("Current User Name: " + userName);
+
+    // Construct the lookup value
+    var lookupValue = [{
+        id: userId,
+        name: userName,
+        entityType: "systemuser" // Entity type for users
+    }];
+
+    // Set the lookup value on the form
+    var formContext = executionContext.getFormContext();
+    var lookupFieldName = "new_customuserlookup"; // Replace with your lookup field schema name
+    formContext.getAttribute(lookupFieldName).setValue(lookupValue);
+}
