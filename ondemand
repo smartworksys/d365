@@ -1,0 +1,28 @@
+function setCustomUserLookupOnLoad(executionContext) {
+    var formContext = executionContext.getFormContext();
+
+    // Replace with the schema name of your custom user lookup field
+    var customUserLookupField = "new_customuserlookup";
+
+    // Get the Owner field value
+    var ownerValue = formContext.getAttribute("ownerid").getValue();
+
+    if (ownerValue && ownerValue.length > 0) {
+        // Get the details of the owner
+        var ownerId = ownerValue[0].id;
+        var ownerName = ownerValue[0].name;
+        var ownerEntityType = ownerValue[0].entityType;
+
+        // Set the custom user lookup field with the owner details
+        var lookupValue = [{
+            id: ownerId,
+            name: ownerName,
+            entityType: ownerEntityType
+        }];
+
+        formContext.getAttribute(customUserLookupField).setValue(lookupValue);
+    } else {
+        // Clear the custom user lookup field if no owner is set
+        formContext.getAttribute(customUserLookupField).setValue(null);
+    }
+}
