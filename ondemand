@@ -1,1 +1,93 @@
-TEST
+using Microsoft.Azure.Functions.Worker.Extensions.OpenApi.Extensions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using System.Net.Http;
+
+namespace KOFC_Navigator_Integration
+{
+    public class Program
+    {
+        public static void Main()
+        {
+            var host = new HostBuilder()
+                .ConfigureFunctionsWorkerDefaults(worker => {
+                    worker.UseNewtonsoftJson();
+                    worker.UseMiddleware<FunctionsHttpProxyingMiddleware>();
+                })
+                .ConfigureServices(services =>
+                {
+                    services.AddHttpClient();
+                })
+                .Build();
+
+            host.Run();
+        }
+    }
+}
+
+
+using System;
+using System.Threading.Tasks;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
+using System.Net.Http;
+using System.Text;
+
+namespace KOFC_Navigator_Integration
+{
+    public class NavClientIntegration
+    {
+        private readonly ILogger<NavClientIntegration> _logger;
+        private readonly HttpClient _httpClient;
+
+        public NavClientIntegration(ILogger<NavClientIntegration> logger, HttpClient httpClient)
+        {
+            _logger = logger;
+            _httpClient = httpClient;  // Directly receive HttpClient
+        }
+
+        [Function("NavClientIntegration")]
+        public async Task<HttpResponseData> RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, FunctionContext executionContext)
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+
+            string payLoadData = "<?xml version='1.0' encoding='UTF-8'?> <FIPSCOLINKFILE VERSION='1.00'>...</FIPSCOLINKFILE>";
+            string apiUrl = Environment.GetEnvironmentVariable("navGatewayAPIURL");
+            string _apiKey = Environment.GetEnvironmentVariable("navGatewayAPIKey");
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Post, apiUrl)
+            {
+                Content = new StringContent(payLoadData, Encoding.UTF8, "application/xml")
+            };
+            requestMessage.Headers.Add("ApiKey", _apiKey);
+
+            try
+            {
+                var response = await _httpClient.SendAsync(requestMessage);
+                var responseToClient = req.CreateResponse();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    string responseContent = await response.Content.ReadAsStringAsync();
+                    responseToClient.StatusCode = System.Net.HttpStatusCode.OK;
+                    await responseToClient.WriteStringAsync(responseContent);
+                }
+                else
+                {
+                    responseToClient.StatusCode = response.StatusCode;
+                }
+                return responseToClient;
+            }
+            catch (Exception ex)
+            {
+                var errorResponse = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+                await errorResponse.WriteStringAsync("Internal Server Error");
+                return errorResponse;
+            }
+        }
+    }
+}
