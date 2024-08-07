@@ -1,1 +1,72 @@
-TEST
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using System;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
+using System.Xml;
+
+namespace KOFC_Navigator_Integration
+{
+    public class NavClientIntegration
+    {
+        private readonly ILogger<NavClientIntegration> _logger;
+        private readonly HttpClient _httpClient;
+
+        public NavClientIntegration(ILogger<NavClientIntegration> logger, IHttpClientFactory httpClientFactory)
+        {
+            _logger = logger;
+            _httpClient = httpClientFactory.CreateClient("AuthorizedClient");
+        }
+
+        [Function("NavClientIntegration")]
+        public async Task<HttpResponseData> RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, FunctionContext executionContext)
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            var reqJsonStr = new
+            {
+                request = requestBody
+            };
+            string jsonData = JsonConvert.SerializeObject(reqJsonStr);
+            var data = new StringContent(jsonData, Encoding.UTF8, "application/json");
+
+            string apiUrl = Environment.GetEnvironmentVariable("NAV_GATEWAY_API_URL");
+
+            try
+            {
+                var response = await _httpClient.PostAsync(apiUrl, data);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    XmlDocument xmlDoc = new XmlDocument();
+                    xmlDoc.LoadXml(responseContent);
+                    XmlNodeList elemList = xmlDoc.GetElementsByTagName("TransTrackingID");
+                    string transTrackingID = elemList[0]?.InnerXml;
+
+                    _logger.LogInformation("JSON data sent successfully to the API. TransTrackingID: " + transTrackingID);
+                    var successResponse = req.CreateResponse(System.Net.HttpStatusCode.OK);
+                    await successResponse.WriteStringAsync(responseContent);
+                    return successResponse;
+                }
+                else
+                {
+                    _logger.LogError($"Failed to send JSON data to the API. Status code: {response.StatusCode}");
+                    return req.CreateResponse(response.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"An error occurred while sending JSON data to the API: {ex.Message}");
+                var errorResponse = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+                await errorResponse.WriteStringAsync("Internal server error");
+                return errorResponse;
+            }
+        }
+    }
+}
