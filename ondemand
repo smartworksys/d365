@@ -1,1 +1,97 @@
-TEST
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using System;
+using System.Net.Http;
+using System.Net.Http.Headers;
+
+namespace KOFC_Navigator_Integration
+{
+    public class Program
+    {
+        public static void Main()
+        {
+            var host = new HostBuilder()
+                .ConfigureFunctionsWorkerDefaults()
+                .ConfigureServices(ConfigureServices)
+                .Build();
+
+            host.Run();
+        }
+
+        private static void ConfigureServices(HostBuilderContext hostContext, IServiceCollection services)
+        {
+            // Assuming API_KEY is stored in an environment variable for demonstration purposes
+            var apiKey = Environment.GetEnvironmentVariable("API_KEY");
+
+            // Register HttpClient with default headers
+            services.AddHttpClient("AuthorizedClient", client =>
+            {
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("ApiKey", apiKey);
+            });
+        }
+    }
+}
+
+
+using System;
+using System.Threading.Tasks;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+using System.Net.Http;
+using System.Text;
+
+namespace KOFC_Navigator_Integration
+{
+    public class NavClientIntegration
+    {
+        private readonly ILogger<NavClientIntegration> _logger;
+        private readonly HttpClient _httpClient;
+
+        public NavClientIntegration(ILogger<NavClientIntegration> logger, IHttpClientFactory httpClientFactory)
+        {
+            _logger = logger;
+            _httpClient = httpClientFactory.CreateClient("AuthorizedClient");
+        }
+
+        [Function("NavClientIntegration")]
+        public async Task<HttpResponseData> RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, FunctionContext executionContext)
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+
+            string payLoadData = "<?xml version='1.0' encoding='UTF-8'?> <FIPSCOLINKFILE VERSION='1.00'>...</FIPSCOLINKFILE>";
+            string apiUrl = Environment.GetEnvironmentVariable("navGatewayAPIURL");
+
+            var requestMessage = new HttpRequestMessage(HttpMethod.Post, apiUrl)
+            {
+                Content = new StringContent(payLoadData, Encoding.UTF8, "application/xml")
+            };
+
+            try
+            {
+                var response = await _httpClient.SendAsync(requestMessage);
+                var responseToClient = req.CreateResponse();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    string responseContent = await response.Content.ReadAsStringAsync();
+                    responseToClient.StatusCode = System.Net.HttpStatusCode.OK;
+                    await responseToClient.WriteStringAsync(responseContent);
+                }
+                else
+                {
+                    _logger.LogError("API call failed. Status code: {StatusCode}", response.StatusCode);
+                    responseToClient.StatusCode = response.StatusCode;
+                }
+                return responseToClient;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Exception occurred while making API call to {ApiUrl}", apiUrl);
+                var errorResponse = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+                await errorResponse.WriteStringAsync("Internal Server Error");
+                return errorResponse;
+            }
+        }
+    }
+}
