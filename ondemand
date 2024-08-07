@@ -1,1 +1,77 @@
-TEST
+using System;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
+using System.Xml;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Microsoft.Extensions.Configuration;
+
+namespace KOFC_Navigator_Integration
+{
+    public class NavClientIntegration
+    {
+        private readonly ILogger<NavClientIntegration> _log;
+        private readonly HttpClient _httpClient;
+        private readonly IConfiguration _configuration;
+
+        public NavClientIntegration(ILogger<NavClientIntegration> logger, IHttpClientFactory httpClientFactory, IConfiguration configuration)
+        {
+            _log = logger;
+            _httpClient = httpClientFactory.CreateClient("AuthorizedClient");
+            _configuration = configuration;
+        }
+
+        [Function("NavClientIntegration")]
+        public async Task<HttpResponseData> RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req, FunctionContext executionContext)
+        {
+            _log.LogInformation("C# HTTP trigger function processed a request.");
+
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+            string payLoadData = CreateXmlPayload();
+            var reqJsonStr = new { request = payLoadData };
+            string jsonData = JsonConvert.SerializeObject(reqJsonStr);
+
+            var content = new StringContent(jsonData, Encoding.UTF8, "application/json");
+            string apiUrl = _configuration["navGatewayAPIURL"];
+
+            try
+            {
+                var response = await _httpClient.PostAsync(apiUrl, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    string json = await response.Content.ReadAsStringAsync();
+                    SapiensResponse result = JsonConvert.DeserializeObject<SapiensResponse>(json);
+                    string res = result.processRequestResult;
+                    XmlDocument xmlDoc = new XmlDocument();
+                    xmlDoc.LoadXml(res);
+                    XmlNodeList elemList = xmlDoc.GetElementsByTagName("TransTrackingID");
+                    string transTrackingID = elemList[0]?.InnerXml;
+
+                    _log.LogInformation("JSON data sent successfully to the API. TransTrackingID: " + transTrackingID);
+                    return req.CreateResponse(System.Net.HttpStatusCode.OK, transTrackingID);
+                }
+                else
+                {
+                    _log.LogError($"Failed to send JSON data to the API. Status code: {response.StatusCode}");
+                    return req.CreateResponse(response.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.LogError($"An error occurred while sending JSON data to the API: {ex.Message}");
+                return req.CreateResponse(System.Net.HttpStatusCode.InternalServerError, "An error occurred in processing your request.");
+            }
+        }
+
+        private string CreateXmlPayload()
+        {
+            // Construct your XML payload here based on the application logic
+            return "<xml>Example Payload</xml>";
+        }
+    }
+}
