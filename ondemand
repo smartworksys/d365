@@ -42,6 +42,7 @@ namespace KOFC_Navigator_Integration
             {
                 var response = await _httpClient.PostAsync(apiUrl, content);
 
+                HttpResponseData httpResponse = req.CreateResponse();
                 if (response.IsSuccessStatusCode)
                 {
                     string json = await response.Content.ReadAsStringAsync();
@@ -53,18 +54,23 @@ namespace KOFC_Navigator_Integration
                     string transTrackingID = elemList[0]?.InnerXml;
 
                     _log.LogInformation("JSON data sent successfully to the API. TransTrackingID: " + transTrackingID);
-                    return req.CreateResponse(System.Net.HttpStatusCode.OK, transTrackingID);
+                    httpResponse.WriteString(transTrackingID);
+                    httpResponse.StatusCode = System.Net.HttpStatusCode.OK;
+                    return httpResponse;
                 }
                 else
                 {
                     _log.LogError($"Failed to send JSON data to the API. Status code: {response.StatusCode}");
-                    return req.CreateResponse(response.StatusCode);
+                    httpResponse.StatusCode = response.StatusCode;
+                    return httpResponse;
                 }
             }
             catch (Exception ex)
             {
                 _log.LogError($"An error occurred while sending JSON data to the API: {ex.Message}");
-                return req.CreateResponse(System.Net.HttpStatusCode.InternalServerError, "An error occurred in processing your request.");
+                HttpResponseData errorResponse = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+                errorResponse.WriteString("An error occurred in processing your request.");
+                return errorResponse;
             }
         }
 
