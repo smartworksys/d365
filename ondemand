@@ -1,1 +1,102 @@
-TEST
+using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+using System.Xml;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
+
+namespace KOFC_Navigator_Integration
+{
+    public class NavigatorIntegration
+    {
+        private readonly ILogger _logger;
+        private readonly IHttpClientFactory _httpClientFactory;
+        private readonly SecretClient _secretClient;
+
+        public NavigatorIntegration(ILogger logger, IHttpClientFactory httpClientFactory, SecretClient secretClient)
+        {
+            _logger = logger;
+            _httpClientFactory = httpClientFactory;
+            _secretClient = secretClient;
+        }
+
+        [Function("NavigatorIntegration")]
+        public async Task<HttpResponseData> RunAsync([HttpTrigger(AuthorizationLevel.Function, "get", "post")] HttpRequestData req)
+        {
+            _logger.LogInformation("C# HTTP trigger function processed a request.");
+
+            string type = req.Url.Query["type"];
+            string policyNo = req.Url.Query["policyNo"];
+            string contactID = req.Url.Query["contactID"];
+
+            StreamReader reader = new StreamReader(req.Body);
+            string requestBody = await reader.ReadToEndAsync();
+
+            string payLoadData = DeterminePayload(type, policyNo, contactID);
+            if (string.IsNullOrEmpty(payLoadData))
+            {
+                return req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
+            }
+
+            try
+            {
+                string apiUrl = await GetSecretValue("navGatewayAPIURL");
+                string apiKey = await GetSecretValue("navGatewayAPIKey");
+                HttpClient client = _httpClientFactory.CreateClient();
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", apiKey);
+
+                var data = new StringContent(JsonConvert.SerializeObject(new { request = payLoadData }), Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(apiUrl, data);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    string responseContent = await response.Content.ReadAsStringAsync();
+                    string transTrackingID = ExtractTransTrackingID(responseContent);
+                    return CreateResponse(req, System.Net.HttpStatusCode.OK, transTrackingID);
+                }
+                else
+                {
+                    _logger.LogError($"Failed to send JSON data to the API. Status code: {response.StatusCode}");
+                    return req.CreateResponse(response.StatusCode);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"An error occurred: {ex.Message}");
+                return req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+            }
+        }
+
+        private string DeterminePayload(string type, string policyNo, string contactID)
+        {
+            // Simulate payload determination logic
+            return "<xml>Example Payload</xml>";
+        }
+
+        private async Task<string> GetSecretValue(string secretName)
+        {
+            KeyVaultSecret secret = await _secretClient.GetSecretAsync(secretName);
+            return secret.Value;
+        }
+
+        private string ExtractTransTrackingID(string xmlContent)
+        {
+            XmlDocument xmlDoc = new XmlDocument();
+            xmlDoc.LoadXml(xmlContent);
+            XmlNode node = xmlDoc.SelectSingleNode("//TransTrackingID");
+            return node?.InnerText;
+        }
+
+        private HttpResponseData CreateResponse(HttpRequestData req, System.Net.HttpStatusCode statusCode, string content)
+        {
+            var response = req.CreateResponse(statusCode);
+            response.WriteString(content);
+            return response;
+        }
+    }
+}
