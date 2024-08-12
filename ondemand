@@ -1,1 +1,45 @@
+function callPowerAutomateFlow() {
+    // Show the Dynamics 365 OOTB loading spinner
+    Xrm.Utility.showProgressIndicator("Processing...");
+
+    var flowUrl = "https://prod-00.westus.logic.azure.com:443/workflows/your-flow-id/triggers/manual/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=your-signature";
+
+    // Define the parameters
+    var parameter1 = "Value1";
+    var parameter2 = "Value2";
+    var parameter3 = "Value3";
+
+    // Prepare the data object with the three parameters
+    var data = {
+        parameter1: parameter1,
+        parameter2: parameter2,
+        parameter3: parameter3
+    };
+
+    // Make the POST request to the Power Automate flow
+    fetch(flowUrl, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error("Network response was not ok " + response.statusText);
+        }
+        return response.json();
+    })
+    .then(data => {
+        console.log("Response from Power Automate:", data);
+        // Handle the response data here if needed
+    })
+    .catch(error => {
+        console.error("There was a problem with the fetch operation:", error);
+    })
+    .finally(() => {
+        // Hide the Dynamics 365 OOTB loading spinner
+        Xrm.Utility.closeProgressIndicator();
+    });
+}
 
