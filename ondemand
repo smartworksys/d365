@@ -43,3 +43,19 @@ function callPowerAutomateFlow() {
     });
 }
 
+{
+    "type": "object",
+    "properties": {
+        "parameter1": {
+            "type": "string"
+        },
+        "parameter2": {
+            "type": "string"
+        },
+        "parameter3": {
+            "type": "string"
+        }
+    }
+}
+
+
