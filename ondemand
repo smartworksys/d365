@@ -115,6 +115,19 @@ function getLookupFieldValue(formContext, lookupFieldName) {
     return null;
 }
 
+function getCurrentUserId() {
+    var userId = Xrm.Utility.getGlobalContext().userSettings.userId;
+    
+    // The userId is returned with curly braces and prefixed with "{" and suffixed with "}"
+    // Example: "{00000000-0000-0000-0000-000000000000}"
+    // To remove the curly braces:
+    userId = userId.replace("{", "").replace("}", "");
+    
+    console.log("Current User ID (GUID): " + userId);
+    return userId;
+}
+
+
 
 
 
