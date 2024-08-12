@@ -94,5 +94,27 @@ function onFormLoad(executionContext) {
     }
 }
 
+function getLookupFieldValue(formContext, lookupFieldName) {
+    var lookupField = formContext.getAttribute(lookupFieldName);
+    if (lookupField != null) {
+        var lookupValue = lookupField.getValue();
+        if (lookupValue != null && lookupValue.length > 0) {
+            var lookupId = lookupValue[0].id; // Get the GUID of the lookup record
+            lookupId = lookupId.replace("{", "").replace("}", ""); // Remove the curly braces
+            
+            var lookupName = lookupValue[0].name; // Get the name of the lookup record
+            var lookupEntity = lookupValue[0].entityType; // Get the logical name of the lookup entity
+
+            return {
+                id: lookupId,
+                name: lookupName,
+                entityType: lookupEntity
+            };
+        }
+    }
+    return null;
+}
+
+
 
 
