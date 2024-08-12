@@ -59,3 +59,40 @@ function callPowerAutomateFlow() {
 }
 
 
+function getLookupFieldValue(formContext, lookupFieldName) {
+    var lookupField = formContext.getAttribute(lookupFieldName);
+    if (lookupField != null) {
+        var lookupValue = lookupField.getValue();
+        if (lookupValue != null && lookupValue.length > 0) {
+            var lookupId = lookupValue[0].id; // Get the GUID of the lookup record
+            var lookupName = lookupValue[0].name; // Get the name of the lookup record
+            var lookupEntity = lookupValue[0].entityType; // Get the logical name of the lookup entity
+
+            return {
+                id: lookupId,
+                name: lookupName,
+                entityType: lookupEntity
+            };
+        }
+    }
+    return null;
+}
+
+
+function onFormLoad(executionContext) {
+    var formContext = executionContext.getFormContext(); // Get the form context
+
+    var lookupFieldName = "primarycontactid"; // Logical name of the lookup field
+    var lookupValue = getLookupFieldValue(formContext, lookupFieldName);
+
+    if (lookupValue != null) {
+        console.log("Lookup ID: " + lookupValue.id);
+        console.log("Lookup Name: " + lookupValue.name);
+        console.log("Lookup Entity: " + lookupValue.entityType);
+    } else {
+        console.log("No value found for the lookup field.");
+    }
+}
+
+
+
