@@ -1,133 +1,33 @@
-function callPowerAutomateFlow() {
-    // Show the Dynamics 365 OOTB loading spinner
-    Xrm.Utility.showProgressIndicator("Processing...");
+var retrievedContact = null;
 
-    var flowUrl = "https://prod-00.westus.logic.azure.com:443/workflows/your-flow-id/triggers/manual/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=your-signature";
-
-    // Define the parameters
-    var parameter1 = "Value1";
-    var parameter2 = "Value2";
-    var parameter3 = "Value3";
-
-    // Prepare the data object with the three parameters
-    var data = {
-        parameter1: parameter1,
-        parameter2: parameter2,
-        parameter3: parameter3
-    };
-
-    // Make the POST request to the Power Automate flow
-    fetch(flowUrl, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json"
-        },
-        body: JSON.stringify(data)
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error("Network response was not ok " + response.statusText);
+function getContactRecordById(contactId) {
+    return new Promise(function(resolve, reject) {
+        if (!contactId) {
+            reject("Contact ID is required");
         }
-        return response.json();
-    })
-    .then(data => {
-        console.log("Response from Power Automate:", data);
-        // Handle the response data here if needed
-    })
-    .catch(error => {
-        console.error("There was a problem with the fetch operation:", error);
-    })
-    .finally(() => {
-        // Hide the Dynamics 365 OOTB loading spinner
-        Xrm.Utility.closeProgressIndicator();
+
+        var query = `/contacts(${contactId})`;
+
+        Xrm.WebApi.retrieveRecord("contact", contactId, "?$select=fullname,emailaddress1,telephone1")
+            .then(function (result) {
+                console.log("Contact retrieved successfully:", result);
+                resolve(result);
+            })
+            .catch(function (error) {
+                console.error("Error retrieving contact:", error.message);
+                reject(error.message);
+            });
     });
 }
 
-{
-    "type": "object",
-    "properties": {
-        "parameter1": {
-            "type": "string"
-        },
-        "parameter2": {
-            "type": "string"
-        },
-        "parameter3": {
-            "type": "string"
-        }
-    }
-}
+// Usage example:
+var contactId = "00000000-0000-0000-0000-000000000000"; // Replace with the actual contact ID
 
-
-function getLookupFieldValue(formContext, lookupFieldName) {
-    var lookupField = formContext.getAttribute(lookupFieldName);
-    if (lookupField != null) {
-        var lookupValue = lookupField.getValue();
-        if (lookupValue != null && lookupValue.length > 0) {
-            var lookupId = lookupValue[0].id; // Get the GUID of the lookup record
-            var lookupName = lookupValue[0].name; // Get the name of the lookup record
-            var lookupEntity = lookupValue[0].entityType; // Get the logical name of the lookup entity
-
-            return {
-                id: lookupId,
-                name: lookupName,
-                entityType: lookupEntity
-            };
-        }
-    }
-    return null;
-}
-
-
-function onFormLoad(executionContext) {
-    var formContext = executionContext.getFormContext(); // Get the form context
-
-    var lookupFieldName = "primarycontactid"; // Logical name of the lookup field
-    var lookupValue = getLookupFieldValue(formContext, lookupFieldName);
-
-    if (lookupValue != null) {
-        console.log("Lookup ID: " + lookupValue.id);
-        console.log("Lookup Name: " + lookupValue.name);
-        console.log("Lookup Entity: " + lookupValue.entityType);
-    } else {
-        console.log("No value found for the lookup field.");
-    }
-}
-
-function getLookupFieldValue(formContext, lookupFieldName) {
-    var lookupField = formContext.getAttribute(lookupFieldName);
-    if (lookupField != null) {
-        var lookupValue = lookupField.getValue();
-        if (lookupValue != null && lookupValue.length > 0) {
-            var lookupId = lookupValue[0].id; // Get the GUID of the lookup record
-            lookupId = lookupId.replace("{", "").replace("}", ""); // Remove the curly braces
-            
-            var lookupName = lookupValue[0].name; // Get the name of the lookup record
-            var lookupEntity = lookupValue[0].entityType; // Get the logical name of the lookup entity
-
-            return {
-                id: lookupId,
-                name: lookupName,
-                entityType: lookupEntity
-            };
-        }
-    }
-    return null;
-}
-
-function getCurrentUserId() {
-    var userId = Xrm.Utility.getGlobalContext().userSettings.userId;
-    
-    // The userId is returned with curly braces and prefixed with "{" and suffixed with "}"
-    // Example: "{00000000-0000-0000-0000-000000000000}"
-    // To remove the curly braces:
-    userId = userId.replace("{", "").replace("}", "");
-    
-    console.log("Current User ID (GUID): " + userId);
-    return userId;
-}
-
-
-
-
-
+getContactRecordById(contactId)
+    .then(function(contact) {
+        retrievedContact = contact; // Assign the retrieved contact to the variable
+        console.log("Contact assigned to variable:", retrievedContact);
+    })
+    .catch(function(error) {
+        console.error("Failed to retrieve contact:", error);
+    });
