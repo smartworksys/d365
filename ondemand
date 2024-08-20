@@ -1,16 +1,16 @@
-function toggleLookupReadOnly(executionContext, isReadOnly) {
+function openNewFormWithoutSavePrompt(executionContext) {
     var formContext = executionContext.getFormContext();
+    
+    // Clear all fields on the form to remove the dirty state
+    formContext.data.entity.attributes.forEach(function (attribute) {
+        attribute.setValue(null);
+        attribute.setSubmitMode("never"); // This ensures that the form does not attempt to save this field
+    });
 
-    // Replace 'lookupFieldName' with the schema name of your lookup field
-    var lookupField = formContext.getControl("lookupFieldName");
+    // Mark the form as not dirty, so it doesn't prompt for saving
+    formContext.data.setFormDirty(false);
 
-    if (lookupField) {
-        if (isReadOnly) {
-            lookupField.setDisabled(true); // Make the field read-only
-        } else {
-            lookupField.setDisabled(false); // Make the field editable
-        }
-    } else {
-        console.log("Lookup field not found.");
-    }
+    // Open a new form for the same entity
+    var entityName = formContext.data.entity.getEntityName();
+    Xrm.Utility.openEntityForm(entityName, null); // Open a new form for the entity
 }
