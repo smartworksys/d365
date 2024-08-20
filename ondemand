@@ -1,24 +1,25 @@
-function getTextBoxValueFromQuickView() {
-    // Replace 'quickViewControlName' with the actual name of your Quick View control
-    var quickViewControl = Xrm.Page.getControl("quickViewControlName");
+function getAttributeValue(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var quickViewControl = formContext.ui.quickForms.get("<QuickViewControlName>"); // Replace with your Quick View Control Name
 
-    // Check if the Quick View form is loaded and has data
-    if (quickViewControl && quickViewControl.getAttribute() && quickViewControl.getAttribute().getValue() != null) {
-        
-        // Access the value of the text box field within the Quick View form
-        // Replace 'fieldName' with the schema name of the text box field in the Quick View form
-        var textBoxValue = quickViewControl.getAttribute().getValue().attributes.getByName("fieldName").getValue();
+    if (quickViewControl) {
+        if (quickViewControl.isLoaded()) {
+            // Retrieve the value of a specific text box field by its schema name
+            var textBoxValue = quickViewControl.getControl().find(control => control.getName() == "<AttributeSchemaName>").getAttribute().getValue(); // Replace with the actual attribute schema name
 
-        // Check if the text box value is not null
-        if (textBoxValue != null) {
-            console.log("Text Box Value from Quick View: " + textBoxValue);
-            return textBoxValue;
+            if (textBoxValue != null) {
+                console.log("Text Box Value from Quick View:", textBoxValue);
+                return textBoxValue;
+            } else {
+                console.log("Text Box field in Quick View is empty.");
+                return null;
+            }
         } else {
-            console.log("Text Box field in Quick View is empty.");
-            return null;
+            // Wait for a short period and then check again if the Quick View form is loaded
+            setTimeout(getAttributeValue, 500, executionContext); // Adjust the delay as needed
         }
     } else {
-        console.log("Quick View form is not loaded or contains no data.");
+        console.log("No data to display in the quick view control or the control was not found.");
         return null;
     }
 }
