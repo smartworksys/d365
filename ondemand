@@ -1,33 +1,20 @@
-var retrievedContact = null;
+function getFieldValueFromQuickViewForm() {
+    // Get the Quick View control by name
+    var quickViewControl = Xrm.Page.getControl("quickViewControlName"); // Replace with your Quick View Control Name
 
-function getContactRecordById(contactId) {
-    return new Promise(function(resolve, reject) {
-        if (!contactId) {
-            reject("Contact ID is required");
+    // Check if the Quick View form is loaded
+    if (quickViewControl && quickViewControl.getAttribute() && quickViewControl.getAttribute().getValue() != null) {
+
+        // Get the field value from the Quick View form
+        var accountName = quickViewControl.getAttribute().getValue().attributes.getByName("name").getValue(); // Replace 'name' with the schema name of the field
+
+        // Check if the value is not null
+        if (accountName != null) {
+            console.log("Account Name from Quick View: " + accountName);
+        } else {
+            console.log("Account Name field is empty.");
         }
-
-        var query = `/contacts(${contactId})`;
-
-        Xrm.WebApi.retrieveRecord("contact", contactId, "?$select=fullname,emailaddress1,telephone1")
-            .then(function (result) {
-                console.log("Contact retrieved successfully:", result);
-                resolve(result);
-            })
-            .catch(function (error) {
-                console.error("Error retrieving contact:", error.message);
-                reject(error.message);
-            });
-    });
+    } else {
+        console.log("Quick View form is not loaded or no data available.");
+    }
 }
-
-// Usage example:
-var contactId = "00000000-0000-0000-0000-000000000000"; // Replace with the actual contact ID
-
-getContactRecordById(contactId)
-    .then(function(contact) {
-        retrievedContact = contact; // Assign the retrieved contact to the variable
-        console.log("Contact assigned to variable:", retrievedContact);
-    })
-    .catch(function(error) {
-        console.error("Failed to retrieve contact:", error);
-    });
