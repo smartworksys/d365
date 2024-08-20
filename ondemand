@@ -1,37 +1,16 @@
-function getAttributeValue(executionContext) {
-    return new Promise((resolve, reject) => {
-        var formContext = executionContext.getFormContext();
-        var quickViewControl = formContext.ui.quickForms.get("<QuickViewControlName>"); // Replace with your Quick View Control Name
+function toggleLookupReadOnly(executionContext, isReadOnly) {
+    var formContext = executionContext.getFormContext();
 
-        function checkQuickView() {
-            if (quickViewControl) {
-                if (quickViewControl.isLoaded()) {
-                    // Retrieve the value of a specific text box field by its schema name
-                    var textBoxValue = quickViewControl.getControl().find(control => control.getName() == "<AttributeSchemaName>").getAttribute().getValue(); // Replace with the actual attribute schema name
-                    resolve(textBoxValue);
-                } else {
-                    // Wait for a short period and then check again if the Quick View form is loaded
-                    setTimeout(checkQuickView, 500); // Adjust the delay as needed
-                }
-            } else {
-                console.log("No data to display in the quick view control or the control was not found.");
-                reject("Quick View control not found.");
-            }
+    // Replace 'lookupFieldName' with the schema name of your lookup field
+    var lookupField = formContext.getControl("lookupFieldName");
+
+    if (lookupField) {
+        if (isReadOnly) {
+            lookupField.setDisabled(true); // Make the field read-only
+        } else {
+            lookupField.setDisabled(false); // Make the field editable
         }
-
-        checkQuickView();
-    });
-}
-
-// Example usage with promise
-getAttributeValue(executionContext).then(textBoxValue => {
-    if (textBoxValue != null) {
-        console.log("Text Box Value retrieved:", textBoxValue);
-        // Continue further processing with the retrieved value
     } else {
-        console.log("Failed to retrieve the Text Box Value.");
-        // Handle the case where the value is null or not retrieved
+        console.log("Lookup field not found.");
     }
-}).catch(error => {
-    console.error("Error retrieving Quick View value:", error);
-});
+}
