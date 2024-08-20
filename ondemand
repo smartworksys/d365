@@ -1,20 +1,24 @@
-function getFieldValueFromQuickViewForm() {
-    // Get the Quick View control by name
-    var quickViewControl = Xrm.Page.getControl("quickViewControlName"); // Replace with your Quick View Control Name
+function getTextBoxValueFromQuickView() {
+    // Replace 'quickViewControlName' with the actual name of your Quick View control
+    var quickViewControl = Xrm.Page.getControl("quickViewControlName");
 
-    // Check if the Quick View form is loaded
+    // Check if the Quick View form is loaded and has data
     if (quickViewControl && quickViewControl.getAttribute() && quickViewControl.getAttribute().getValue() != null) {
+        
+        // Access the value of the text box field within the Quick View form
+        // Replace 'fieldName' with the schema name of the text box field in the Quick View form
+        var textBoxValue = quickViewControl.getAttribute().getValue().attributes.getByName("fieldName").getValue();
 
-        // Get the field value from the Quick View form
-        var accountName = quickViewControl.getAttribute().getValue().attributes.getByName("name").getValue(); // Replace 'name' with the schema name of the field
-
-        // Check if the value is not null
-        if (accountName != null) {
-            console.log("Account Name from Quick View: " + accountName);
+        // Check if the text box value is not null
+        if (textBoxValue != null) {
+            console.log("Text Box Value from Quick View: " + textBoxValue);
+            return textBoxValue;
         } else {
-            console.log("Account Name field is empty.");
+            console.log("Text Box field in Quick View is empty.");
+            return null;
         }
     } else {
-        console.log("Quick View form is not loaded or no data available.");
+        console.log("Quick View form is not loaded or contains no data.");
+        return null;
     }
 }
