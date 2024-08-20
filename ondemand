@@ -1,16 +1,12 @@
-function openNewFormWithoutSavePrompt(executionContext) {
+function removeCustomFilter(executionContext) {
     var formContext = executionContext.getFormContext();
-    
-    // Clear all fields on the form to remove the dirty state
-    formContext.data.entity.attributes.forEach(function (attribute) {
-        attribute.setValue(null);
-        attribute.setSubmitMode("never"); // This ensures that the form does not attempt to save this field
-    });
+    var lookupField = formContext.getControl("lookupFieldName"); // Replace with your lookup field schema name
 
-    // Mark the form as not dirty, so it doesn't prompt for saving
-    formContext.data.setFormDirty(false);
+    if (lookupField && formContext.data.entity.attributes.getByName("lookupFieldName").addPreSearchHandler) {
+        // Remove the previously added PreSearch event handler
+        lookupField.removePreSearch(formContext.data.entity.attributes.getByName("lookupFieldName").addPreSearchHandler);
 
-    // Open a new form for the same entity
-    var entityName = formContext.data.entity.getEntityName();
-    Xrm.Utility.openEntityForm(entityName, null); // Open a new form for the entity
+        // Clear the handler reference
+        formContext.data.entity.attributes.getByName("lookupFieldName").addPreSearchHandler = null;
+    }
 }
