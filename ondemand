@@ -1,1 +1,36 @@
+private async Task SaveXmlToBlobStorage(XmlDocument xmlDoc, string identifier)
+{
+    string connectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+    string containerName = "navigatorxmlfiles";
+    string fileName = $"{identifier}_{DateTime.UtcNow:yyyyMMddHHmmss}.xml";
+
+    BlobServiceClient blobServiceClient = new BlobServiceClient(connectionString);
+    BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(containerName);
+
+    // Create the container if it doesn't exist
+    await containerClient.CreateIfNotExistsAsync();
+
+    BlobClient blobClient = containerClient.GetBlobClient(fileName);
+
+    // Use XmlWriter to properly format the XML with indentation
+    XmlWriterSettings settings = new XmlWriterSettings
+    {
+        Indent = true,
+        IndentChars = "  ",  // Use two spaces for indentation
+        NewLineChars = "\r\n", // Use standard new line characters
+        NewLineHandling = NewLineHandling.Replace
+    };
+
+    using (MemoryStream ms = new MemoryStream())
+    using (XmlWriter writer = XmlWriter.Create(ms, settings))
+    {
+        xmlDoc.Save(writer); // Save the XML to the XmlWriter with formatting
+        writer.Flush(); // Ensure all data is written to the MemoryStream
+
+        ms.Position = 0; // Reset stream position before upload
+        await blobClient.UploadAsync(ms, new BlobHttpHeaders { ContentType = "application/xml" });
+    }
+
+    _logger.LogInformation($"XML file {fileName} saved to Blob Storage successfully.");
+}
 
