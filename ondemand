@@ -1,48 +1,84 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dropdown Example</title>
-    <script src="dropdown.js" defer></script>
-</head>
-<body>
-    <!-- Main container mimicking the structure you provided -->
-    <div role="presentation" class="pa-bj pa-iv pa-bi">
-        <div id="id-drpMemberAccounts" data-id="drpMemberAccounts" data-control-name="drpMemberAccounts" role="presentation" class="pa-iv pa-bi pa-dt pa-cb pa-ih pa-jy pa-jz flexbox">
-            
-            <!-- Label and dropdown container -->
-            <div role="presentation" class="pa-bi flexbox">
-                <!-- Label container -->
-                <div role="presentation" class="pa-ay flexbox">
-                    <div title="Member Accounts" role="presentation" class="pa-cf pa-ds pa-ir pa-iq pa-ix pa-iy pa-iz pa-kh pa-ki pa-kj pa-kk flexbox">
-                        <label id="drpMemberAccounts-label" class="pa-bi pa-kk">Member Accounts</label>
-                    </div>
-                </div>
-                
-                <!-- Dropdown container -->
-                <div role="presentation" class="pa-kl pa-km pa-b pa-iz flexbox">
-                    <div role="presentation" class="pa-bi flexbox">
-                        <div dir="ltr" class="fui-FluentProvider" style="width: 100%;">
-                            <div class="fui-Dropdown pa-option-set-component-root">
-                                <div class="fui-Dropdown__container flexbox">
-                                    <button type="button" aria-expanded="false" role="combobox" tabindex="0" aria-label="Member Accounts" class="fui-Dropdown__button">
-                                        <select id="drpMemberAccounts" class="form-control pa-option-set-component" title="Select a Member Account">
-                                            <!-- Options will be dynamically loaded here -->
-                                        </select>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Validation message (optional) -->
-            <div aria-live="assertive" aria-atomic="true" class="pa-i pa-ks pa-kt pa-ku pa-jf pa-kv pa-e pa-dt flexbox">
-                <span class="validationMsg" id="drpMemberAccounts-validation">Validation message</span>
-            </div>
-        </div>
-    </div>
-</body>
-</html>
+/* Container Flexbox for main structure */
+.pa-bj, .pa-iv, .pa-bi, .flexbox {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+/* Flexbox alignment for child elements */
+.flexbox {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Styling for the label section */
+.pa-cf, .pa-ds, .pa-ir, .pa-iq, .pa-ix, .pa-iy, .pa-iz, .pa-kh, .pa-ki, .pa-kj, .pa-kk {
+    margin-right: 10px;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+/* Styling for the label text */
+.pa-bi.pa-kk {
+    color: #333;
+    font-size: 14px;
+}
+
+/* Dropdown container styles */
+.pa-kl, .pa-km, .pa-iz {
+    width: 100%;
+}
+
+/* Fluent provider wrapper for dropdown */
+.fui-FluentProvider {
+    width: 100%;
+}
+
+/* Dropdown button */
+.fui-Dropdown__button {
+    width: 100%;
+    padding: 5px 12px;
+    font-size: 14px;
+    color: #333;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background-color: #fff;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+/* Dropdown icon */
+.fui-Dropdown__expandIcon {
+    margin-left: 8px;
+}
+
+/* Dropdown button hover effect */
+.fui-Dropdown__button:hover {
+    border-color: #005a9e;
+}
+
+/* Option set component for dropdown */
+.pa-option-set-component {
+    width: 100%;
+    font-size: 14px;
+    padding: 5px;
+    color: #333;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+}
+
+/* Style for validation message */
+.validationMsg {
+    color: red;
+    font-size: 12px;
+    margin-top: 5px;
+    display: block;
+}
+
+/* Optional: Styling for hidden element */
+#id-6a5350fe-8761-4a97-90f6-7aa44fbaa839-19shadow {
+    display: none;
+}
