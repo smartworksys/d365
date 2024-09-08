@@ -4,110 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API Dropdown</title>
-    <link rel="stylesheet" href="dropdown.css" />
     <script src="dropdown.js" defer></script>
 </head>
 <body>
     <div class="form-group">
-        <label for="drpMemberAccounts" class="control-label col-md-4">Member Accounts</label>
-        <div class="col-md-5">
-            <select id="drpMemberAccounts" class="form-control" onchange="saveSelectedValueToCRM();">
+        <!-- Label with Dynamics 365 styling -->
+        <label for="drpMemberAccounts" class="control-label col-md-2" title="Select a Member Account">Member Accounts</label>
+
+        <!-- Dropdown select control with Dynamics 365 styling -->
+        <div class="col-md-4">
+            <select id="drpMemberAccounts" class="form-control" title="Select a Member Account">
                 <!-- Options will be dynamically loaded here -->
             </select>
-            <span class="validationMsg"></span>
         </div>
     </div>
 </body>
 </html>
-
-
-/* Use Dynamics 365 built-in classes for styling */
-.form-group {
-    margin-bottom: 15px;
-}
-
-.control-label {
-    font-weight: bold;
-    padding-top: 7px;
-}
-
-.form-control {
-    display: block;
-    width: 100%;
-    padding: 6px 12px;
-    font-size: 14px;
-    line-height: 1.42857143;
-    color: #555;
-    background-color: #fff;
-    background-image: none;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075);
-    transition: border-color ease-in-out .15s, box-shadow ease-in-out .15s;
-}
-
-.validationMsg {
-    color: red;
-    margin-top: 5px;
-}
-
-
-// Function to load dropdown values from an API
-function loadDropdown() {
-    const apiUrl = 'https://your-api-url.com/endpoint'; // Your API URL
-
-    fetch(apiUrl)
-        .then(response => response.json()) // Parse JSON
-        .then(data => {
-            populateDropdown(data);
-        })
-        .catch(error => {
-            console.error('Error fetching data from API:', error);
-        });
-}
-
-// Function to populate the dropdown
-function populateDropdown(data) {
-    const dropdown = document.getElementById("drpMemberAccounts");
-
-    dropdown.innerHTML = ''; // Clear existing options
-
-    const defaultOption = document.createElement("option");
-    defaultOption.text = "Select an option";
-    defaultOption.value = "";
-    dropdown.add(defaultOption);
-
-    // Add options from API response
-    data.forEach(item => {
-        const option = document.createElement("option");
-        option.text = item.name; // Assuming 'name' is a property of the JSON object
-        option.value = item.id;  // Assuming 'id' is a property of the JSON object
-        dropdown.add(option);
-    });
-}
-
-// Function to save selected value to Dynamics 365 form
-function saveSelectedValueToCRM() {
-    const dropdown = document.getElementById("drpMemberAccounts");
-    const selectedValue = dropdown.options[dropdown.selectedIndex].value;
-    const selectedText = dropdown.options[dropdown.selectedIndex].text;
-
-    // Get formContext using Xrm.Navigation
-    if (window.parent.Xrm) {
-        const formContext = window.parent.Xrm.Page; // Deprecated method, use formContext in modern API
-
-        // Get the form field you want to update
-        const textField = formContext.getAttribute("new_textfield"); // Replace 'new_textfield' with your textbox schema name
-        
-        if (textField) {
-            // Set the selected value (or text) in the textbox
-            textField.setValue(selectedText); // You can also use selectedValue based on your needs
-
-            // Optionally trigger the onChange event
-            textField.fireOnChange();
-        }
-    }
-}
-
-// Call loadDropdown when the page is loaded
-window.onload = loadDropdown;
