@@ -1,66 +1,8 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dropdown Population</title>
-    <script type="text/javascript">
-        var formContext;
-
-        // Function to populate dropdown with data from parent form
-        function populateDropdown(data) {
-            var dropdown = document.getElementById("myDropdown");
-            dropdown.innerHTML = ""; // Clear existing options
-            dropdown.add(new Option("Select an option", "", true, true)); // Add default option
-            data.forEach(function(item) {
-                var option = document.createElement("option");
-                option.text = item.name;
-                option.value = item.id;
-                dropdown.add(option);
-            });
-        }
-
-        // Function to receive formContext from the parent D365 form
-        function receiveDataFromParent(context) {
-            formContext = context.formContext; // Extract formContext
-            var selectedData = context.data;   // Extract data for dropdown
-            populateDropdown(selectedData);
-        }
-
-        // Function to send the selected dropdown value to the parent form
-        function sendValueToParentForm() {
-            var dropdown = document.getElementById("myDropdown");
-            var selectedValue = dropdown.options[dropdown.selectedIndex].value;
-
-            // Check if a valid selection was made
-            if (!selectedValue) {
-                alert("Please select a valid option from the dropdown.");
-                return; // Prevent action if no valid selection
-            }
-
-            // Log the selected value to the console
-            console.log("Selected Value:", selectedValue);
-
-            // If valid selection, send value to parent form using formContext
-            if (formContext) {
-                var targetField = "targetField";  // Replace with actual field schema name
-
-                // Set the selected value in the parent form's target field
-                formContext.getAttribute(targetField).setValue(selectedValue);
-
-                // Fire the onchange event for the target field
-                formContext.getAttribute(targetField).fireOnChange();
-
-                // Log to console after setting the value
-                console.log("Set value in the target field:", formContext.getAttribute(targetField).getValue());
-            } else {
-                console.error("Form context not found.");
-            }
-        }
-    </script>
-</head>
-<body>
-    <!-- Dropdown with onchange event to send value to parent on change -->
-    <select id="myDropdown" onchange="sendValueToParentForm()">
-        <option value="" disabled selected>Select an option</option>
-    </select>
-</body>
-</html>
+data.forEach(function(item) {
+    if (item.type === "account") {  // Check if item.type is 'account'
+        var option = document.createElement("option");
+        option.text = item.name;
+        option.value = item.id;
+        dropdown.add(option);
+    }
+});
