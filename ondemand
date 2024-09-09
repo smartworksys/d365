@@ -1,109 +1,12 @@
-/* General flexbox layout for containers */
-.pa-bj, .pa-iv, .pa-bi, .flexbox {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; /* Default font */
-}
+// Get the iframe containing the web resource
+var iframe = document.getElementById("WebResource_yourWebResourceName");
 
-/* Flexbox child alignment */
-.flexbox {
-    display: flex;
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; /* Default font */
-}
+// Access the dropdown inside the iframe
+if (iframe && iframe.contentWindow) {
+    var dropdown = iframe.contentWindow.document.getElementById("yourDropdownId");
 
-/* Label Styling - adjusting for Dynamics 365 */
-.pa-cf, .pa-ds, .pa-ir, .pa-iq, .pa-ix, .pa-iy, .pa-iz, .pa-kh, .pa-ki, .pa-kj, .pa-kk {
-    margin-right: 10px;
-    font-weight: bold;
-    font-size: 14px;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; /* Default font */
-    color: #333;
-}
-
-/* Label specific */
-.pa-bi.pa-kk {
-    font-size: 14px;
-    line-height: 1.5;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; /* Default font */
-}
-
-/* Dropdown container spacing */
-.pa-kl, .pa-km, .pa-iz {
-    width: 100%;
-    margin-left: 10px; /* Ensure space between label and dropdown */
-}
-
-/* Fluent provider wrapping the dropdown */
-.fui-FluentProvider {
-    width: 100%;
-}
-
-/* Dropdown Button Styling */
-.fui-Dropdown__button {
-    width: 100%;
-    padding: 6px 12px;
-    font-size: 14px;
-    color: #333; /* Text color */
-    border: 1px solid #ccc; /* Light border to match Dynamics style */
-    border-radius: 4px;
-    background-color: #fff; /* Ensure white background */
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    cursor: pointer;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; /* Default font */
-}
-
-/* Placeholder style for "---" option in the dropdown */
-.fui-Dropdown__button:after {
-    content: "---";
-    color: #666; /* Placeholder grey color */
-    padding-left: 8px;
-}
-
-/* Hover and focus states for the dropdown button */
-.fui-Dropdown__button:hover {
-    border-color: #005a9e;
-}
-
-.fui-Dropdown__button:focus {
-    outline: none;
-    border-color: #005a9e;
-    box-shadow: 0 0 5px rgba(0, 90, 158, 0.5); /* Blue focus shadow */
-}
-
-/* Dropdown icon on the right */
-.fui-Dropdown__expandIcon {
-    margin-left: 8px;
-    visibility: visible;
-}
-
-/* Dropdown options styling */
-.pa-option-set-component {
-    width: 100%;
-    font-size: 14px;
-    padding: 6px;
-    color: #333;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    background-color: #fff;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; /* Default font */
-}
-
-/* Validation message styling */
-.validationMsg {
-    color: red;
-    font-size: 12px;
-    margin-top: 5px;
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif; /* Default font */
-}
-
-/* Optional: Hidden elements */
-#id-6a5350fe-8761-4a97-90f6-7aa44fbaa839-19shadow {
-    display: none;
+    if (dropdown) {
+        dropdown.innerHTML = ""; // Clear existing options
+        // Add new options here
+    }
 }
