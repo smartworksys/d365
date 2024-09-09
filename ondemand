@@ -1,12 +1,64 @@
-// Get the iframe containing the web resource
-var iframe = document.getElementById("WebResource_yourWebResourceName");
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dropdown Population</title>
+    <script type="text/javascript">
+        function populateDropdown(data) {
+            var dropdown = document.getElementById("myDropdown");
+            dropdown.innerHTML = ""; // Clear existing options
+            data.forEach(function(item) {
+                var option = document.createElement("option");
+                option.text = item.name;
+                option.value = item.id;
+                dropdown.add(option);
+            });
+        }
 
-// Access the dropdown inside the iframe
-if (iframe && iframe.contentWindow) {
-    var dropdown = iframe.contentWindow.document.getElementById("yourDropdownId");
+        function receiveDataFromParent(formContext) {
+            // Assume formContext contains the data you need to populate the dropdown
+            var selectedData = formContext.data; // You can customize this based on actual data structure
+            populateDropdown(selectedData);
+        }
+    </script>
+</head>
+<body>
+    <select id="myDropdown">
+        <option value="">Select an option</option>
+    </select>
+</body>
+</html>
 
-    if (dropdown) {
-        dropdown.innerHTML = ""; // Clear existing options
-        // Add new options here
+
+function onFieldChange(executionContext) {
+    var formContext = executionContext.getFormContext();
+
+    // Get the value of the field that triggered the event
+    var fieldValue = formContext.getAttribute("fieldname").getValue();
+
+    // Simulate getting new data based on field value (replace with API call if needed)
+    var updatedData;
+    if (fieldValue === "Option1") {
+        updatedData = [
+            { id: "1", name: "Dropdown Option 1" },
+            { id: "2", name: "Dropdown Option 2" }
+        ];
+    } else if (fieldValue === "Option2") {
+        updatedData = [
+            { id: "3", name: "Dropdown Option 3" },
+            { id: "4", name: "Dropdown Option 4" }
+        ];
+    }
+
+    // Get the HTML web resource control
+    var webResourceControl = formContext.getControl("WebResource_controlname");
+    
+    if (webResourceControl !== null) {
+        // Send data to the HTML web resource
+        var webResourceWindow = webResourceControl.getContentWindow();
+
+        webResourceWindow.then(function(window) {
+            // Call the function in the HTML to populate the dropdown
+            window.receiveDataFromParent({ data: updatedData });
+        });
     }
 }
