@@ -3,9 +3,13 @@
 <head>
     <title>Dropdown Population</title>
     <script type="text/javascript">
+        var formContext;
+
+        // Function to populate dropdown with data from parent form
         function populateDropdown(data) {
             var dropdown = document.getElementById("myDropdown");
             dropdown.innerHTML = ""; // Clear existing options
+            dropdown.add(new Option("Select an option", "", true, true)); // Add default option
             data.forEach(function(item) {
                 var option = document.createElement("option");
                 option.text = item.name;
@@ -14,16 +18,38 @@
             });
         }
 
-        function receiveDataFromParent(formContext) {
-            // Assume formContext contains the data you need to populate the dropdown
-            var selectedData = formContext.data; // You can customize this based on actual data structure
+        // Function to receive formContext from the parent D365 form
+        function receiveDataFromParent(context) {
+            formContext = context.formContext; // Extract formContext
+            var selectedData = context.data;   // Extract data for dropdown
             populateDropdown(selectedData);
+        }
+
+        // Function to send the selected dropdown value to the parent form
+        function sendValueToParentForm() {
+            var dropdown = document.getElementById("myDropdown");
+            var selectedValue = dropdown.options[dropdown.selectedIndex].value;
+
+            // Check if a valid selection was made
+            if (!selectedValue) {
+                alert("Please select a valid option from the dropdown.");
+                return; // Prevent action if no valid selection
+            }
+
+            // If valid selection, send value to parent form using formContext
+            if (formContext) {
+                var targetField = "targetField";  // Replace with actual field schema name
+                formContext.getAttribute(targetField).setValue(selectedValue);
+            } else {
+                console.error("Form context not found.");
+            }
         }
     </script>
 </head>
 <body>
-    <select id="myDropdown">
-        <option value="">Select an option</option>
+    <!-- Dropdown with onchange event to send value to parent on change -->
+    <select id="myDropdown" onchange="sendValueToParentForm()">
+        <option value="" disabled selected>Select an option</option>
     </select>
 </body>
 </html>
@@ -32,33 +58,25 @@
 function onFieldChange(executionContext) {
     var formContext = executionContext.getFormContext();
 
-    // Get the value of the field that triggered the event
-    var fieldValue = formContext.getAttribute("fieldname").getValue();
-
-    // Simulate getting new data based on field value (replace with API call if needed)
-    var updatedData;
-    if (fieldValue === "Option1") {
-        updatedData = [
-            { id: "1", name: "Dropdown Option 1" },
-            { id: "2", name: "Dropdown Option 2" }
-        ];
-    } else if (fieldValue === "Option2") {
-        updatedData = [
-            { id: "3", name: "Dropdown Option 3" },
-            { id: "4", name: "Dropdown Option 4" }
-        ];
-    }
+    // Example data to populate the dropdown (you can replace this with an API call if needed)
+    var data = [
+        { id: "1", name: "Option 1" },
+        { id: "2", name: "Option 2" },
+        { id: "3", name: "Option 3" }
+    ];
 
     // Get the HTML web resource control
     var webResourceControl = formContext.getControl("WebResource_controlname");
     
     if (webResourceControl !== null) {
-        // Send data to the HTML web resource
         var webResourceWindow = webResourceControl.getContentWindow();
 
         webResourceWindow.then(function(window) {
-            // Call the function in the HTML to populate the dropdown
-            window.receiveDataFromParent({ data: updatedData });
+            // Pass formContext and data to the HTML web resource
+            window.receiveDataFromParent({
+                formContext: formContext, 
+                data: data
+            });
         });
     }
 }
