@@ -36,10 +36,21 @@
                 return; // Prevent action if no valid selection
             }
 
+            // Log the selected value to the console
+            console.log("Selected Value:", selectedValue);
+
             // If valid selection, send value to parent form using formContext
             if (formContext) {
                 var targetField = "targetField";  // Replace with actual field schema name
+
+                // Set the selected value in the parent form's target field
                 formContext.getAttribute(targetField).setValue(selectedValue);
+
+                // Fire the onchange event for the target field
+                formContext.getAttribute(targetField).fireOnChange();
+
+                // Log to console after setting the value
+                console.log("Set value in the target field:", formContext.getAttribute(targetField).getValue());
             } else {
                 console.error("Form context not found.");
             }
@@ -53,30 +64,3 @@
     </select>
 </body>
 </html>
-
-
-function onFieldChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-
-    // Example data to populate the dropdown (you can replace this with an API call if needed)
-    var data = [
-        { id: "1", name: "Option 1" },
-        { id: "2", name: "Option 2" },
-        { id: "3", name: "Option 3" }
-    ];
-
-    // Get the HTML web resource control
-    var webResourceControl = formContext.getControl("WebResource_controlname");
-    
-    if (webResourceControl !== null) {
-        var webResourceWindow = webResourceControl.getContentWindow();
-
-        webResourceWindow.then(function(window) {
-            // Pass formContext and data to the HTML web resource
-            window.receiveDataFromParent({
-                formContext: formContext, 
-                data: data
-            });
-        });
-    }
-}
