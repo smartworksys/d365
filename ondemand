@@ -1,82 +1,26 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Dropdown</title>
-    <link rel="stylesheet" type="text/css" href="/WebResources/nf1pbm_MaturityInstructions/CSS/CommonStyle.css" />
-    <style>
-        /* Container for table-like layout */
-        .form-container {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            width: 100%;
-        }
+function conditionallyHideIframeFields(executionContext) {
+    var formContext = executionContext.getFormContext();
+    
+    // Access the iframe control
+    var iframeControl = formContext.getControl("IFRAME_myiframe");
 
-        /* Form group in a two-column layout */
-        .form-group {
-            display: flex;
-            flex-direction: row;
-            align-items: center;
-            padding: 10px;
-            width: 100%;
-            max-width: 600px;
-        }
+    if (iframeControl) {
+        var iframeContentWindow = iframeControl.getObject().contentWindow;
 
-        .form-group label {
-            flex: 1;
-            font-family: 'Segoe UI', sans-serif;
-            color: #444;
-            margin-right: 10px;
-            text-align: right;
-            font-size: 14px;
-        }
+        if (iframeContentWindow) {
+            // Example: Condition based on a value from the parent form
+            var status = formContext.getAttribute("statuscode").getValue();
 
-        .form-group select {
-            flex: 2;
-            padding: 8px;
-            font-size: 14px;
-            width: 100%;
-            border-radius: 4px;
-            border: 1px solid #ccc;
-        }
-
-        /* Responsive behavior */
-        @media (max-width: 600px) {
-            .form-group {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-
-            .form-group label {
-                text-align: left;
-                margin-bottom: 5px;
-            }
-
-            .form-group select {
-                width: 100%;
+            // Example: Hide a specific field in the iframe if status is not active (status code is 1)
+            var fieldToHide = iframeContentWindow.document.getElementById("fieldId");
+            
+            if (fieldToHide) {
+                if (status !== 1) {
+                    fieldToHide.style.display = "none"; // Hide the field if condition is met
+                } else {
+                    fieldToHide.style.display = "block"; // Show the field otherwise
+                }
             }
         }
-    </style>
-    <script type="text/javascript" src="/WebResources/nf1pbm_MaturityInstructions/JS/MemberAccountDropdown.js" defer=""></script>
-</head>
-<body style="overflow-wrap: break-word;">
-    <div class="form-container">
-        <div class="form-group">
-            <!-- Label with Dynamics 365 styling -->
-            <label for="drpMemberAccounts" class="labelPBMcls" title="Select a Member Account">Certificate Account Number</label>
-            <select id="drpMemberAccounts" class="selectPBMcls" title="Select a Member Account" onchange="sendValueToParentForm()">
-                <!-- Options will be dynamically loaded here -->
-            </select>
-        </div>
-        <div class="form-group">
-            <!-- Label with Dynamics 365 styling -->
-            <label for="drpMemberAffiliateAccounts" class="labelPBMcls" title="Select a Member Account">Affiliate Account Number</label>
-            <select id="drpMemberAffiliateAccounts" class="selectPBMcls" title="Select a Member Account" onchange="sendValueToParentForm()">
-                <!-- Options will be dynamically loaded here -->
-            </select>
-        </div>
-    </div>
-</body>
-</html>
+    }
+}
