@@ -1,26 +1,33 @@
-function conditionallyHideIframeFields(executionContext) {
+function manipulateIframeFields(executionContext) {
     var formContext = executionContext.getFormContext();
     
-    // Access the iframe control
+    // Access the iframe control by its logical name (replace 'IFRAME_myiframe' with the actual name)
     var iframeControl = formContext.getControl("IFRAME_myiframe");
 
     if (iframeControl) {
-        var iframeContentWindow = iframeControl.getObject().contentWindow;
+        // Access the HTML iframe element
+        var iframeElement = iframeControl.getObject();
 
-        if (iframeContentWindow) {
-            // Example: Condition based on a value from the parent form
-            var status = formContext.getAttribute("statuscode").getValue();
+        // Ensure the iframe is loaded
+        iframeElement.onload = function() {
+            // Access the iframe's content window
+            var iframeContentWindow = iframeElement.contentWindow;
 
-            // Example: Hide a specific field in the iframe if status is not active (status code is 1)
-            var fieldToHide = iframeContentWindow.document.getElementById("fieldId");
-            
-            if (fieldToHide) {
-                if (status !== 1) {
-                    fieldToHide.style.display = "none"; // Hide the field if condition is met
+            if (iframeContentWindow) {
+                // Now that the iframe is loaded, access a specific field inside the iframe by its ID
+                var fieldToHide = iframeContentWindow.document.getElementById("fieldId"); // Replace "fieldId" with the actual ID
+
+                if (fieldToHide) {
+                    // Hide the field inside the iframe
+                    fieldToHide.style.display = "none"; // Hide the element
                 } else {
-                    fieldToHide.style.display = "block"; // Show the field otherwise
+                    console.error("Field with the specified ID not found inside the iframe.");
                 }
+            } else {
+                console.error("Unable to access the content window of the iframe.");
             }
-        }
+        };
+    } else {
+        console.error("Iframe control not found.");
     }
 }
