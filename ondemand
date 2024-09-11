@@ -1,32 +1,30 @@
 function manipulateIframeFields(executionContext) {
     var formContext = executionContext.getFormContext();
     
-    // Access the iframe control by its logical name (replace 'IFRAME_myiframe' with the actual name)
+    // Access the iframe control by its logical name (replace 'IFRAME_myiframe' with your iframe's logical name)
     var iframeControl = formContext.getControl("IFRAME_myiframe");
 
     if (iframeControl) {
         // Access the HTML iframe element
         var iframeElement = iframeControl.getObject();
 
-        // Ensure the iframe is loaded
-        iframeElement.onload = function() {
-            // Access the iframe's content window
+        // Poll to check if the iframe content is fully loaded
+        var checkIframeLoaded = setInterval(function() {
             var iframeContentWindow = iframeElement.contentWindow;
 
-            if (iframeContentWindow) {
-                // Now that the iframe is loaded, access a specific field inside the iframe by its ID
-                var fieldToHide = iframeContentWindow.document.getElementById("fieldId"); // Replace "fieldId" with the actual ID
+            if (iframeContentWindow && iframeContentWindow.document) {
+                var iframeDocument = iframeContentWindow.document;
+
+                // Check if a specific field in the iframe exists (replace "fieldId" with actual ID of the field inside iframe)
+                var fieldToHide = iframeDocument.getElementById("fieldId");
 
                 if (fieldToHide) {
-                    // Hide the field inside the iframe
-                    fieldToHide.style.display = "none"; // Hide the element
-                } else {
-                    console.error("Field with the specified ID not found inside the iframe.");
+                    // If the field is found, hide it and clear the interval to stop polling
+                    fieldToHide.style.display = "none"; // Hide the field
+                    clearInterval(checkIframeLoaded);   // Stop polling once the field is found and manipulated
                 }
-            } else {
-                console.error("Unable to access the content window of the iframe.");
             }
-        };
+        }, 500);  // Check every 500ms
     } else {
         console.error("Iframe control not found.");
     }
