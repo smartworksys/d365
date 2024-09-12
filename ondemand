@@ -1,31 +1,155 @@
-function manipulateIframeFields(executionContext) {
-    var formContext = executionContext.getFormContext();
-    
-    // Access the iframe control by its logical name (replace 'IFRAME_myiframe' with your iframe's logical name)
-    var iframeControl = formContext.getControl("IFRAME_myiframe");
+/* eslint-disable */
+// @ts-nocheck
+import { IInputs, IOutputs } from "./generated/ManifestTypes";
 
-    if (iframeControl) {
-        // Access the HTML iframe element
-        var iframeElement = iframeControl.getObject();
+export class SecureInputField implements ComponentFramework.StandardControl<IInputs, IOutputs> {
+    private _container: HTMLDivElement;
+    private _context: ComponentFramework.Context<IInputs>;
+    private _controlViewRendered: boolean;
+    private _notifyOutputChanged: () => void;
+    private _boundFieldValue: string | null;
+    private _boundFieldName: string | null;
+    private _newValue: string;
 
-        // Poll to check if the iframe content is fully loaded
-        var checkIframeLoaded = setInterval(function() {
-            var iframeContentWindow = iframeElement.contentWindow;
+    /**
+     * Empty constructor.
+     */
+    constructor() {}
 
-            if (iframeContentWindow && iframeContentWindow.document) {
-                var iframeDocument = iframeContentWindow.document;
+    /**
+     * Used to initialize the control instance. Controls can kick off remote server calls and other initialization actions here.
+     * Data-set values are not initialized here, use updateView.
+     * @param context The entire property bag available to control via Context Object.
+     * @param notifyOutputChanged A callback method to alert the framework that the control has new outputs ready to be retrieved asynchronously.
+     * @param state A piece of data that persists in one session for a single user.
+     * @param container If a control is marked control-type='standard', it will receive an empty div element within which it can render its content.
+     */
+    public init(context: ComponentFramework.Context<IInputs>, notifyOutputChanged: () => void, state: ComponentFramework.Dictionary, container: HTMLDivElement): void {
+        console.log("SecureInputField version == 0.0.16");
+        this._context = context;
+        this._notifyOutputChanged = notifyOutputChanged;
+        this._container = document.createElement("div");
+        this._container.setAttribute("id", "PortalAccountControl");
+        this._container.classList.add("control_container");
+        this._boundFieldValue = context.parameters.boundTextField.raw;
+        this._boundFieldName = context.parameters.boundTextField.attributes?.LogicalName;
+        container.appendChild(this._container);
+    }
 
-                // Check if a specific field in the iframe exists (replace "fieldId" with actual ID of the field inside iframe)
-                var fieldToHide = iframeDocument.getElementById("fieldId");
+    /**
+     * Called when any value in the property bag has changed. This includes field values, data-sets, global values such as container height and width, etc.
+     * @param context The entire property bag available to control via Context Object.
+     */
+    public updateView(context: ComponentFramework.Context<IInputs>): void {
+        console.log("updateView()");
+        this._context = context;
+        let boundFieldValue = this._context.parameters.boundTextField.raw;
+        let boundFieldName = this._context.parameters.boundTextField.attributes?.LogicalName;
+        console.log(`boundFieldValue == ${boundFieldValue}`);
 
-                if (fieldToHide) {
-                    // If the field is found, hide it and clear the interval to stop polling
-                    fieldToHide.style.display = "none"; // Hide the field
-                    clearInterval(checkIframeLoaded);   // Stop polling once the field is found and manipulated
-                }
-            }
-        }, 500);  // Check every 500ms
-    } else {
-        console.error("Iframe control not found.");
+        if (!this._controlViewRendered) {
+            this._controlViewRendered = true;
+
+            // Create input field
+            let inputElement = document.createElement("input");
+            inputElement.setAttribute("type", "password");
+            inputElement.setAttribute("id", `secureInputField_${boundFieldName}`);
+            inputElement.setAttribute("name", "secureInputField");
+            inputElement.setAttribute("maxlength", "10");
+            inputElement.required = true;
+
+            // Add event listeners for validation and auto-formatting
+            inputElement.addEventListener("keypress", (event: KeyboardEvent) => this.validateNumber(event));
+            inputElement.addEventListener("input", () => this.autoFormat(inputElement));
+
+            // Append input element to the form
+            let inputForm: HTMLFormElement = document.createElement('form');
+            inputForm.setAttribute("id", `inputWrapper`);
+            inputForm.appendChild(inputElement);
+
+            // Create error message label
+            let errorMessageLabel = document.createElement("label");
+            errorMessageLabel.setAttribute("id", `errorLabel_${boundFieldName}`);
+            errorMessageLabel.style.color = "red";
+            errorMessageLabel.style.display = "none"; // Hidden by default
+            inputForm.appendChild(errorMessageLabel);
+
+            // Create and append enter button
+            let enterButton = document.createElement("button");
+            enterButton.classList.add("btn", "btn-primary");
+            enterButton.onclick = this.announceChange.bind(this);
+            enterButton.setAttribute("type", "button");
+            enterButton.innerText = "Enter";
+            enterButton.style = "line-height: 2px; height: 24px;";
+            inputForm.appendChild(enterButton);
+
+            this._container.appendChild(inputForm);
+        }
+
+        (<HTMLInputElement>document.getElementById(`secureInputField_${boundFieldName}`)).value = boundFieldValue;
+    }
+
+    /**
+     * Intercept keypress and only allow number keys.
+     * @param event Keyboard event.
+     */
+    public validateNumber(event: KeyboardEvent): void {
+        let charCode = event.charCode || event.keyCode;
+        // Allow only number keys (48-57) and control keys
+        if (charCode < 48 || charCode > 57) {
+            event.preventDefault();
+        }
+    }
+
+    /**
+     * Automatically format the input as xx-xxxxxxx.
+     * @param inputElement Input field element.
+     */
+    public autoFormat(inputElement: HTMLInputElement): void {
+        let input = inputElement.value.replace(/\D/g, ''); // Remove non-numeric characters
+        if (input.length > 2) {
+            input = `${input.slice(0, 2)}-${input.slice(2, 9)}`;
+        }
+        inputElement.value = input;
+    }
+
+    /**
+     * Validate input, show error message if necessary, and announce change.
+     */
+    public announceChange(): void {
+        let inputElement = (<HTMLInputElement>document.getElementById(`secureInputField_${this._boundFieldName}`));
+        let inputValue = inputElement.value.replace(/\D/g, ''); // Strip hyphen for validation
+
+        // Get error label element
+        let errorLabel = (<HTMLLabelElement>document.getElementById(`errorLabel_${this._boundFieldName}`));
+
+        // Validate that input is at least 9 digits long
+        if (inputValue.length < 9) {
+            errorLabel.innerText = "Input must be at least 9 digits long.";
+            errorLabel.style.display = "block"; // Show error message
+            return;
+        } else {
+            errorLabel.style.display = "none"; // Hide error message
+        }
+
+        this._newValue = inputElement.value;
+        this._notifyOutputChanged();
+    }
+
+    /**
+     * It is called by the framework prior to control receiving new data.
+     * @returns an object for property marked as "bound" or "output"
+     */
+    public getOutputs(): IOutputs {
+        return {
+            boundTextField: this._newValue,
+        };
+    }
+
+    /**
+     * Called when the control is to be removed from the DOM tree.
+     */
+    public destroy(): void {
+        // Add cleanup code if necessary
     }
 }
