@@ -1,1 +1,17 @@
+function validateFieldOnSave(executionContext) {
+    // Get the form context
+    var formContext = executionContext.getFormContext();
+
+    // Get the field value by its schema name
+    var fieldValue = formContext.getAttribute("new_customfield").getValue();
+
+    // Check if the field is empty
+    if (fieldValue === null || fieldValue === "") {
+        // Display an alert message to the user
+        Xrm.Navigation.openAlertDialog({ text: "The 'Custom Field' is required. Please fill it before saving." });
+
+        // Prevent the save operation
+        executionContext.getEventArgs().preventDefault();
+    }
+}
 
