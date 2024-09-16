@@ -7,11 +7,17 @@ function validateFieldOnSave(executionContext) {
 
     // Check if the field is empty
     if (fieldValue === null || fieldValue === "") {
-        // Display an alert message to the user
-        Xrm.Navigation.openAlertDialog({ text: "The 'Custom Field' is required. Please fill it before saving." });
+        // Display an alert dialog with title "Error" and a message
+        var alertStrings = { 
+            confirmButtonLabel: "OK", 
+            text: "The 'Custom Field' is required. Please fill it before saving.", 
+            title: "Error" 
+        };
+        var alertOptions = { height: 120, width: 260 };
+
+        Xrm.Navigation.openAlertDialog(alertStrings, alertOptions);
 
         // Prevent the save operation
         executionContext.getEventArgs().preventDefault();
     }
 }
-
