@@ -1,1 +1,242 @@
+let accountsDate;
+let apiData = [];
+
+// OnLoad function to initialize the form and show/hide fields based on conditions
+async function onLoad(executionContext) {
+    const formContext = executionContext.getFormContext();
+    await setUserLookupOnLoad(executionContext);
+
+    if (formContext.ui.getFormType() !== 1) {
+        showHidetabs(formContext, "pb_maturity_Instruction", "maturity_instruction_details", true);
+        showHidetabs(formContext, "pb_maturity_Instruction", "pb_maturity_Instruction_notes", true);
+
+        const certificateAccountTypeText = formContext.getAttribute("nf1pbm_certificateaccounttypetext").getValue();
+        const certificateAccountNumber = formContext.getAttribute("nf1pbm_certificateaccountnumber").getValue();
+
+        if (certificateAccountTypeText && certificateAccountNumber) {
+            formContext.getControl("nf1pbm_certificateaccounttypetext").setVisible(true);
+            formContext.getControl("nf1pbm_certificateaccountnumber").setVisible(true);
+            formContext.getControl("nf1pbm_accounttype").setVisible(false);
+            showHideSectionv2(formContext, "pb_maturity_Instruction", "pbm_member_accounts", true);
+            await callPowerAutomateFlow(executionContext, "Edit");
+        }
+    }
+}
+
+// Toggle field visibility on save
+function toggleFieldsOnSave(formContext) {
+    formContext.getControl("nf1pbm_certificateaccounttypetext").setVisible(true);
+    formContext.getControl("nf1pbm_certificateaccountnumber").setVisible(true);
+    formContext.getControl("nf1pbm_accounttype").setVisible(false);
+    formContext.getControl("nf1pbm_accountnumber").setVisible(false);
+}
+
+// Set user lookup field on form load
+async function setUserLookupOnLoad(executionContext) {
+    const globalContext = Xrm.Utility.getGlobalContext();
+    let userId = globalContext.userSettings.userId.replace(/[{}]/g, "");
+    const userName = globalContext.userSettings.userName;
+
+    console.log("Current User GUID: " + userId);
+    console.log("Current User Name: " + userName);
+
+    const lookupValue = [{
+        id: userId,
+        name: userName,
+        entityType: "systemuser"
+    }];
+
+    const formContext = executionContext.getFormContext();
+    const lookupFieldName = "nf1pbm_maturityinstructionuser";
+    formContext.getAttribute(lookupFieldName).setValue(lookupValue);
+}
+
+// Enable sections based on lookup change
+function enableSectionOnLookupChange(executionContext) {
+    const formContext = executionContext.getFormContext();
+    showHideSection(formContext, "nf1pbm_accounttype", "pb_maturity_Instruction", "maturity_instruction_details");
+    showHideSection(formContext, "nf1pbm_accounttype", "pb_maturity_Instruction", "pb_maturity_Instruction_notes");
+
+    const certificateAccountNumber = formContext.getAttribute("nf1pbm_certificateaccountnumber").getValue();
+    apiData.forEach(item => {
+        if (certificateAccountNumber === item.accountNumber) {
+            formContext.getAttribute("nf1pbm_maturitydate").setValue(null);
+            if (item.maturityDate) {
+                console.log("Filtered Data: " + item.maturityDate);
+                const mdate = new Date(item.maturityDate);
+                formContext.getAttribute("nf1pbm_maturitydate").setValue(mdate);
+            }
+        }
+    });
+}
+
+// Show/hide specific tabs and sections based on a flag
+function showHidetabs(formContext, tabName, sectionName, flag) {
+    const tab = formContext.ui.tabs.get(tabName);
+    if (tab) {
+        const section = tab.sections.get(sectionName);
+        if (section) {
+            section.setVisible(flag);
+        } else {
+            console.log("Section not found");
+        }
+    } else {
+        console.log("Tab not found");
+    }
+}
+
+// Show/hide sections based on lookup field value
+function showHideSection(formContext, lookupFieldName, tabName, sectionName) {
+    const lookupField = formContext.getAttribute(lookupFieldName);
+    if (lookupField) {
+        const lookupValue = lookupField.getValue();
+        const tab = formContext.ui.tabs.get(tabName);
+        if (tab) {
+            const section = tab.sections.get(sectionName);
+            if (section) {
+                section.setVisible(!!(lookupValue && lookupValue.length > 0));
+            } else {
+                console.log("Section not found");
+            }
+        } else {
+            console.log("Tab not found");
+        }
+    } else {
+        console.log("Lookup field not found");
+    }
+}
+
+// Call Power Automate Flow and handle async operations
+async function callPowerAutomateFlow(executionContext, formMode) {
+    Xrm.Utility.showProgressIndicator("Processing...");
+    const formContext = executionContext.getFormContext();
+
+    const accounttypeFieldName = "nf1pbm_accounttype";
+    const accessnumberFieldName = "nf1pbm_memberaccessnumber";
+    const certificateAffiliateAccountNumber = formContext.getAttribute("nf1pbm_affiliateaccountnumber").getValue();
+
+    const accounttype = getLookupFieldValue(formContext, accounttypeFieldName)?.id || "";
+    const accessnumber = getLookupFieldValue(formContext, accessnumberFieldName)?.id || "";
+
+    if (!accounttype || !accessnumber) {
+        Xrm.Utility.closeProgressIndicator();
+        console.error("Required lookup values missing");
+        return;
+    }
+
+    const accountsubtype = getAccountSubtype(accounttype);
+    const retrievedContact = await getContactRecordById(accessnumber);
+
+    const flowUrl = await getFlowUrl();
+    const maturityinstructionuser = Xrm.Utility.getGlobalContext().userSettings.userId.replace(/[{}]/g, "");
+
+    const data = {
+        accessnumber,
+        accounttype,
+        maturityinstructionuser,
+        accountsubtype,
+        memberaccess: retrievedContact?.nf0base_memberaccessnumber
+    };
+
+    try {
+        const response = await fetch(flowUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            throw new Error("Network response was not ok: " + response.statusText);
+        }
+
+        const responseData = await response.json();
+        apiData = responseData;
+        updateIframe(formContext, responseData, accountsubtype, formMode, certificateAffiliateAccountNumber);
+    } catch (error) {
+        console.error("Power Automate flow error: ", error);
+    } finally {
+        Xrm.Utility.closeProgressIndicator();
+        filterProductsByAccountType(formContext, accounttype);
+    }
+}
+
+// Helper function to get Flow URL from environment variables
+async function getFlowUrl() {
+    try {
+        const response = await Xrm.WebApi.online.retrieveMultipleRecords(
+            "environmentvariabledefinition",
+            "?$select=defaultvalue,displayname&$expand=environmentvariabledefinition_environmentvariablevalue($select=value)&$filter=schemaname eq 'nf1pbm_VarEnvFlowURLGetAccountRelationships'"
+        );
+        if (response.entities[0]?.environmentvariabledefinition_environmentvariablevalue.length > 0) {
+            return response.entities[0].environmentvariabledefinition_environmentvariablevalue[0].value;
+        }
+    } catch (error) {
+        console.error("Error retrieving flow URL: ", error);
+    }
+    return "";
+}
+
+// Helper function to get contact by ID
+async function getContactRecordById(contactId) {
+    try {
+        const result = await Xrm.WebApi.retrieveRecord("contact", contactId, "?$select=nf0base_memberaccessnumber");
+        return result;
+    } catch (error) {
+        console.error("Error retrieving contact: ", error);
+    }
+}
+
+// Helper to filter products based on account type
+function filterProductsByAccountType(formContext, accountType) {
+    const lookupField = "nf1pbm_certificaterenewaltype";
+    switch (accountType) {
+        case "619BDE1C-DD50-EF11-A317-000D3A1007BB":
+            filterProducts(formContext, "451130003", lookupField);
+            break;
+        case "08AC6D30-DD50-EF11-A317-000D3A1007BB":
+            filterProducts(formContext, "451130000", lookupField);
+            break;
+        case "7F5A6823-DD50-EF11-A317-000D3A1007BB":
+            filterProducts(formContext, "451130004", lookupField);
+            break;
+    }
+}
+
+// Helper to get lookup field value
+function getLookupFieldValue(formContext, lookupFieldName) {
+    const lookupField = formContext.getAttribute(lookupFieldName);
+    const lookupValue = lookupField?.getValue();
+    return lookupValue && lookupValue.length > 0 ? lookupValue[0] : null;
+}
+
+// Helper to get account subtype based on account type
+function getAccountSubtype(accountType) {
+    switch (accountType) {
+        case "619BDE1C-DD50-EF11-A317-000D3A1007BB":
+            return "SC";
+        case "08AC6D30-DD50-EF11-A317-000D3A1007BB":
+            return "IR";
+        case "7F5A6823-DD50-EF11-A317-000D3A1007BB":
+            return "ED";
+        default:
+            return "";
+    }
+}
+
+// Update iframe content
+function updateIframe(formContext, data, accountsubtype, formMode, certificateAffiliateAccountNumber) {
+    const webResourceControl = formContext.getControl("WebResource_member_accounts");
+
+    if (webResourceControl) {
+        webResourceControl.getContentWindow().then(window => {
+            window.receiveDataFromParent({
+                formContext,
+                data,
+                accountsubtype,
+                mode: formMode,
+                affiliateAcNo: certificateAffiliateAccountNumber
+            });
+        });
+    }
+}
 
