@@ -1,23 +1,97 @@
-function validateFieldOnSave(executionContext) {
-    // Get the form context
-    var formContext = executionContext.getFormContext();
+using System;
+using System.Threading.Tasks;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Logging;
+using Microsoft.PowerPlatform.Dataverse.Client;
+using Microsoft.Xrm.Sdk.Query;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Azure.Functions.Worker.Http;
 
-    // Get the field value by its schema name
-    var fieldValue = formContext.getAttribute("new_customfield").getValue();
+namespace AuthEventsTrigger2312080040006798
+{
+    public class AuthEventTrigger
+    {
+        private readonly ILogger<AuthEventTrigger> _logger;
 
-    // Check if the field is empty
-    if (fieldValue === null || fieldValue === "") {
-        // Display an alert dialog with title "Error" and a message
-        var alertStrings = { 
-            confirmButtonLabel: "OK", 
-            text: "The 'Custom Field' is required. Please fill it before saving.", 
-            title: "Error" 
-        };
-        var alertOptions = { height: 120, width: 260 };
+        public AuthEventTrigger(ILogger<AuthEventTrigger> logger)
+        {
+            _logger = logger;
+        }
 
-        Xrm.Navigation.openAlertDialog(alertStrings, alertOptions);
+        [Function("onTokenIssuanceStart")]
+        public async Task<HttpResponseData> Run([HttpTrigger(AuthorizationLevel.Function, "post", "get")] HttpRequestData req, FunctionContext executionContext)
+        {
+            var response = req.CreateResponse();
+            try
+            {
+                string crmUrl = Environment.GetEnvironmentVariable("CrmUrl") ?? string.Empty;
+                string clientId = Environment.GetEnvironmentVariable("ClientId") ?? string.Empty;
+                string clientSecret = Environment.GetEnvironmentVariable("ClientSecret") ?? string.Empty;
 
-        // Prevent the save operation
-        executionContext.getEventArgs().preventDefault();
+                string userID = "susmitha.thokala@kofc.org";
+                var conn = $@"AuthType=ClientSecret;
+                         Url={crmUrl};
+                         ClientId={clientId};
+                         ClientSecret={clientSecret}";
+
+                // Create a ServiceClient
+                var serviceClient = new ServiceClient(conn);
+
+                _logger.LogInformation("CRM Connection successful");
+
+                string userFetchXML = @"
+                           <fetch top='50'>
+                             <entity name='systemuser'>
+                              <attribute name='kofc_agentid' />                                      
+                                         <attribute name='kofc_user_ldap_id' />
+                                         <attribute name='windowsliveid' />
+                                         <attribute name='kofc_insurancerole' />
+                               <filter>
+                                 <condition attribute='windowsliveid' operator='eq' value='{0}' />
+                               </filter>
+                             </entity>
+                           </fetch>";
+
+                string updatedUserFetchXML = string.Format(userFetchXML, userID);
+                var userFetchExpression = new FetchExpression(updatedUserFetchXML);
+                EntityCollection userResult = serviceClient.RetrieveMultiple(userFetchExpression);
+
+                string windowsliveid = null;
+                if (userResult != null && userResult.Entities.Count > 0)
+                {
+                    Entity userEntity = userResult.Entities[0];
+
+                    _logger.LogInformation("kofc_insurancerole ID: " + userEntity.Attributes["kofc_insurancerole"]);
+                    windowsliveid = userEntity.Attributes["windowsliveid"].ToString();
+                }
+
+                // Example token issuance event processing (no exact WebJobsAuthenticationEvents in isolated)
+                if (!string.IsNullOrEmpty(windowsliveid))
+                {
+                    // Add claims to the token's response (simplified for the isolated model)
+                    _logger.LogInformation("Token Issuance Successful. Adding Claims.");
+
+                    // Here you would return a response containing the claims
+                    response.Headers.Add("dateOfBirth", "01/01/2000");
+                    response.Headers.Add("customRoles", "Writer,Editor");
+                    response.Headers.Add("apiVersion", "1.0.0");
+                    response.Headers.Add("loginID", windowsliveid);
+                }
+                else
+                {
+                    _logger.LogInformation("Failed to retrieve user or windowsliveid is null.");
+                    response.StatusCode = System.Net.HttpStatusCode.BadRequest;
+                    await response.WriteStringAsync("User retrieval failed.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error in processing: {ex.Message}");
+                response.StatusCode = System.Net.HttpStatusCode.InternalServerError;
+                await response.WriteStringAsync("Error: " + ex.Message);
+            }
+
+            return response;
+        }
     }
 }
