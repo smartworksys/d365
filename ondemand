@@ -1,19 +1,1 @@
 
-if (userEntity.Contains("kofc_insurancerole") && userEntity["kofc_insurancerole"] != null)
-{
-    // Cast the attribute to OptionSetValue
-    var insuranceRoleOption = userEntity.GetAttributeValue<OptionSetValue>("kofc_insurancerole");
-
-    if (insuranceRoleOption != null)
-    {
-        int insuranceRoleValue = insuranceRoleOption.Value; // Get the numeric value of the OptionSet
-        log.LogInformation("kofc_insurancerole ID: " + insuranceRoleValue.ToString());
-
-        // Optionally, retrieve the label for the option set value
-        // This would involve a separate query to retrieve the label based on the value.
-    }
-}
-else
-{
-    log.LogInformation("kofc_insurancerole is not set for this user.");
-}
