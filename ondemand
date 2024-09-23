@@ -1,1 +1,166 @@
+using System.Collections.Generic;
+
+public class Root
+{
+    public Data DATA { get; set; }
+}
+
+public class Data
+{
+    public string Illustration_System { get; set; }
+    public AgentInformation AGENTINFORMATION { get; set; }
+    public List<Person> PERSON { get; set; }
+    public List<Relation> RELATION { get; set; }
+    public CaseData CASEDATA { get; set; }
+}
+
+public class AgentInformation
+{
+    public List<string> FIRSTNAME { get; set; }
+    public List<string> MIDDLENAME { get; set; }
+    public List<string> LASTNAME { get; set; }
+    public List<string> ADDRESS1 { get; set; }
+    public List<string> ADDRESS2 { get; set; }
+    public List<string> CITY { get; set; }
+    public List<string> STATE { get; set; }
+    public List<string> ZIP { get; set; }
+    public List<string> COUNTRY { get; set; }
+    public List<string> AGENTID { get; set; }
+    public List<string> AGENCY { get; set; }
+    public List<string> GA { get; set; }
+    public List<string> AITXT1 { get; set; }
+    public List<string> AITXT2 { get; set; }
+    public List<string> AITXT3 { get; set; }
+    public List<int> AINUM1 { get; set; }
+    public List<int> AINUM2 { get; set; }
+    public List<int> AINUM3 { get; set; }
+    public List<string> AIDT1 { get; set; }
+    public List<string> AIDT2 { get; set; }
+    public List<string> AIDT3 { get; set; }
+}
+
+public class Person
+{
+    public string PERSONID { get; set; }
+    public string FIRSTNAME { get; set; }
+    public List<string> MIDDLEINITIAL { get; set; }
+    public List<string> SUFFIX { get; set; }
+    public string LASTNAME { get; set; }
+    public string CLIENTID { get; set; }
+    public string DATEOFBIRTH { get; set; }
+    public int ISSUEAGE { get; set; }
+    public string SEX { get; set; }
+    public List<string> ADDRESS1 { get; set; }
+    public List<string> ADDRESS2 { get; set; }
+    public List<string> CITY { get; set; }
+    public List<string> STATE { get; set; }
+    public List<string> ZIP { get; set; }
+    public List<string> STATEOFISSUE { get; set; }
+    public List<string> PTXT1 { get; set; }
+    public List<string> PTXT2 { get; set; }
+    public List<string> PTXT3 { get; set; }
+    public List<int> PNUM1 { get; set; }
+    public List<int> PNUM2 { get; set; }
+    public List<int> PNUM3 { get; set; }
+    public List<string> PDT1 { get; set; }
+    public List<string> PDT2 { get; set; }
+    public List<string> PDT3 { get; set; }
+}
+
+public class Relation
+{
+    public int ORIGINATINGPERSONID { get; set; }
+    public int RELATEDPERSONID { get; set; }
+    public int ROLECODE { get; set; }
+    public List<string> RTXT1 { get; set; }
+    public List<string> RTXT2 { get; set; }
+    public List<string> RTXT3 { get; set; }
+    public List<int> RNUM1 { get; set; }
+    public List<int> RNUM2 { get; set; }
+    public List<int> RNUM3 { get; set; }
+    public List<string> RDT1 { get; set; }
+    public List<string> RDT2 { get; set; }
+    public List<string> RDT3 { get; set; }
+}
+
+public class CaseData
+{
+    public string PERSONID { get; set; }
+    public string POLICYNUMBER { get; set; }
+    public string PRODUCT { get; set; }
+    public string CLASS { get; set; }
+    public string STATUS { get; set; }
+    public Rating RATING { get; set; }
+    public string WLFACEOPTION { get; set; }
+    public double WLFACEPREMAMT { get; set; }
+    public string WLPREMMODE { get; set; }
+    public string WLPAYFORM { get; set; }
+    public List<string> TERMCONVERSION { get; set; }
+    public List<string> GPOEXERCISE { get; set; }
+    public List<string> PRINT { get; set; }
+    public List<string> ADDLOANINTTOBAL { get; set; }
+    public List<string> WDRLTOLOANATCOSTBASIS { get; set; }
+    public string ISSUEDATE { get; set; }
+    public string PLANVERSIONID { get; set; }
+    public List<string> PAYMENTYEARS { get; set; }
+    public Policy POLICY { get; set; }
+    public Inforce INFORCE { get; set; }
+}
+
+public class Rating
+{
+    public List<string> TABLE1 { get; set; }
+    public List<string> FLATEXTRA1 { get; set; }
+    public List<string> FLATEXTRA1TOAGE { get; set; }
+    public double PERMANENTFLATEXTRA1 { get; set; }
+    public List<string> TABLE2 { get; set; }
+    public List<string> FLAT_EXTRA2 { get; set; }
+    public List<string> FLATEXTRA2TOAGE { get; set; }
+    public double PERMANENTFLATEXTRA2 { get; set; }
+}
+
+public class Policy
+{
+    public string CODE { get; set; }
+}
+
+public class Inforce
+{
+    public double APBCURRENTDEATHBENEFIT { get; set; }
+    public double ANNUALINCREASEAMT { get; set; }
+    public int ADDAVAILABLECONV { get; set; }
+    public double AMTAVAILABLECONV { get; set; }
+    public double PUADEATHBENEFIT { get; set; }
+    public double BASELTDPUADEPOSIT { get; set; }
+    public double BASEYTDPUADEPOSIT { get; set; }
+    public double SDPUALTDPUADEPOSIT { get; set; }
+    public double SDPUAYTDPUADEPOSIT { get; set; }
+    public double MADPUALTDPUADEPOSIT { get; set; }
+    public double MADPUAYTDPUADEPOSIT { get; set; }
+    public string DATAASOFDATE { get; set; }
+    public List<string> ISSUECLASS { get; set; }
+    public double ACCOUNTVALUE { get; set; }
+    public string PAIDTODATE { get; set; }
+    public List<string> CUMULATIVEPREMIUM { get; set; }
+    public List<string> CUMULATIVEWTHDRL { get; set; }
+    public double PUACASHVALUE { get; set; }
+    public double DIVACCUMS { get; set; }
+    public string POLICYNUMBER { get; set; }
+    public double STANDARDLOAN { get; set; }
+    public double TEN35AMT { get; set; }
+    public List<string> SLIPUADEATHBENEFIT { get; set; }
+    public List<string> SDPUADEATHBENEFIT { get; set; }
+    public double APBPUADEATHBENEFIT { get; set; }
+    public List<string> ADPUADEATHBENEFIT { get; set; }
+    public List<string> MADPUADEATHBENEFIT { get; set; }
+    public List<string> PUADEPOSITLIMIT { get; set; }
+    public List<string> LIFETODATEPUADEPOSIT { get; set; }
+    public List<string> DBPURCHASEBYPUARIDERDIVS { get; set; }
+    public string G7PAYSTARTDATE { get; set; }
+    public double G7PAYANNUALPREMIUM { get; set; }
+    public double G7PAYPREMIUMPAID { get; set; }
+    public List<string> CVASOFLASTMATCHANGE { get; set; }
+    public string MEC { get; set; }
+    public string EXEMPT { get; set; }
+}
 
