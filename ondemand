@@ -1,2 +1,252 @@
-jsonData = jsonData.Replace(": []", ": \"\"");
+using System.Collections.Generic;
 
+namespace MyFunctionApp.Models
+{
+    public class ApiResponse
+    {
+        public string Illustration_System { get; set; }
+        public AgentInformation AGENTINFORMATION { get; set; }
+        public List<Person> PERSON { get; set; }
+        public List<Relation> RELATION { get; set; }
+        public CaseData CASEDATA { get; set; }
+    }
+
+    public class AgentInformation
+    {
+        public string[] FIRSTNAME { get; set; }
+        public string[] MIDDLENAME { get; set; }
+        public string[] LASTNAME { get; set; }
+        public string[] ADDRESS1 { get; set; }
+        public string[] ADDRESS2 { get; set; }
+        public string[] CITY { get; set; }
+        public string[] STATE { get; set; }
+        public string[] ZIP { get; set; }
+        public string[] COUNTRY { get; set; }
+        public string[] AGENTID { get; set; }
+        public string[] AGENCY { get; set; }
+        public string[] GA { get; set; }
+        public string[] AITXT1 { get; set; }
+        public string[] AITXT2 { get; set; }
+        public string[] AITXT3 { get; set; }
+        public string[] AINUM1 { get; set; }
+        public string[] AINUM2 { get; set; }
+        public string[] AINUM3 { get; set; }
+        public string[] AIDT1 { get; set; }
+        public string[] AIDT2 { get; set; }
+        public string[] AIDT3 { get; set; }
+    }
+
+    public class Person
+    {
+        public string PERSONID { get; set; }
+        public string FIRSTNAME { get; set; }
+        public string MIDDLEINITIAL { get; set; }
+        public string LASTNAME { get; set; }
+        public string CLIENTID { get; set; }
+        public string DATEOFBIRTH { get; set; }
+        public int ISSUEAGE { get; set; }
+        public string SEX { get; set; }
+    }
+
+    public class Relation
+    {
+        public int ORIGINATINGPERSONID { get; set; }
+        public int RELATEDPERSONID { get; set; }
+        public int ROLECODE { get; set; }
+        public string[] RTXT1 { get; set; }
+        public string[] RNUM1 { get; set; }
+        public string[] RDT1 { get; set; }
+    }
+
+    public class CaseData
+    {
+        public string PERSONID { get; set; }
+        public string POLICYNUMBER { get; set; }
+        public string PRODUCT { get; set; }
+        public string CLASS { get; set; }
+        public string STATUS { get; set; }
+        public Rating RATING { get; set; }
+        public Inforce INFORCE { get; set; }
+        public List<Rider> RIDER { get; set; }
+    }
+
+    public class Rating
+    {
+        public string[] TABLE1 { get; set; }
+        public string[] FLATEXTRA1 { get; set; }
+        public string[] FLATEXTRA1TOAGE { get; set; }
+        public string[] PERMANENTFLATEXTRA1 { get; set; }
+        public string[] TABLE2 { get; set; }
+        public string[] FLATEXTRA2 { get; set; }
+        public string[] FLATEXTRA2TOAGE { get; set; }
+        public decimal PERMANENTFLATEXTRA2 { get; set; }
+    }
+
+    public class Rider
+    {
+        public string PERSONID { get; set; }
+        public string CODE { get; set; }
+        public string CLASS { get; set; }
+        public string SEX { get; set; }
+        public decimal AMOUNT { get; set; }
+        public decimal UNITS { get; set; }
+        public int ISSAGE { get; set; }
+        public string CVGDIVOPT { get; set; }
+        public decimal CVGPREM { get; set; }
+        public Rating RATING { get; set; }
+    }
+
+    public class Inforce
+    {
+        public decimal APBCURRENTDEATHBENEFIT { get; set; }
+        public decimal PUACASHVALUE { get; set; }
+        public string POLICYNUMBER { get; set; }
+        public decimal STANDARDLOAN { get; set; }
+    }
+}
+
+using System.Linq;
+using System.Xml.Linq;
+using MyFunctionApp.Models;
+
+namespace MyFunctionApp.Helpers
+{
+    public static class JsonToXmlConverter
+    {
+        public static XDocument Convert(ApiResponse apiResponse)
+        {
+            var xmlDoc = new XDocument(
+                new XDeclaration("1.0", "UTF-8", "yes"),
+                new XElement("FIPSCOLINKFILE",
+                    new XAttribute("VERSION", "1.00"),
+                    // Add Illustration_System at the beginning of the document
+                    new XElement("Illustration_System", apiResponse.Illustration_System),
+                    new XElement("DATA",
+                        new XElement("AGENTINFORMATION",
+                            new XElement("FIRSTNAME", apiResponse.AGENTINFORMATION?.FIRSTNAME?[0]),
+                            new XElement("MIDDLENAME", apiResponse.AGENTINFORMATION?.MIDDLENAME?[0]),
+                            new XElement("LASTNAME", apiResponse.AGENTINFORMATION?.LASTNAME?[0]),
+                            new XElement("ADDRESS1", apiResponse.AGENTINFORMATION?.ADDRESS1?[0]),
+                            new XElement("CITY", apiResponse.AGENTINFORMATION?.CITY?[0]),
+                            new XElement("STATE", apiResponse.AGENTINFORMATION?.STATE?[0]),
+                            new XElement("ZIP", apiResponse.AGENTINFORMATION?.ZIP?[0])
+                        ),
+                        // Handle PERSON array and sort by PERSONID
+                        new XElement("PERSONS",
+                            from person in apiResponse.PERSON.OrderBy(p => int.Parse(p.PERSONID))
+                            select new XElement("PERSON",
+                                new XAttribute("PERSONID", person.PERSONID),
+                                new XElement("FIRSTNAME", person.FIRSTNAME),
+                                new XElement("MIDDLEINITIAL", person.MIDDLEINITIAL),
+                                new XElement("LASTNAME", person.LASTNAME),
+                                new XElement("CLIENTID", person.CLIENTID),
+                                new XElement("DATEOFBIRTH", person.DATEOFBIRTH),
+                                new XElement("ISSUEAGE", person.ISSUEAGE),
+                                new XElement("SEX", person.SEX)
+                            )
+                        ),
+                        // Handle RELATION array
+                        new XElement("RELATIONS",
+                            from relation in apiResponse.RELATION
+                            select new XElement("RELATION",
+                                new XElement("ORIGINATINGPERSONID", relation.ORIGINATINGPERSONID),
+                                new XElement("RELATEDPERSONID", relation.RELATEDPERSONID),
+                                new XElement("ROLECODE", relation.ROLECODE),
+                                new XElement("RTXT1", relation.RTXT1?[0]),
+                                new XElement("RNUM1", relation.RNUM1?[0]),
+                                new XElement("RDT1", relation.RDT1?[0])
+                            )
+                        ),
+                        new XElement("CASEDATA",
+                            new XAttribute("PERSONID", apiResponse.CASEDATA?.PERSONID),
+                            new XElement("POLICYNUMBER", apiResponse.CASEDATA?.POLICYNUMBER),
+                            new XElement("PRODUCT", apiResponse.CASEDATA?.PRODUCT),
+                            new XElement("CLASS", apiResponse.CASEDATA?.CLASS),
+                            new XElement("STATUS", apiResponse.CASEDATA?.STATUS),
+                            new XElement("RATING",
+                                new XElement("TABLE1", apiResponse.CASEDATA?.RATING?.TABLE1?[0]),
+                                new XElement("FLATEXTRA1", apiResponse.CASEDATA?.RATING?.FLATEXTRA1?[0]),
+                                new XElement("FLATEXTRA1TOAGE", apiResponse.CASEDATA?.RATING?.FLATEXTRA1TOAGE?[0]),
+                                new XElement("PERMANENTFLATEXTRA1", apiResponse.CASEDATA?.RATING?.PERMANENTFLATEXTRA1?[0])
+                            ),
+                            new XElement("INFORCE",
+                                new XElement("APBCURRENTDEATHBENEFIT", apiResponse.CASEDATA?.INFORCE?.APBCURRENTDEATHBENEFIT),
+                                new XElement("PUACASHVALUE", apiResponse.CASEDATA?.INFORCE?.PUACASHVALUE),
+                                new XElement("POLICYNUMBER", apiResponse.CASEDATA?.INFORCE?.POLICYNUMBER),
+                                new XElement("STANDARDLOAN", apiResponse.CASEDATA?.INFORCE?.STANDARDLOAN)
+                            ),
+                            // Handle RIDER array inside CASEDATA
+                            new XElement("RIDERS",
+                                from rider in apiResponse.CASEDATA.RIDER
+                                select new XElement("RIDER",
+                                    new XAttribute("PERSONID", rider.PERSONID),
+                                    new XElement("CODE", rider.CODE),
+                                    new XElement("CLASS", rider.CLASS),
+                                    new XElement("SEX", rider.SEX),
+                                    new XElement("AMOUNT", rider.AMOUNT),
+                                    new XElement("UNITS", rider.UNITS),
+                                    new XElement("ISSAGE", rider.ISSAGE),
+                                    new XElement("CVGDIVOPT", rider.CVGDIVOPT),
+                                    new XElement("CVGPREM", rider.CVGPREM),
+                                    new XElement("RATING",
+                                        new XElement("TABLE1", rider.RATING?.TABLE1?[0]),
+                                        new XElement("TEMPORARYFLATEXTRA", rider.RATING?.TEMPORARYFLATEXTRA?[0]),
+                                        new XElement("TEMPORARYFLATTOAGE", rider.RATING?.TEMPORARYFLATTOAGE)
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            );
+
+            return xmlDoc;
+        }
+    }
+}
+
+using System.IO;
+using System.Net.Http;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using MyFunctionApp.Models;
+using MyFunctionApp.Helpers;
+using System.Xml.Linq;
+
+namespace MyFunctionApp.Functions
+{
+    public static class JsonToXmlFunction
+    {
+        private static readonly HttpClient HttpClient = new HttpClient();
+
+        [FunctionName("JsonToXmlFunction")]
+        public static async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation("C# HTTP trigger function to convert JSON to XML started.");
+
+            // Read incoming JSON from request body
+            string requestBody = await new StreamReader(req.Body).ReadToEndAsync();
+
+            // Deserialize the incoming JSON string to ApiResponse object
+            ApiResponse apiResponse = JsonConvert.DeserializeObject<ApiResponse>(requestBody);
+
+            // Convert the ApiResponse object to XML using the helper class
+            XDocument xmlDocument = JsonToXmlConverter.Convert(apiResponse);
+
+            // Return the XML as the HTTP response
+            return new ContentResult
+            {
+                Content = xmlDocument.ToString(),
+                ContentType = "application/xml",
+                StatusCode = 200
+            };
+        }
+    }
+}
