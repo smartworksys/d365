@@ -1,1 +1,559 @@
+using System;
+using System.Collections.Generic;
+using System.Xml.Serialization;
 
+[XmlRoot(ElementName = "FIPSCOLINKFILE")]
+public class FipsColinkFile
+{
+    [XmlElement(ElementName = "DATA")]
+    public Data Data { get; set; }
+
+    [XmlAttribute(AttributeName = "VERSION")]
+    public string Version { get; set; }
+}
+
+public class Data
+{
+    [XmlElement(ElementName = "AGENTINFORMATION")]
+    public AgentInformation AgentInformation { get; set; }
+
+    [XmlElement(ElementName = "PERSON")]
+    public List<Person> Persons { get; set; }
+
+    [XmlElement(ElementName = "RELATION")]
+    public List<Relation> Relations { get; set; }
+
+    [XmlElement(ElementName = "CASEDATA")]
+    public List<CaseData> CaseDataList { get; set; }
+}
+
+public class AgentInformation
+{
+    [XmlElement(ElementName = "FIRSTNAME")]
+    public string FirstName { get; set; }
+
+    [XmlElement(ElementName = "MIDDLENAME")]
+    public string MiddleName { get; set; }
+
+    [XmlElement(ElementName = "LASTNAME")]
+    public string LastName { get; set; }
+
+    [XmlElement(ElementName = "ADDRESS1")]
+    public string Address1 { get; set; }
+
+    [XmlElement(ElementName = "ADDRESS2")]
+    public string Address2 { get; set; }
+
+    [XmlElement(ElementName = "CITY")]
+    public string City { get; set; }
+
+    [XmlElement(ElementName = "STATE")]
+    public string State { get; set; }
+
+    [XmlElement(ElementName = "ZIP")]
+    public string Zip { get; set; }
+
+    [XmlElement(ElementName = "COUNTRY")]
+    public string Country { get; set; }
+
+    [XmlElement(ElementName = "AGENTID")]
+    public string AgentId { get; set; }
+
+    [XmlElement(ElementName = "AGENCY")]
+    public string Agency { get; set; }
+
+    [XmlElement(ElementName = "GA")]
+    public string GA { get; set; }
+
+    [XmlElement(ElementName = "AITXT1")]
+    public string AITxt1 { get; set; }
+
+    [XmlElement(ElementName = "AITXT2")]
+    public string AITxt2 { get; set; }
+
+    [XmlElement(ElementName = "AITXT3")]
+    public string AITxt3 { get; set; }
+
+    [XmlElement(ElementName = "AINUM1")]
+    public string AINum1 { get; set; }
+
+    [XmlElement(ElementName = "AINUM2")]
+    public string AINum2 { get; set; }
+
+    [XmlElement(ElementName = "AINUM3")]
+    public string AINum3 { get; set; }
+
+    [XmlElement(ElementName = "AIDT1")]
+    public string AIDT1 { get; set; }
+
+    [XmlElement(ElementName = "AIDT2")]
+    public string AIDT2 { get; set; }
+
+    [XmlElement(ElementName = "AIDT3")]
+    public string AIDT3 { get; set; }
+}
+
+public class Person
+{
+    [XmlAttribute(AttributeName = "PERSONID")]
+    public string PersonId { get; set; }
+
+    [XmlElement(ElementName = "FIRSTNAME")]
+    public string FirstName { get; set; }
+
+    [XmlElement(ElementName = "MIDDLEINITIAL")]
+    public string MiddleInitial { get; set; }
+
+    [XmlElement(ElementName = "SUFFIX")]
+    public string Suffix { get; set; }
+
+    [XmlElement(ElementName = "LASTNAME")]
+    public string LastName { get; set; }
+
+    [XmlElement(ElementName = "CLIENTID")]
+    public string ClientId { get; set; }
+
+    [XmlElement(ElementName = "MEMBERCOUNCIL")]
+    public string MemberCouncil { get; set; }
+
+    [XmlElement(ElementName = "MEMBERSTATUS")]
+    public string MemberStatus { get; set; }
+
+    [XmlElement(ElementName = "INACTIVEFEEIND")]
+    public string InactiveFeeInd { get; set; }
+
+    [XmlElement(ElementName = "ADDRESS1")]
+    public string Address1 { get; set; }
+
+    [XmlElement(ElementName = "ADDRESS2")]
+    public string Address2 { get; set; }
+
+    [XmlElement(ElementName = "CITY")]
+    public string City { get; set; }
+
+    [XmlElement(ElementName = "STATE")]
+    public string State { get; set; }
+
+    [XmlElement(ElementName = "ZIP")]
+    public string Zip { get; set; }
+
+    [XmlElement(ElementName = "STATEOFISSUE")]
+    public string StateOfIssue { get; set; }
+
+    [XmlElement(ElementName = "DATEOFBIRTH")]
+    public string DateOfBirth { get; set; }
+
+    [XmlElement(ElementName = "ISSUEAGE")]
+    public string IssueAge { get; set; }
+
+    [XmlElement(ElementName = "SEX")]
+    public string Sex { get; set; }
+
+    [XmlElement(ElementName = "PTXT1")]
+    public string PTxt1 { get; set; }
+
+    [XmlElement(ElementName = "PTXT2")]
+    public string PTxt2 { get; set; }
+
+    [XmlElement(ElementName = "PTXT3")]
+    public string PTxt3 { get; set; }
+
+    [XmlElement(ElementName = "PNUM1")]
+    public string PNum1 { get; set; }
+
+    [XmlElement(ElementName = "PNUM2")]
+    public string PNum2 { get; set; }
+
+    [XmlElement(ElementName = "PNUM3")]
+    public string PNum3 { get; set; }
+
+    [XmlElement(ElementName = "PDT1")]
+    public string PDT1 { get; set; }
+
+    [XmlElement(ElementName = "PDT2")]
+    public string PDT2 { get; set; }
+
+    [XmlElement(ElementName = "PDT3")]
+    public string PDT3 { get; set; }
+}
+
+public class Relation
+{
+    [XmlElement(ElementName = "ORIGINATINGPERSONID")]
+    public string OriginatingPersonId { get; set; }
+
+    [XmlElement(ElementName = "RELATEDPERSONID")]
+    public string RelatedPersonId { get; set; }
+
+    [XmlElement(ElementName = "ROLECODE")]
+    public string RoleCode { get; set; }
+
+    [XmlElement(ElementName = "RTXT1")]
+    public string RTxt1 { get; set; }
+
+    [XmlElement(ElementName = "RTXT2")]
+    public string RTxt2 { get; set; }
+
+    [XmlElement(ElementName = "RTXT3")]
+    public string RTxt3 { get; set; }
+
+    [XmlElement(ElementName = "RNUM1")]
+    public string RNum1 { get; set; }
+
+    [XmlElement(ElementName = "RNUM2")]
+    public string RNum2 { get; set; }
+
+    [XmlElement(ElementName = "RNUM3")]
+    public string RNum3 { get; set; }
+
+    [XmlElement(ElementName = "RDT1")]
+    public string RDT1 { get; set; }
+
+    [XmlElement(ElementName = "RDT2")]
+    public string RDT2 { get; set; }
+
+    [XmlElement(ElementName = "RDT3")]
+    public string RDT3 { get; set; }
+}
+
+public class CaseData
+{
+    [XmlAttribute(AttributeName = "PERSONID")]
+    public string PersonId { get; set; }
+
+    [XmlElement(ElementName = "POLICYNUMBER")]
+    public string PolicyNumber { get; set; }
+
+    [XmlElement(ElementName = "PRODUCT")]
+    public string Product { get; set; }
+
+    [XmlElement(ElementName = "CLASS")]
+    public string Class { get; set; }
+
+    [XmlElement(ElementName = "STATUS")]
+    public string Status { get; set; }
+
+    [XmlElement(ElementName = "RATING")]
+    public Rating Rating { get; set; }
+
+    [XmlElement(ElementName = "WLFACEOPTION")]
+    public string WLFaceOption { get; set; }
+
+    [XmlElement(ElementName = "WLFACEPREMAMT")]
+    public decimal WLFacePremAmt { get; set; }
+
+    [XmlElement(ElementName = "WLPREMMODE")]
+    public string WLPremMode { get; set; }
+
+    [XmlElement(ElementName = "WLPAYFORM")]
+    public string WLPayForm { get; set; }
+
+    [XmlElement(ElementName = "TERMCONVERSION")]
+    public string TermConversion { get; set; }
+
+    [XmlElement(ElementName = "GPOEXERCISE")]
+    public string GpoExercise { get; set; }
+
+    [XmlElement(ElementName = "PRINT")]
+    public string Print { get; set; }
+
+    [XmlElement(ElementName = "ADDLOANINTTOBAL")]
+    public string AddLoanIntToBal { get; set; }
+
+    [XmlElement(ElementName = "WDRLTOLOANATCOSTBASIS")]
+    public string WdrlToLoanAtCostBasis { get; set; }
+
+    [XmlElement(ElementName = "ISSUEDATE")]
+    public string IssueDate { get; set; }
+
+    [XmlElement(ElementName = "PLANVERSIONID")]
+    public string PlanVersionId { get; set; }
+
+    [XmlElement(ElementName = "PAYMENTYEARS")]
+    public string PaymentYears { get; set; }
+
+    [XmlElement(ElementName = "CTXT3")]
+    public string Ctxt3 { get; set; }
+
+    [XmlElement(ElementName = "CNUM1")]
+    public string Cnum1 { get; set; }
+
+    [XmlElement(ElementName = "CNUM2")]
+    public string Cnum2 { get; set; }
+
+    [XmlElement(ElementName = "CNUM3")]
+    public string Cnum3 { get; set; }
+
+    [XmlElement(ElementName = "CDT1")]
+    public string CDT1 { get; set; }
+
+    [XmlElement(ElementName = "CDT2")]
+    public string CDT2 { get; set; }
+
+    [XmlElement(ElementName = "CDT3")]
+    public string CDT3 { get; set; }
+
+    [XmlElement(ElementName = "POLICY")]
+    public List<Policy> Policies { get; set; }
+
+    [XmlElement(ElementName = "INFORCE")]
+    public Inforce Inforce { get; set; }
+
+    [XmlElement(ElementName = "RIDER")]
+    public List<Rider> Riders { get; set; }
+}
+
+public class Rating
+{
+    [XmlElement(ElementName = "TABLE1")]
+    public string Table1 { get; set; }
+
+    [XmlElement(ElementName = "FLATEXTRA1")]
+    public string FlatExtra1 { get; set; }
+
+    [XmlElement(ElementName = "FLATEXTRA1TOAGE")]
+    public string FlatExtra1ToAge { get; set; }
+
+    [XmlElement(ElementName = "PERMANENTFLATEXTRA1")]
+    public string PermanentFlatExtra1 { get; set; }
+
+    [XmlElement(ElementName = "TABLE2")]
+    public string Table2 { get; set; }
+
+    [XmlElement(ElementName = "FLATEXTRA2")]
+    public string FlatExtra2 { get; set; }
+
+    [XmlElement(ElementName = "FLATEXTRA2TOAGE")]
+    public string FlatExtra2ToAge { get; set; }
+
+    [XmlElement(ElementName = "PERMANENTFLATEXTRA2")]
+    public string PermanentFlatExtra2 { get; set; }
+}
+
+public class Policy
+{
+    [XmlAttribute(AttributeName = "TYPE")]
+    public string Type { get; set; }
+
+    [XmlElement(ElementName = "CODE")]
+    public string Code { get; set; }
+}
+
+public class Inforce
+{
+    [XmlElement(ElementName = "APBCURRENTDEATHBENEFIT")]
+    public decimal APBCurrentDeathBenefit { get; set; }
+
+    [XmlElement(ElementName = "ANNUALINCREASEAMT")]
+    public decimal AnnualIncreaseAmt { get; set; }
+
+    [XmlElement(ElementName = "ADDAVAILABLECONV")]
+    public decimal AddAvailableConv { get; set; }
+
+    [XmlElement(ElementName = "AMTAVAILABLECONV")]
+    public decimal AmtAvailableConv { get; set; }
+
+    [XmlElement(ElementName = "PUADEATHBENEFIT")]
+    public decimal PUADeathBenefit { get; set; }
+
+    [XmlElement(ElementName = "BASELTDPUADEPOSIT")]
+    public decimal BaseLTDPUADeposit { get; set; }
+
+    [XmlElement(ElementName = "BASEYTDPUADEPOSIT")]
+    public decimal BaseYTDPUADeposit { get; set; }
+
+    [XmlElement(ElementName = "SDPUALTDPUADEPOSIT")]
+    public decimal SDPUALTDPUADeposit { get; set; }
+
+    [XmlElement(ElementName = "SDPUAYTDPUADEPOSIT")]
+    public decimal SDPUAYTDPUADeposit { get; set; }
+
+    [XmlElement(ElementName = "MADPUALTDPUADEPOSIT")]
+    public decimal MADPUALTDPUADeposit { get; set; }
+
+    [XmlElement(ElementName = "MADPUAYTDPUADEPOSIT")]
+    public decimal MADPUAYTDPUADeposit { get; set; }
+
+    [XmlElement(ElementName = "DATAASOFDATE")]
+    public string DataAsOfDate { get; set; }
+
+    [XmlElement(ElementName = "ISSUECLASS")]
+    public string IssueClass { get; set; }
+
+    [XmlElement(ElementName = "ACCOUNTVALUE")]
+    public decimal AccountValue { get; set; }
+
+    [XmlElement(ElementName = "PAIDTODATE")]
+    public string PaidToDate { get; set; }
+
+    [XmlElement(ElementName = "CUMULATIVEPREMIUM")]
+    public decimal CumulativePremium { get; set; }
+
+    [XmlElement(ElementName = "CUMULATIVEWTHDRL")]
+    public decimal CumulativeWithdrawal { get; set; }
+
+    [XmlElement(ElementName = "PUACASHVALUE")]
+    public decimal PUACashValue { get; set; }
+
+    [XmlElement(ElementName = "DIVACCUMS")]
+    public decimal DivAccums { get; set; }
+
+    [XmlElement(ElementName = "POLICYNUMBER")]
+    public string PolicyNumber { get; set; }
+
+    [XmlElement(ElementName = "STANDARDLOAN")]
+    public decimal StandardLoan { get; set; }
+
+    [XmlElement(ElementName = "TEN35AMT")]
+    public decimal Ten35Amt { get; set; }
+
+    [XmlElement(ElementName = "SLIPUADEATHBENEFIT")]
+    public decimal SlipUADeathBenefit { get; set; }
+
+    [XmlElement(ElementName = "APBPUADEATHBENEFIT")]
+    public decimal APBPUADeathBenefit { get; set; }
+
+    [XmlElement(ElementName = "SDPUADEATHBENEFIT")]
+    public decimal SDPUADeathBenefit { get; set; }
+
+    [XmlElement(ElementName = "ADPUADEATHBENEFIT")]
+    public decimal ADPUADeathBenefit { get; set; }
+
+    [XmlElement(ElementName = "MADPUADEATHBENEFIT")]
+    public decimal MADPUADeathBenefit { get; set; }
+
+    [XmlElement(ElementName = "PUADEPOSITLIMIT")]
+    public decimal PUA_DEPOSIT_LIMIT { get; set; }
+
+    [XmlElement(ElementName = "LIFETODATEPUADEPOSIT")]
+    public decimal LifeToDatePUADeposit { get; set; }
+
+    [XmlElement(ElementName = "DBPURCHASEBYPUARIDERDIVS")]
+    public decimal DBPurchaseByPUARiderDivs { get; set; }
+
+    [XmlElement(ElementName = "G7PAYSTARTDATE")]
+    public string G7PayStartDate { get; set; }
+
+    [XmlElement(ElementName = "G7PAYANNUALPREMIUM")]
+    public decimal G7PayAnnualPremium { get; set; }
+
+    [XmlElement(ElementName = "G7PAYPREMIUMPAID")]
+    public decimal G7PayPremiumPaid { get; set; }
+
+    [XmlElement(ElementName = "CVASOFLASTMATCHANGE")]
+    public decimal CVAsOfLastMatchChange { get; set; }
+
+    [XmlElement(ElementName = "MEC")]
+    public string MEC { get; set; }
+
+    [XmlElement(ElementName = "EXEMPT")]
+    public string Exempt { get; set; }
+}
+
+public class Rider
+{
+    [XmlAttribute(AttributeName = "PERSONID")]
+    public string PersonId { get; set; }
+
+    [XmlElement(ElementName = "CODE")]
+    public string Code { get; set; }
+
+    [XmlElement(ElementName = "CLASS")]
+    public string Class { get; set; }
+
+    [XmlElement(ElementName = "SEX")]
+    public string Sex { get; set; }
+
+    [XmlElement(ElementName = "AMOUNT")]
+    public decimal Amount { get; set; }
+
+    [XmlElement(ElementName = "UNITS")]
+    public decimal Units { get; set; }
+
+    [XmlElement(ElementName = "ISSAGE")]
+    public int IssAge { get; set; }
+
+    [XmlElement(ElementName = "CVGDIVOPT")]
+    public string CVGDivOpt { get; set; }
+
+    [XmlElement(ElementName = "CVGDIVACCUMS")]
+    public decimal CVGDivAccums { get; set; }
+
+    [XmlElement(ElementName = "CVGPREM")]
+    public decimal CVGPrem { get; set; }
+
+    [XmlElement(ElementName = "RATING")]
+    public Rating Rating { get; set; }
+
+    [XmlElement(ElementName = "TBROYTFACEAMOUNT")]
+    public decimal TBROytFaceAmount { get; set; }
+
+    [XmlElement(ElementName = "TBRSPECIFIEDWAIVEDPREMIUM")]
+    public decimal TBRSpecifiedWaivedPremium { get; set; }
+
+    [XmlElement(ElementName = "TBRPUAEARNEDFACE")]
+    public decimal TBRPUAEarnedFace { get; set; }
+
+    [XmlElement(ElementName = "TBRPUAYTDFACE")]
+    public decimal TBRPUAYTDFace { get; set; }
+
+    [XmlElement(ElementName = "TBRPUAYTDSURRENDERAMT")]
+    public decimal TBRPUAYTDSurrenderAmt { get; set; }
+
+    [XmlElement(ElementName = "FIXEDPREMIUMOVERRIDEDATE")]
+    public string FixedPremiumOverrideDate { get; set; }
+
+    [XmlElement(ElementName = "TBRPUASPURCHASEDBYDIVSLTD")]
+    public decimal TBRPUAsPurchasedByDivsLtd { get; set; }
+
+    [XmlElement(ElementName = "TBRPUASPURCHASEDBYDIVSYTD")]
+    public decimal TBRPUAsPurchasedByDivsYTD { get; set; }
+
+    [XmlElement(ElementName = "TBRNEXTANNUALPREMIUM")]
+    public decimal TBRNextAnnualPremium { get; set; }
+
+    [XmlElement(ElementName = "TBRPOLPREVDIVDUR")]
+    public string TBRPolPrevDivDur { get; set; }
+
+    [XmlElement(ElementName = "TBRNEXTANNVDIVDUR")]
+    public string TBRNextAnnVDivDur { get; set; }
+
+    [XmlElement(ElementName = "TBRANNUALPREMIUM")]
+    public decimal TBRAnnualPremium { get; set; }
+
+    [XmlElement(ElementName = "TBRDURATION")]
+    public decimal TBRDuration { get; set; }
+
+    [XmlElement(ElementName = "RIDERSTATUS")]
+    public string RiderStatus { get; set; }
+
+    [XmlElement(ElementName = "TBRPREMIUMPUAS")]
+    public decimal TBRPremiumPUAs { get; set; }
+
+    [XmlElement(ElementName = "RDTXT1")]
+    public string RDTxt1 { get; set; }
+
+    [XmlElement(ElementName = "RDTXT2")]
+    public string RDTxt2 { get; set; }
+
+    [XmlElement(ElementName = "RDTXT3")]
+    public string RDTxt3 { get; set; }
+
+    [XmlElement(ElementName = "RDNUM1")]
+    public decimal RDNum1 { get; set; }
+
+    [XmlElement(ElementName = "RDNUM2")]
+    public decimal RDNum2 { get; set; }
+
+    [XmlElement(ElementName = "RDNUM3")]
+    public decimal RDNum3 { get; set; }
+
+    [XmlElement(ElementName = "RDDT1")]
+    public string RDDT1 { get; set; }
+
+    [XmlElement(ElementName = "RDDT2")]
+    public string RDDT2 { get; set; }
+
+    [XmlElement(ElementName = "RDDT3")]
+    public string RDDT3 { get; set; }
+}
