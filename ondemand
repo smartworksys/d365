@@ -1,1 +1,273 @@
+using System;
+using System.Linq;
+using Newtonsoft.Json.Linq;
+using System.Xml.Linq;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        string json = @"
+        {
+            ""DATA"": {
+                ""Illustration_System"": ""Navigator"",
+                ""AGENTINFORMATION"": {
+                    ""FIRSTNAME"": [],
+                    ""MIDDLENAME"": [],
+                    ""LASTNAME"": [],
+                    ""ADDRESS1"": [],
+                    ""ADDRESS2"": [],
+                    ""CITY"": [],
+                    ""STATE"": [],
+                    ""ZIP"": [],
+                    ""COUNTRY"": [],
+                    ""AGENTID"": [],
+                    ""AGENCY"": [],
+                    ""GA"": [],
+                    ""AITXT1"": [],
+                    ""AITXT2"": [],
+                    ""AITXT3"": [],
+                    ""AINUM1"": [],
+                    ""AINUM2"": [],
+                    ""AINUM3"": [],
+                    ""AIDT1"": [],
+                    ""AIDT2"": [],
+                    ""AIDT3"": []
+                },
+                ""PERSON"": [
+                    {
+                        ""@PERSONID"": ""2"",
+                        ""FIRSTNAME"": ""Alyson"",
+                        ""MIDDLEINITIAL"": [],
+                        ""LASTNAME"": ""Pfeiffer"",
+                        ""CLIENTID"": ""0066939017"",
+                        ""DATEOFBIRTH"": ""19800429"",
+                        ""ISSUEAGE"": 40,
+                        ""SEX"": ""Female""
+                    },
+                    {
+                        ""@PERSONID"": ""1"",
+                        ""FIRSTNAME"": ""John"",
+                        ""MIDDLEINITIAL"": ""S"",
+                        ""SUFFIX"": [],
+                        ""LASTNAME"": ""Pfeiffer"",
+                        ""CLIENTID"": ""002671360C"",
+                        ""MEMBERCOUNCIL"": ""04907"",
+                        ""MEMBERSTATUS"": ""Insurance"",
+                        ""INACTIVEFEEIND"": 0,
+                        ""ADDRESS1"": ""42 Appleby Ave"",
+                        ""ADDRESS2"": [],
+                        ""CITY"": ""Spotswood"",
+                        ""STATE"": ""NJ"",
+                        ""ZIP"": ""08884 1120"",
+                        ""STATEOFISSUE"": ""NJ"",
+                        ""DATEOFBIRTH"": ""19730911"",
+                        ""ISSUE_AGE"": 40,
+                        ""SEX"": ""Male""
+                    }
+                ],
+                ""RELATION"": [
+                    {
+                        ""ORIGINATINGPERSONID"": 1,
+                        ""RELATEDPERSONID"": 2,
+                        ""ROLECODE"": 1
+                    },
+                    {
+                        ""ORIGINATINGPERSONID"": 2,
+                        ""RELATEDPERSONID"": 1,
+                        ""ROLECODE"": 1
+                    }
+                ],
+                ""CASEDATA"": {
+                    ""@PERSONID"": ""1"",
+                    ""POLICYNUMBER"": ""0104410069"",
+                    ""PRODUCT"": ""801UX"",
+                    ""CLASS"": ""Non-Tobacco"",
+                    ""STATUS"": ""Premium Paying"",
+                    ""RATING"": {
+                        ""TABLE1"": [],
+                        ""FLATEXTRA1"": [],
+                        ""FLATEXTRA1TOAGE"": [],
+                        ""PERMANENTFLATEXTRA1"": [],
+                        ""TABLE2"": [],
+                        ""FLAT_EXTRA2"": [],
+                        ""FLATEXTRA2TOAGE"": [],
+                        ""PERMANENTFLATEXTRA2"": 0.0
+                    },
+                    ""WLFACEOPTION"": ""INPFACE"",
+                    ""WLFACEPREMAMT"": 100000.0,
+                    ""WLPREMMODE"": ""Quarterly"",
+                    ""WLPAYFORM"": ""Direct Bill"",
+                    ""ISSUEDATE"": ""20140128"",
+                    ""PLANVERSIONID"": ""XX"",
+                    ""POLICY"": {
+                        ""CODE"": ""Purchase PUA""
+                    },
+                    ""INFORCE"": {
+                        ""APBCURRENTDEATHBENEFIT"": 0,
+                        ""ANNUALINCREASEAMT"": 0,
+                        ""PUADEATHBENEFIT"": 978.76,
+                        ""ACCOUNTVALUE"": 986.92,
+                        ""PAIDTODATE"": ""20240728"",
+                        ""PUACASHVALUE"": 188.73,
+                        ""POLICYNUMBER"": ""0104410069"",
+                        ""STANDARDLOAN"": 10899.36
+                    }
+                },
+                ""RIDER"": [
+                    {
+                        ""@PERSONID"": ""1"",
+                        ""CODE"": ""TIADBU"",
+                        ""CLASS"": ""Non-Tobacco"",
+                        ""SEX"": ""Male"",
+                        ""AMOUNT"": 0,
+                        ""UNITS"": 0.0,
+                        ""ISSAGE"": 40,
+                        ""CVGDIVOPT"": ""Purchase PUA"",
+                        ""CVGPREM"": 0.0,
+                        ""RATING"": {
+                            ""TABLE"": ""1"",
+                            ""TEMPORARYFLATTOAGE"": ""20140128""
+                        }
+                    },
+                    {
+                        ""@PERSONID"": ""2"",
+                        ""CODE"": ""84P5U"",
+                        ""CLASS"": ""Ultra Premier Non-Tobacco"",
+                        ""SEX"": ""Female"",
+                        ""AMOUNT"": 187,
+                        ""UNITS"": 187.0,
+                        ""ISSAGE"": 34,
+                        ""CVGDIVOPT"": ""Purchase PUA"",
+                        ""CVGPREM"": 359.04,
+                        ""RATING"": {
+                            ""TABLE"": ""1"",
+                            ""TEMPORARYFLATTOAGE"": ""20140128""
+                        }
+                    }
+                ]
+            }
+        }";
+
+        // Parse JSON string to a JObject
+        JObject jsonObj = JObject.Parse(json);
+
+        // Create XML
+        XDocument xmlDoc = new XDocument(
+            new XDeclaration("1.0", "utf-8", "yes"),
+            new XElement("FIPSCOLINKFILE",
+                new XAttribute("VERSION", "1.00"),
+                new XElement("DATA",
+                    // Illustration_System element
+                    new XElement("Illustration_System", jsonObj["DATA"]["Illustration_System"]?.ToString() ?? string.Empty),
+
+                    // AGENTINFORMATION element
+                    new XElement("AGENTINFORMATION",
+                        GenerateArrayElements(jsonObj["DATA"]["AGENTINFORMATION"] as JObject)
+                    ),
+
+                    // Sort PERSON array by @PERSONID and create PERSON elements
+                    new XElement("PERSONS",
+                        from person in jsonObj["DATA"]["PERSON"]
+                        orderby int.Parse(person["@PERSONID"].ToString())
+                        select new XElement("PERSON",
+                            new XAttribute("PERSONID", person["@PERSONID"]?.ToString() ?? string.Empty),
+                            CreateElement("FIRSTNAME", person["FIRSTNAME"]),
+                            CreateElement("MIDDLEINITIAL", person["MIDDLEINITIAL"]),
+                            CreateElement("LASTNAME", person["LASTNAME"]),
+                            CreateElement("CLIENTID", person["CLIENTID"]),
+                            CreateElement("DATEOFBIRTH", person["DATEOFBIRTH"]),
+                            CreateElement("ISSUEAGE", person["ISSUEAGE"]),
+                            CreateElement("SEX", person["SEX"])
+                        )
+                    ),
+
+                    // RELATION array
+                    new XElement("RELATIONS",
+                        from relation in jsonObj["DATA"]["RELATION"]
+                        select new XElement("RELATION",
+                            CreateElement("ORIGINATINGPERSONID", relation["ORIGINATINGPERSONID"]),
+                            CreateElement("RELATEDPERSONID", relation["RELATEDPERSONID"]),
+                            CreateElement("ROLECODE", relation["ROLECODE"])
+                        )
+                    ),
+
+                    // CASEDATA element
+                    new XElement("CASEDATA",
+                        new XAttribute("PERSONID", jsonObj["DATA"]["CASEDATA"]["@PERSONID"]?.ToString() ?? string.Empty),
+                        CreateElement("POLICYNUMBER", jsonObj["DATA"]["CASEDATA"]["POLICYNUMBER"]),
+                        CreateElement("PRODUCT", jsonObj["DATA"]["CASEDATA"]["PRODUCT"]),
+                        CreateElement("CLASS", jsonObj["DATA"]["CASEDATA"]["CLASS"]),
+                        CreateElement("STATUS", jsonObj["DATA"]["CASEDATA"]["STATUS"]),
+                        CreateRatingElements(jsonObj["DATA"]["CASEDATA"]["RATING"] as JObject),
+                        CreateElement("WLFACEOPTION", jsonObj["DATA"]["CASEDATA"]["WLFACEOPTION"]),
+                        CreateElement("WLFACEPREMAMT", jsonObj["DATA"]["CASEDATA"]["WLFACEPREMAMT"]),
+                        CreateElement("WLPREMMODE", jsonObj["DATA"]["CASEDATA"]["WLPREMMODE"]),
+                        CreateElement("WLPAYFORM", jsonObj["DATA"]["CASEDATA"]["WLPAYFORM"]),
+                        CreateElement("ISSUEDATE", jsonObj["DATA"]["CASEDATA"]["ISSUEDATE"]),
+                        CreateElement("PLANVERSIONID", jsonObj["DATA"]["CASEDATA"]["PLANVERSIONID"]),
+                        new XElement("POLICY",
+                            CreateElement("CODE", jsonObj["DATA"]["CASEDATA"]["POLICY"]["CODE"])
+                        ),
+                        new XElement("INFORCE",
+                            CreateElement("APBCURRENTDEATHBENEFIT", jsonObj["DATA"]["CASEDATA"]["INFORCE"]["APBCURRENTDEATHBENEFIT"]),
+                            CreateElement("ANNUALINCREASEAMT", jsonObj["DATA"]["CASEDATA"]["INFORCE"]["ANNUALINCREASEAMT"]),
+                            CreateElement("PUADEATHBENEFIT", jsonObj["DATA"]["CASEDATA"]["INFORCE"]["PUADEATHBENEFIT"]),
+                            CreateElement("ACCOUNTVALUE", jsonObj["DATA"]["CASEDATA"]["INFORCE"]["ACCOUNTVALUE"]),
+                            CreateElement("PAIDTODATE", jsonObj["DATA"]["CASEDATA"]["INFORCE"]["PAIDTODATE"]),
+                            CreateElement("PUACASHVALUE", jsonObj["DATA"]["CASEDATA"]["INFORCE"]["PUACASHVALUE"]),
+                            CreateElement("POLICYNUMBER", jsonObj["DATA"]["CASEDATA"]["INFORCE"]["POLICYNUMBER"]),
+                            CreateElement("STANDARDLOAN", jsonObj["DATA"]["CASEDATA"]["INFORCE"]["STANDARDLOAN"])
+                        )
+                    ),
+
+                    // RIDER array
+                    new XElement("RIDERS",
+                        from rider in jsonObj["DATA"]["RIDER"]
+                        select new XElement("RIDER",
+                            new XAttribute("PERSONID", rider["@PERSONID"]?.ToString() ?? string.Empty),
+                            CreateElement("CODE", rider["CODE"]),
+                            CreateElement("CLASS", rider["CLASS"]),
+                            CreateElement("SEX", rider["SEX"]),
+                            CreateElement("AMOUNT", rider["AMOUNT"]),
+                            CreateElement("UNITS", rider["UNITS"]),
+                            CreateElement("ISSAGE", rider["ISSAGE"]),
+                            CreateElement("CVGDIVOPT", rider["CVGDIVOPT"]),
+                            CreateElement("CVGPREM", rider["CVGPREM"]),
+                            new XElement("RATING",
+                                CreateElement("TABLE", rider["RATING"]?["TABLE"]),
+                                CreateElement("TEMPORARYFLATTOAGE", rider["RATING"]?["TEMPORARYFLATTOAGE"])
+                            )
+                        )
+                    )
+                )
+            )
+        );
+
+        // Output XML
+        Console.WriteLine(xmlDoc.ToString());
+    }
+
+    // Helper function to handle null or array elements and create corresponding XML elements
+    static XElement CreateElement(string name, JToken value)
+    {
+        if (value == null || value.Type == JTokenType.Null || (value is JArray array && array.Count == 0))
+        {
+            return new XElement(name); // Empty element if value is null or empty array
+        }
+        return new XElement(name, value.ToString());
+    }
+
+    // Helper function to generate XML elements for AGENTINFORMATION (arrays)
+    static IEnumerable<XElement> GenerateArrayElements(JObject obj)
+    {
+        return obj.Properties().Select(prop => CreateElement(prop.Name, prop.Value));
+    }
+
+    // Helper function to generate RATING elements
+    static IEnumerable<XElement> CreateRatingElements(JObject ratingObj)
+    {
+        return ratingObj?.Properties().Select(prop => CreateElement(prop.Name, prop.Value)) ?? Enumerable.Empty<XElement>();
+    }
+}
 
