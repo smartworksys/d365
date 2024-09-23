@@ -1,106 +1,165 @@
 using System;
-using System.IO;
-using System.Net.Http;
-using System.Text;
-using System.Threading.Tasks;
-using System.Net.Http.Headers;
-using Newtonsoft.Json;
+using System.Linq;
 using Newtonsoft.Json.Linq;
-using System.Collections.Generic;
+using System.Xml.Linq;
 
-namespace TKISConsoleApp
+class Program
 {
-    public class TKISInForcePolicyData
+    static void Main(string[] args)
     {
-        public string policyNo { get; set; }
-    }
-
-    public static class TKISIntegration
-    {
-        public static async Task Main(string[] args)
+        string json = @"
         {
-            Console.WriteLine("Enter Policy Number:");
-            string policyNo = Console.ReadLine();
-            
-            // Set up necessary variables
-            string apiUrl = "YOUR_API_URL"; // Replace with actual API URL
-            string clientSecretId = "YOUR_SECRET"; // Replace with actual secret
-
-            // Create a list of policies to send as a request body
-            var policy = new TKISInForcePolicyData { policyNo = policyNo };
-            var policyList = new List<TKISInForcePolicyData> { policy };
-            
-            // Serialize the policy list into JSON
-            string requestBody = JsonConvert.SerializeObject(policyList);
-            var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
-
-            // Create HttpClient instance
-            using var client = new HttpClient();
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", clientSecretId);
-
-            try
-            {
-                // Send POST request to the API
-                HttpResponseMessage response = await client.PostAsync(apiUrl, content);
-
-                // Check if the response was successful
-                if (!response.IsSuccessStatusCode)
-                {
-                    Console.WriteLine($"API request failed with the status code {response.StatusCode} --- {response.Headers} --- {response.ReasonPhrase}");
-                    return;
-                }
-
-                // Read and parse the response JSON
-                var json = await response.Content.ReadAsStringAsync();
-                JObject responseJsonObj = JObject.Parse(json);
-
-                // Extract the policy indicator
-                string policyIndicator = (string)responseJsonObj["DATA"]["Illustration_System"];
-                // Remove the indicator from the JSON
-                ((JObject)responseJsonObj["DATA"]).Remove("Illustration_System");
-
-                // Handle policy indicators
-                if (policyIndicator == "TKIS")
-                {
-                    // Deserialize the JSON string into an object
-                    var jsonObject = JsonConvert.DeserializeObject<Dictionary<string, Dictionary<string, Dictionary<string, string>>>>(json);
-                    var TKISdataSection = jsonObject["DATA"];
-
-                    // Simulating conversion to INI format
-                    var iniData = JSONtoINI.GenerateIniContent(TKISdataSection);
-
-                    Console.WriteLine($"Policy Indicator: {policyIndicator}");
-                    Console.WriteLine($"Converted Data: {iniData}");
-                }
-                else if (policyIndicator == "DNI")
-                {
-                    Console.WriteLine($"Policy Indicator: {policyIndicator}");
-                    Console.WriteLine("DATA: [No additional data]");
-                }
-                else if (policyIndicator == "Navigator")
-                {
-                    Console.WriteLine($"Policy Indicator: {policyIndicator}");
-                    Console.WriteLine($"Data: {responseJsonObj["DATA"]}");
-                }
-                else
-                {
-                    Console.WriteLine("Policy ID not found.");
+            ""DATA"": {
+                ""Illustration_System"": ""Navigator"",
+                ""AGENTINFORMATION"": {
+                    ""FIRSTNAME"": [],
+                    ""MIDDLENAME"": [],
+                    ""LASTNAME"": [],
+                    ""ADDRESS1"": [],
+                    ""ADDRESS2"": [],
+                    ""CITY"": [],
+                    ""STATE"": [],
+                    ""ZIP"": [],
+                    ""COUNTRY"": [],
+                    ""AGENTID"": [],
+                    ""AGENCY"": [],
+                    ""GA"": [],
+                    ""AITXT1"": [],
+                    ""AITXT2"": [],
+                    ""AITXT3"": [],
+                    ""AINUM1"": [],
+                    ""AINUM2"": [],
+                    ""AINUM3"": [],
+                    ""AIDT1"": [],
+                    ""AIDT2"": [],
+                    ""AIDT3"": []
+                },
+                ""PERSON"": [
+                    {
+                        ""@PERSONID"": ""2"",
+                        ""FIRSTNAME"": ""Alyson"",
+                        ""MIDDLEINITIAL"": [],
+                        ""LASTNAME"": ""Pfeiffer"",
+                        ""CLIENTID"": ""0066939017"",
+                        ""DATEOFBIRTH"": ""19800429"",
+                        ""ISSUEAGE"": 40,
+                        ""SEX"": ""Female""
+                    },
+                    {
+                        ""@PERSONID"": ""1"",
+                        ""FIRSTNAME"": ""John"",
+                        ""MIDDLEINITIAL"": ""S"",
+                        ""SUFFIX"": [],
+                        ""LASTNAME"": ""Pfeiffer"",
+                        ""CLIENTID"": ""002671360C"",
+                        ""MEMBERCOUNCIL"": ""04907"",
+                        ""MEMBERSTATUS"": ""Insurance"",
+                        ""INACTIVEFEEIND"": 0,
+                        ""ADDRESS1"": ""42 Appleby Ave"",
+                        ""ADDRESS2"": [],
+                        ""CITY"": ""Spotswood"",
+                        ""STATE"": ""NJ"",
+                        ""ZIP"": ""08884 1120"",
+                        ""STATEOFISSUE"": ""NJ"",
+                        ""DATEOFBIRTH"": ""19730911"",
+                        ""ISSUE_AGE"": 40,
+                        ""SEX"": ""Male""
+                    }
+                ],
+                ""RELATION"": [
+                    {
+                        ""ORIGINATINGPERSONID"": 1,
+                        ""RELATEDPERSONID"": 2,
+                        ""ROLECODE"": 1
+                    },
+                    {
+                        ""ORIGINATINGPERSONID"": 2,
+                        ""RELATEDPERSONID"": 1,
+                        ""ROLECODE"": 1
+                    }
+                ],
+                ""CASEDATA"": {
+                    ""@PERSONID"": ""1"",
+                    ""POLICYNUMBER"": ""0104410069"",
+                    ""PRODUCT"": ""801UX"",
+                    ""CLASS"": ""Non-Tobacco"",
+                    ""STATUS"": ""Premium Paying""
                 }
             }
-            catch (Exception e)
-            {
-                Console.WriteLine($"An error occurred: {e.Message}");
-            }
-        }
+        }";
+
+        // Parse JSON string to a JObject
+        JObject jsonObj = JObject.Parse(json);
+
+        // Create XML
+        XDocument xmlDoc = new XDocument(
+            new XDeclaration("1.0", "utf-8", "yes"),
+            new XElement("FIPSCOLINKFILE",
+                new XAttribute("VERSION", "1.00"),
+                new XElement("DATA",
+                    // Illustration_System element
+                    new XElement("Illustration_System", jsonObj["DATA"]["Illustration_System"]?.ToString() ?? string.Empty),
+
+                    // AGENTINFORMATION element
+                    new XElement("AGENTINFORMATION",
+                        GenerateArrayElements(jsonObj["DATA"]["AGENTINFORMATION"] as JObject)
+                    ),
+
+                    // Sort PERSON array by @PERSONID and create PERSON elements
+                    new XElement("PERSONS",
+                        from person in jsonObj["DATA"]["PERSON"]
+                        orderby int.Parse(person["@PERSONID"].ToString())
+                        select new XElement("PERSON",
+                            new XAttribute("PERSONID", person["@PERSONID"].ToString()),
+                            CreateElement("FIRSTNAME", person["FIRSTNAME"]),
+                            CreateElement("MIDDLEINITIAL", person["MIDDLEINITIAL"]),
+                            CreateElement("LASTNAME", person["LASTNAME"]),
+                            CreateElement("CLIENTID", person["CLIENTID"]),
+                            CreateElement("DATEOFBIRTH", person["DATEOFBIRTH"]),
+                            CreateElement("ISSUEAGE", person["ISSUEAGE"]),
+                            CreateElement("SEX", person["SEX"])
+                        )
+                    ),
+
+                    // RELATION array
+                    new XElement("RELATIONS",
+                        from relation in jsonObj["DATA"]["RELATION"]
+                        select new XElement("RELATION",
+                            CreateElement("ORIGINATINGPERSONID", relation["ORIGINATINGPERSONID"]),
+                            CreateElement("RELATEDPERSONID", relation["RELATEDPERSONID"]),
+                            CreateElement("ROLECODE", relation["ROLECODE"])
+                        )
+                    ),
+
+                    // CASEDATA element
+                    new XElement("CASEDATA",
+                        new XAttribute("PERSONID", jsonObj["DATA"]["CASEDATA"]["@PERSONID"]?.ToString() ?? string.Empty),
+                        CreateElement("POLICYNUMBER", jsonObj["DATA"]["CASEDATA"]["POLICYNUMBER"]),
+                        CreateElement("PRODUCT", jsonObj["DATA"]["CASEDATA"]["PRODUCT"]),
+                        CreateElement("CLASS", jsonObj["DATA"]["CASEDATA"]["CLASS"]),
+                        CreateElement("STATUS", jsonObj["DATA"]["CASEDATA"]["STATUS"])
+                    )
+                )
+            )
+        );
+
+        // Output XML
+        Console.WriteLine(xmlDoc.ToString());
     }
 
-    // Placeholder for your JSON to INI conversion method
-    public static class JSONtoINI
+    // Helper function to handle null or array elements and create corresponding XML elements
+    static XElement CreateElement(string name, JToken value)
     {
-        public static string GenerateIniContent(Dictionary<string, Dictionary<string, string>> data)
+        if (value is JArray array && array.Count == 0)
         {
-            // Simulate conversion of JSON data to INI format
-            return "[Sample INI data]";
+            return new XElement(name);
         }
+        return new XElement(name, value?.ToString() ?? string.Empty);
+    }
+
+    // Helper function to generate XML elements for AGENTINFORMATION (arrays)
+    static IEnumerable<XElement> GenerateArrayElements(JObject obj)
+    {
+        return obj.Properties().Select(prop => CreateElement(prop.Name, prop.Value));
     }
 }
