@@ -3,6 +3,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.IO;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System.Xml.Linq;
 
 namespace JsonToXmlConverter
@@ -29,6 +30,7 @@ namespace JsonToXmlConverter
         public List<Relation> Relations { get; set; }
 
         [JsonProperty("CASEDATA")]
+        [JsonConverter(typeof(CaseDataConverter))]
         public CaseData CaseData { get; set; }
     }
 
@@ -138,8 +140,6 @@ namespace JsonToXmlConverter
         public Policy POLICY { get; set; }
         public Inforce INFORCE { get; set; }
 
-        [JsonProperty("RIDER")]
-        [JsonConverter(typeof(SingleOrArrayConverter<Rider>))]
         public List<Rider> RIDER { get; set; }
     }
 
@@ -257,6 +257,7 @@ namespace JsonToXmlConverter
         public string TEMPORARYFLATEXTRA { get; set; }
         public string TEMPORARYFLATTOAGE { get; set; }
         public string PERMANENTFLATEXTRA { get; set; }
+        public string TABLE1 { get; set; } // Added to handle TABLE1 in the sample JSON
     }
 
     // Custom JsonConverter to handle single object or array
@@ -298,6 +299,54 @@ namespace JsonToXmlConverter
         public override bool CanWrite => false;
 
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    // Custom JsonConverter for CaseData to handle multiple RIDER keys
+    public class CaseDataConverter : JsonConverter<CaseData>
+    {
+        public override CaseData ReadJson(JsonReader reader, Type objectType, CaseData existingValue, bool hasExistingValue, JsonSerializer serializer)
+        {
+            var jo = JObject.Load(reader);
+            var caseData = jo.ToObject<CaseData>();
+
+            // Handle RIDER
+            var riders = new List<Rider>();
+
+            // Collect all RIDER tokens
+            var riderTokens = jo.Properties().Where(p => p.Name == "RIDER").Select(p => p.Value).ToList();
+
+            foreach (var riderToken in riderTokens)
+            {
+                if (riderToken.Type == JTokenType.Array)
+                {
+                    riders.AddRange(riderToken.ToObject<List<Rider>>());
+                }
+                else if (riderToken.Type == JTokenType.Object)
+                {
+                    // Check if there's a nested RIDER
+                    var nestedRiderToken = riderToken["RIDER"];
+                    if (nestedRiderToken != null)
+                    {
+                        var nestedRider = nestedRiderToken.ToObject<Rider>();
+                        riders.Add(nestedRider);
+                    }
+                    else
+                    {
+                        var rider = riderToken.ToObject<Rider>();
+                        riders.Add(rider);
+                    }
+                }
+            }
+
+            caseData.RIDER = riders;
+
+            return caseData;
+        }
+
+        public override void WriteJson(JsonWriter writer, CaseData value, JsonSerializer serializer)
         {
             throw new NotImplementedException();
         }
