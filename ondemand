@@ -163,6 +163,7 @@ namespace JsonToXmlConverter
                     new XElement("FIPSCOLINKFILE",
                         new XAttribute("VERSION", "1.00"),
                         new XElement("DATA",
+                            CreateElement("Illustration_System", jsonObj["DATA"]["Illustration_System"]),
                             CreateAgentInformation(jsonObj["DATA"]["AGENTINFORMATION"] as JObject),
                             CreatePersons(jsonObj["DATA"]["PERSON"] as JArray),
                             CreateRelations(jsonObj["DATA"]["RELATION"] as JArray),
@@ -204,15 +205,18 @@ namespace JsonToXmlConverter
                 .Select(personToken =>
                 {
                     var person = (JObject)personToken;
-                    var personId = (string)person["@PERSONID"] ?? string.Empty;
 
-                    var properties = person.Properties()
-                                           .Where(prop => prop.Name != "@PERSONID")
-                                           .Where(prop => prop.Value != null);
+                    var attributes = person.Properties()
+                                           .Where(prop => prop.Name.StartsWith("@"))
+                                           .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
+
+                    var elements = person.Properties()
+                                         .Where(prop => !prop.Name.StartsWith("@"))
+                                         .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
 
                     return new XElement("PERSON",
-                        new XAttribute("PERSONID", personId),
-                        properties.Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value))
+                        attributes,
+                        elements
                     );
                 });
         }
@@ -230,11 +234,17 @@ namespace JsonToXmlConverter
                 {
                     var relation = (JObject)relationToken;
 
-                    var properties = relation.Properties()
-                                              .Where(prop => prop.Value != null);
+                    var attributes = relation.Properties()
+                                             .Where(prop => prop.Name.StartsWith("@"))
+                                             .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
+
+                    var elements = relation.Properties()
+                                           .Where(prop => !prop.Name.StartsWith("@"))
+                                           .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
 
                     return new XElement("RELATION",
-                        properties.Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value))
+                        attributes,
+                        elements
                     );
                 });
         }
@@ -244,15 +254,17 @@ namespace JsonToXmlConverter
             if (caseData == null)
                 return new XElement("CASEDATA");
 
-            var personId = (string)caseData["@PERSONID"] ?? string.Empty;
+            var attributes = caseData.Properties()
+                                     .Where(prop => prop.Name.StartsWith("@"))
+                                     .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
 
-            var properties = caseData.Properties()
-                                     .Where(p => p.Name != "@PERSONID")
-                                     .Where(p => p.Value != null);
+            var elements = caseData.Properties()
+                                   .Where(prop => !prop.Name.StartsWith("@"))
+                                   .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
 
             return new XElement("CASEDATA",
-                new XAttribute("PERSONID", personId),
-                properties.Select(p => CreateElement(p.Name.ToUpper(), p.Value))
+                attributes,
+                elements
             );
         }
 
@@ -268,15 +280,18 @@ namespace JsonToXmlConverter
                 .Select(riderToken =>
                 {
                     var rider = (JObject)riderToken;
-                    var personId = (string)rider["@PERSONID"] ?? string.Empty;
 
-                    var properties = rider.Properties()
-                                          .Where(p => p.Name != "@PERSONID")
-                                          .Where(p => p.Value != null);
+                    var attributes = rider.Properties()
+                                          .Where(prop => prop.Name.StartsWith("@"))
+                                          .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
+
+                    var elements = rider.Properties()
+                                        .Where(prop => !prop.Name.StartsWith("@"))
+                                        .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
 
                     return new XElement("RIDER",
-                        new XAttribute("PERSONID", personId),
-                        properties.Select(p => CreateElement(p.Name.ToUpper(), p.Value))
+                        attributes,
+                        elements
                     );
                 });
         }
@@ -289,15 +304,23 @@ namespace JsonToXmlConverter
             }
             else if (value.Type == JTokenType.Object)
             {
-                // Handle objects by creating nested elements
                 var obj = (JObject)value;
+
+                var attributes = obj.Properties()
+                                    .Where(prop => prop.Name.StartsWith("@"))
+                                    .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
+
+                var elements = obj.Properties()
+                                  .Where(prop => !prop.Name.StartsWith("@"))
+                                  .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
+
                 return new XElement(name,
-                    obj.Properties().Select(p => CreateElement(p.Name.ToUpper(), p.Value))
+                    attributes,
+                    elements
                 );
             }
             else if (value.Type == JTokenType.Array)
             {
-                // Handle arrays by creating elements for each item
                 var array = (JArray)value;
                 return new XElement(name,
                     array.Select((item, index) => CreateElement(name + "_" + index, item))
@@ -305,7 +328,6 @@ namespace JsonToXmlConverter
             }
             else
             {
-                // Handle primitive types (String, Integer, Float, etc.)
                 return new XElement(name, value.ToString());
             }
         }
