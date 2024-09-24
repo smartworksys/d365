@@ -1,473 +1,56 @@
-using System;
-using System.Linq;
-using System.Collections.Generic;
-using System.IO;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using System.Xml.Linq;
-
-namespace JsonToXmlConverter
 {
-    // Define model classes within the same namespace and file
-    public class Root
-    {
-        [JsonProperty("DATA")]
-        public Data Data { get; set; }
-    }
-
-    public class Data
-    {
-        [JsonProperty("Illustration_System")]
-        public string IllustrationSystem { get; set; }
-
-        [JsonProperty("AGENTINFORMATION")]
-        public AgentInformation AgentInformation { get; set; }
-
-        [JsonProperty("PERSON")]
-        public List<Person> Persons { get; set; }
-
-        [JsonProperty("RELATION")]
-        public List<Relation> Relations { get; set; }
-
-        [JsonProperty("CASEDATA")]
-        [JsonConverter(typeof(CaseDataConverter))]
-        public CaseData CaseData { get; set; }
-    }
-
-    public class AgentInformation
-    {
-        public string FIRSTNAME { get; set; }
-        public string MIDDLENAME { get; set; }
-        public string LASTNAME { get; set; }
-        public string ADDRESS1 { get; set; }
-        public string ADDRESS2 { get; set; }
-        public string CITY { get; set; }
-        public string STATE { get; set; }
-        public string ZIP { get; set; }
-        public string COUNTRY { get; set; }
-        public string AGENTID { get; set; }
-        public string AGENCY { get; set; }
-        public string GA { get; set; }
-        public string AITXT1 { get; set; }
-        public string AITXT2 { get; set; }
-        public string AITXT3 { get; set; }
-        public string AINUM1 { get; set; }
-        public string AINUM2 { get; set; }
-        public string AINUM3 { get; set; }
-        public string AIDT1 { get; set; }
-        public string AIDT2 { get; set; }
-        public string AIDT3 { get; set; }
-    }
-
-    public class Person
-    {
-        [JsonProperty("@PERSONID")]
-        public string PERSONID { get; set; }
-
-        public string FIRSTNAME { get; set; }
-        public string MIDDLEINITIAL { get; set; }
-        public string SUFFIX { get; set; }
-        public string LASTNAME { get; set; }
-        public string CLIENTID { get; set; }
-        public string MEMBERCOUNCIL { get; set; }
-        public string MEMBERSTATUS { get; set; }
-        public string INACTIVEFEEIND { get; set; }
-        public string ADDRESS1 { get; set; }
-        public string ADDRESS2 { get; set; }
-        public string CITY { get; set; }
-        public string STATE { get; set; }
-        public string ZIP { get; set; }
-        public string STATEOFISSUE { get; set; }
-        public string DATEOFBIRTH { get; set; }
-        public string ISSUEAGE { get; set; }
-        public string SEX { get; set; }
-        public string PTXT1 { get; set; }
-        public string PTXT2 { get; set; }
-        public string PTXT3 { get; set; }
-        public string PNUM1 { get; set; }
-        public string PNUM2 { get; set; }
-        public string PNUM3 { get; set; }
-        public string PDT1 { get; set; }
-        public string PDT2 { get; set; }
-        public string PDT3 { get; set; }
-    }
-
-    public class Relation
-    {
-        public string ORIGINATINGPERSONID { get; set; }
-        public string RELATEDPERSONID { get; set; }
-        public string ROLECODE { get; set; }
-        public string RTXT1 { get; set; }
-        public string RTXT2 { get; set; }
-        public string RTXT3 { get; set; }
-        public string RNUM1 { get; set; }
-        public string RNUM2 { get; set; }
-        public string RNUM3 { get; set; }
-        public string RDT1 { get; set; }
-        public string RDT2 { get; set; }
-        public string RDT3 { get; set; }
-    }
-
-    public class CaseData
-    {
-        [JsonProperty("@PERSONID")]
-        public string PERSONID { get; set; }
-
-        public string POLICYNUMBER { get; set; }
-        public string PRODUCT { get; set; }
-        public string CLASS { get; set; }
-        public string STATUS { get; set; }
-        public Rating RATING { get; set; }
-        public string WLFACEOPTION { get; set; }
-        public string WLFACEPREMAMT { get; set; }
-        public string WLPREMMODE { get; set; }
-        public string WLPAYFORM { get; set; }
-        public string TERMCONVERSION { get; set; }
-        public string GPOEXERCISE { get; set; }
-        public string PRINT { get; set; }
-        public string ADDLOANINTTOBAL { get; set; }
-        public string WDRLTOLOANATCOSTBASIS { get; set; }
-        public string ISSUEDATE { get; set; }
-        public string PLANVERSIONID { get; set; }
-        public string PAYMENTYEARS { get; set; }
-        public string CTXT3 { get; set; }
-        public string CNUM1 { get; set; }
-        public string CNUM2 { get; set; }
-        public string CNUM3 { get; set; }
-        public string CDT1 { get; set; }
-        public string CDT2 { get; set; }
-        public string CDT3 { get; set; }
-        public Policy POLICY { get; set; }
-        public Inforce INFORCE { get; set; }
-
-        public List<Rider> RIDER { get; set; }
-    }
-
-    public class Rating
-    {
-        public string TABLE1 { get; set; }
-        public string FLATEXTRA1 { get; set; }
-        public string FLATEXTRA1TOAGE { get; set; }
-        public string PERMANENTFLATEXTRA1 { get; set; }
-        public string TABLE2 { get; set; }
-        public string FLATEXTRA2 { get; set; }
-        public string FLATEXTRA2TOAGE { get; set; }
-        public string PERMANENTFLATEXTRA2 { get; set; }
-    }
-
-    public class Policy
-    {
-        public string TYPE { get; set; } // Removed JsonProperty attribute
-
-        public string CODE { get; set; }
-    }
-
-    public class Inforce
-    {
-        public string APBCURRENTDEATHBENEFIT { get; set; }
-        public string ANNUALINCREASEAMT { get; set; }
-        public string ADDAVAILABLECONV { get; set; }
-        public string AMTAVAILABLECONV { get; set; }
-        public string PUADEATHBENEFIT { get; set; }
-        public string BASELTDPUADEPOSIT { get; set; }
-        public string BASEYTDPUADEPOSIT { get; set; }
-        public string SDPUALTDPUADEPOSIT { get; set; }
-        public string SDPUAYTDPUADEPOSIT { get; set; }
-        public string MADPUALTDPUADEPOSIT { get; set; }
-        public string MADPUAYTDPUADEPOSIT { get; set; }
-        public string DATAASOFDATE { get; set; }
-        public string ISSUECLASS { get; set; }
-        public string ACCOUNTVALUE { get; set; }
-        public string PAIDTODATE { get; set; }
-        public string CUMULATIVEPREMIUM { get; set; }
-        public string CUMULATIVEWTHDRL { get; set; }
-        public string PUACASHVALUE { get; set; }
-        public string DIVACCUMS { get; set; }
-        public string POLICYNUMBER { get; set; }
-        public string STANDARDLOAN { get; set; }
-        public string TEN35AMT { get; set; }
-        public string SLIPUADEATHBENEFIT { get; set; }
-        public string APBPUADEATHBENEFIT { get; set; }
-        public string SDPUADEATHBENEFIT { get; set; }
-        public string ADPUADEATHBENEFIT { get; set; }
-        public string MADPUADEATHBENEFIT { get; set; }
-        public string PUADEPOSITLIMIT { get; set; }
-        public string LIFETODATEPUADEPOSIT { get; set; }
-        public string DBPURCHASEBYPUARIDERDIVS { get; set; }
-        public string G7PAYSTARTDATE { get; set; }
-        public string G7PAYANNUALPREMIUM { get; set; }
-        public string G7PAYPREMIUMPAID { get; set; }
-        public string CVASOFLASTMATCHANGE { get; set; }
-        public string MEC { get; set; }
-        public string EXEMPT { get; set; }
-        public string ITXT1 { get; set; }
-        public string ITXT2 { get; set; }
-        public string ITXT3 { get; set; }
-        public string INUM1 { get; set; }
-        public string INUM2 { get; set; }
-        public string INUM3 { get; set; }
-        public string IDT1 { get; set; }
-        public string IDT2 { get; set; }
-        public string IDT3 { get; set; }
-    }
-
-    public class Rider
-    {
-        public string PERSONID { get; set; } // Removed JsonProperty attribute
-
-        public string CODE { get; set; }
-        public string CLASS { get; set; }
-        public string SEX { get; set; }
-        public string AMOUNT { get; set; }
-        public string UNITS { get; set; }
-        public string ISSAGE { get; set; }
-        public string CVGDIVOPT { get; set; }
-        public string CVGDIVACCUMS { get; set; }
-        public string CVGPREM { get; set; }
-        public RatingRider RATING { get; set; }
-        public string TBROYTFACEAMOUNT { get; set; }
-        public string TBRSPECIFIEDWAIVEDPREMIUM { get; set; }
-        public string TBRPUAEARNEDFACE { get; set; }
-        public string TBRPUAYTDFACE { get; set; }
-        public string TBRPUAYTDSURRENDERAMT { get; set; }
-        public string FIXEDPREMIUMOVERRIDEDATE { get; set; }
-        public string TBRPUASPURCHASEDBYDIVSLTD { get; set; }
-        public string TBRPUASPURCHASEDBYDIVSYTD { get; set; }
-        public string TBRNEXTANNUALPREMIUM { get; set; }
-        public string TBRPOLPREVDIVDUR { get; set; }
-        public string TBRNEXTANNVDIVDUR { get; set; }
-        public string TBRANNUALPREMIUM { get; set; }
-        public string TBRDURATION { get; set; }
-        public string RIDERSTATUS { get; set; }
-        public string TBRPREMIUMPUAS { get; set; }
-        public string RDTXT1 { get; set; }
-        public string RDTXT2 { get; set; }
-        public string RDTXT3 { get; set; }
-        public string RDNUM1 { get; set; }
-        public string RDNUM2 { get; set; }
-        public string RDNUM3 { get; set; }
-        public string RDDT1 { get; set; }
-        public string RDDT2 { get; set; }
-        public string RDDT3 { get; set; }
-    }
-
-    public class RatingRider
-    {
-        public string TABLE { get; set; }
-        public string TEMPORARYFLATEXTRA { get; set; }
-        public string TEMPORARYFLATTOAGE { get; set; }
-        public string PERMANENTFLATEXTRA { get; set; }
-        public string TABLE1 { get; set; } // Added to handle TABLE1 in the sample JSON
-    }
-
-    // Custom JsonConverter to handle single object or array
-    public class SingleOrArrayConverter<T> : JsonConverter
-    {
-        public override bool CanConvert(Type objectType)
-        {
-            return (objectType == typeof(List<T>));
-        }
-
-        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
-        {
-            try
-            {
-                if (reader.TokenType == JsonToken.StartArray)
-                {
-                    return serializer.Deserialize<List<T>>(reader);
-                }
-                else if (reader.TokenType == JsonToken.StartObject)
-                {
-                    T instance = serializer.Deserialize<T>(reader);
-                    return new List<T> { instance };
-                }
-                else if (reader.TokenType == JsonToken.Null)
-                {
-                    return new List<T>();
-                }
-                else
-                {
-                    throw new JsonSerializationException("Unexpected token type: " + reader.TokenType);
-                }
-            }
-            catch (Exception ex)
-            {
-                throw new JsonSerializationException("Error deserializing type " + typeof(T).FullName, ex);
-            }
-        }
-
-        public override bool CanWrite => false;
-
-        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-    // Custom JsonConverter for CaseData to handle multiple RIDER keys
-    public class CaseDataConverter : JsonConverter<CaseData>
-    {
-        public override CaseData ReadJson(JsonReader reader, Type objectType, CaseData existingValue, bool hasExistingValue, JsonSerializer serializer)
-        {
-            var jo = JObject.Load(reader);
-            var caseData = jo.ToObject<CaseData>();
-
-            // Handle RIDER
-            var riders = new List<Rider>();
-
-            // Collect all RIDER tokens
-            var riderTokens = jo.Properties().Where(p => p.Name == "RIDER").Select(p => p.Value).ToList();
-
-            foreach (var riderToken in riderTokens)
-            {
-                if (riderToken.Type == JTokenType.Array)
-                {
-                    riders.AddRange(riderToken.ToObject<List<Rider>>());
-                }
-                else if (riderToken.Type == JTokenType.Object)
-                {
-                    // Check if there's a nested RIDER
-                    var nestedRiderToken = riderToken["RIDER"];
-                    if (nestedRiderToken != null)
-                    {
-                        var nestedRider = nestedRiderToken.ToObject<Rider>();
-                        riders.Add(nestedRider);
-                    }
-                    else
-                    {
-                        var rider = riderToken.ToObject<Rider>();
-                        riders.Add(rider);
-                    }
-                }
-            }
-
-            caseData.RIDER = riders;
-
-            return caseData;
-        }
-
-        public override void WriteJson(JsonWriter writer, CaseData value, JsonSerializer serializer)
-        {
-            throw new NotImplementedException();
-        }
-    }
-
-    class Program
-    {
-        static void Main(string[] args)
-        {
-            string jsonFilePath = "0104410069.json";
-            string jsonData = File.ReadAllText(jsonFilePath);
-            jsonData = jsonData.Replace(": []", ": \"\"");
-
-            try
-            {
-                // Deserialize JSON into Root object
-                var root = JsonConvert.DeserializeObject<Root>(jsonData);
-
-                // Create XML
-                var xmlDoc = new XDocument(
-                    new XDeclaration("1.0", "UTF-8", "yes"),
-                    new XElement("FIPSCOLINKFILE",
-                        new XAttribute("VERSION", "1.00"),
-                        CreateDataElement(root.Data)
-                    )
-                );
-
-                // Output XML
-                Console.WriteLine(xmlDoc.ToString(SaveOptions.DisableFormatting));
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"An error occurred during JSON to XML conversion: {ex.Message}");
-            }
-        }
-
-        static XElement CreateDataElement(Data data)
-        {
-            var elements = new List<object>();
-
-            if (data.IllustrationSystem != null)
-                elements.Add(new XElement("Illustration_System", data.IllustrationSystem));
-
-            if (data.AgentInformation != null)
-                elements.Add(CreateElementFromObject("AGENTINFORMATION", data.AgentInformation));
-
-            if (data.Persons != null)
-            {
-                // Sort Persons by PERSONID
-                var sortedPersons = data.Persons.OrderBy(p => p.PERSONID);
-                elements.AddRange(sortedPersons.Select(p => CreateElementFromObject("PERSON", p)));
-            }
-
-            if (data.Relations != null)
-                elements.AddRange(data.Relations.Select(r => CreateElementFromObject("RELATION", r)));
-
-            if (data.CaseData != null)
-                elements.Add(CreateCaseDataElement(data.CaseData));
-
-            return new XElement("DATA", elements);
-        }
-
-        static XElement CreateElementFromObject(string elementName, object obj)
-        {
-            var properties = obj.GetType().GetProperties().Where(p => p.GetIndexParameters().Length == 0);
-            var elements = new List<object>();
-            var attributes = new List<XAttribute>();
-
-            // List of property names that should be treated as attributes
-            var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "PERSONID",
-                "VERSION",
-                "TYPE"
-            };
-
-            foreach (var prop in properties)
-            {
-                var value = prop.GetValue(obj) ?? string.Empty;
-                var jsonProperty = prop.GetCustomAttributes(typeof(JsonPropertyAttribute), false)
-                                        .FirstOrDefault() as JsonPropertyAttribute;
-                var name = jsonProperty != null ? jsonProperty.PropertyName.TrimStart('@') : prop.Name;
-
-                if (attributeNames.Contains(name) || (jsonProperty != null && jsonProperty.PropertyName.StartsWith("@")))
-                {
-                    // Handle attributes
-                    attributes.Add(new XAttribute(name, value));
-                }
-                else if (typeof(IEnumerable<object>).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string))
-                {
-                    // Handle lists
-                    var items = value as IEnumerable<object>;
-                    if (items != null)
-                    {
-                        elements.AddRange(items.Select(item => CreateElementFromObject(name, item)));
-                    }
-                    else
-                    {
-                        elements.Add(new XElement(name));
-                    }
-                }
-                else if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
-                {
-                    // Handle nested objects
-                    if (value != null)
-                        elements.Add(CreateElementFromObject(name, value));
-                    else
-                        elements.Add(new XElement(name));
-                }
-                else
-                {
-                    elements.Add(new XElement(name, value));
-                }
-            }
-
-            return new XElement(elementName, attributes, elements);
-        }
-
-        static XElement CreateCaseDataElement(CaseData caseData)
-        {
-            return CreateElementFromObject("CASEDATA", caseData);
-        }
-    }
+  "AL": 175650000,
+  "AK": 175650001,
+  "AZ": 175650002,
+  "AR": 175650003,
+  "AS": 175650004,
+  "CA": 175650005,
+  "CO": 175650006,
+  "CT": 175650007,
+  "DE": 175650008,
+  "DC": 175650009,
+  "FL": 175650010,
+  "GA": 175650011,
+  "HI": 175650012,
+  "ID": 175650013,
+  "IL": 175650014,
+  "IN": 175650015,
+  "IA": 175650016,
+  "KS": 175650017,
+  "KY": 175650018,
+  "LA": 175650019,
+  "ME": 175650020,
+  "MD": 175650021,
+  "MA": 175650022,
+  "MI": 175650023,
+  "MN": 175650024,
+  "MS": 175650025,
+  "MO": 175650026,
+  "MT": 175650027,
+  "NE": 175650028,
+  "NV": 175650029,
+  "NH": 175650030,
+  "NJ": 175650031,
+  "NM": 175650032,
+  "NY": 175650033,
+  "NC": 175650034,
+  "ND": 175650035,
+  "OH": 175650036,
+  "OK": 175650037,
+  "OR": 175650038,
+  "PA": 175650039,
+  "PR": 175650040,
+  "RI": 175650041,
+  "SC": 175650042,
+  "SD": 175650043,
+  "TN": 175650044,
+  "TX": 175650045,
+  "UT": 175650046,
+  "VT": 175650047,
+  "VA": 175650048,
+  "WA": 175650049,
+  "WV": 175650050,
+  "WI": 175650051,
+  "WY": 175650052
 }
+outputs('Parse_JSON')['MI']
