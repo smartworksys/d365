@@ -1,175 +1,183 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
-using Newtonsoft.Json.Linq;
+using Newtonsoft.Json;
 using System.Xml.Linq;
 
 namespace JsonToXmlConverter
 {
+    // Define model classes within the same namespace and file
+    public class Root
+    {
+        [JsonProperty("DATA")]
+        public Data Data { get; set; }
+    }
+
+    public class Data
+    {
+        [JsonProperty("Illustration_System")]
+        public string IllustrationSystem { get; set; }
+
+        [JsonProperty("AGENTINFORMATION")]
+        public AgentInformation AgentInformation { get; set; }
+
+        [JsonProperty("PERSON")]
+        public List<Person> Persons { get; set; }
+
+        [JsonProperty("RELATION")]
+        public List<Relation> Relations { get; set; }
+
+        [JsonProperty("CASEDATA")]
+        public CaseData CaseData { get; set; }
+
+        [JsonProperty("RIDER")]
+        public List<Rider> Riders { get; set; }
+    }
+
+    public class AgentInformation
+    {
+        public string FIRSTNAME { get; set; }
+        public string MIDDLENAME { get; set; }
+        public string LASTNAME { get; set; }
+        public string ADDRESS1 { get; set; }
+        public string ADDRESS2 { get; set; }
+        public string CITY { get; set; }
+        public string STATE { get; set; }
+        public string ZIP { get; set; }
+        public string COUNTRY { get; set; }
+        public string AGENTID { get; set; }
+        public string AGENCY { get; set; }
+        public string GA { get; set; }
+        public string AITXT1 { get; set; }
+        public string AITXT2 { get; set; }
+        public string AITXT3 { get; set; }
+        public string AINUM1 { get; set; }
+        public string AINUM2 { get; set; }
+        public string AINUM3 { get; set; }
+        public string AIDT1 { get; set; }
+        public string AIDT2 { get; set; }
+        public string AIDT3 { get; set; }
+    }
+
+    public class Person
+    {
+        [JsonProperty("@PERSONID")]
+        public string PERSONID { get; set; }
+
+        public string FIRSTNAME { get; set; }
+        public string MIDDLEINITIAL { get; set; }
+        public string SUFFIX { get; set; }
+        public string LASTNAME { get; set; }
+        public string CLIENTID { get; set; }
+        public string MEMBERCOUNCIL { get; set; }
+        public string MEMBERSTATUS { get; set; }
+        public int? INACTIVEFEEIND { get; set; }
+        public string ADDRESS1 { get; set; }
+        public string ADDRESS2 { get; set; }
+        public string CITY { get; set; }
+        public string STATE { get; set; }
+        public string ZIP { get; set; }
+        public string STATEOFISSUE { get; set; }
+        public string DATEOFBIRTH { get; set; }
+        public int? ISSUEAGE { get; set; }
+        public string SEX { get; set; }
+    }
+
+    public class Relation
+    {
+        public int ORIGINATINGPERSONID { get; set; }
+        public int RELATEDPERSONID { get; set; }
+        public int ROLECODE { get; set; }
+    }
+
+    public class CaseData
+    {
+        [JsonProperty("@PERSONID")]
+        public string PERSONID { get; set; }
+
+        public string POLICYNUMBER { get; set; }
+        public string PRODUCT { get; set; }
+        public string CLASS { get; set; }
+        public string STATUS { get; set; }
+        public Rating RATING { get; set; }
+        public string WLFACEOPTION { get; set; }
+        public double? WLFACEPREMAMT { get; set; }
+        public string WLPREMMODE { get; set; }
+        public string WLPAYFORM { get; set; }
+        public string ISSUEDATE { get; set; }
+        public string PLANVERSIONID { get; set; }
+        public Policy POLICY { get; set; }
+        public Inforce INFORCE { get; set; }
+    }
+
+    public class Rating
+    {
+        public string TABLE1 { get; set; }
+        public string FLATEXTRA1 { get; set; }
+        public string FLATEXTRA1TOAGE { get; set; }
+        public string PERMANENTFLATEXTRA1 { get; set; }
+        public string TABLE2 { get; set; }
+        public string FLATEXTRA2 { get; set; }
+        public string FLATEXTRA2TOAGE { get; set; }
+        public double? PERMANENTFLATEXTRA2 { get; set; }
+    }
+
+    public class Policy
+    {
+        public string CODE { get; set; }
+    }
+
+    public class Inforce
+    {
+        public double? APBCURRENTDEATHBENEFIT { get; set; }
+        public double? ANNUALINCREASEAMT { get; set; }
+        public double? PUADEATHBENEFIT { get; set; }
+        public double? ACCOUNTVALUE { get; set; }
+        public string PAIDTODATE { get; set; }
+        public double? PUACASHVALUE { get; set; }
+        public string POLICYNUMBER { get; set; }
+        public double? STANDARDLOAN { get; set; }
+    }
+
+    public class Rider
+    {
+        [JsonProperty("@PERSONID")]
+        public string PERSONID { get; set; }
+
+        public string CODE { get; set; }
+        public string CLASS { get; set; }
+        public string SEX { get; set; }
+        public int? AMOUNT { get; set; }
+        public double? UNITS { get; set; }
+        public int? ISSAGE { get; set; }
+        public string CVGDIVOPT { get; set; }
+        public double? CVGPREM { get; set; }
+        public RatingRider RATING { get; set; }
+    }
+
+    public class RatingRider
+    {
+        public string TABLE { get; set; }
+        public string TEMPORARYFLATTOAGE { get; set; }
+    }
+
     class Program
     {
         static void Main(string[] args)
         {
-            string json = @"
-            {
-                ""DATA"": {
-                    ""Illustration_System"": ""Navigator"",
-                    ""AGENTINFORMATION"": {
-                        ""FIRSTNAME"": [],
-                        ""MIDDLENAME"": [],
-                        ""LASTNAME"": [],
-                        ""ADDRESS1"": [],
-                        ""ADDRESS2"": [],
-                        ""CITY"": [],
-                        ""STATE"": [],
-                        ""ZIP"": [],
-                        ""COUNTRY"": [],
-                        ""AGENTID"": [],
-                        ""AGENCY"": [],
-                        ""GA"": [],
-                        ""AITXT1"": [],
-                        ""AITXT2"": [],
-                        ""AITXT3"": [],
-                        ""AINUM1"": [],
-                        ""AINUM2"": [],
-                        ""AINUM3"": [],
-                        ""AIDT1"": [],
-                        ""AIDT2"": [],
-                        ""AIDT3"": []
-                    },
-                    ""PERSON"": [
-                        {
-                            ""@PERSONID"": ""2"",
-                            ""FIRSTNAME"": ""Alyson"",
-                            ""MIDDLEINITIAL"": [],
-                            ""LASTNAME"": ""Pfeiffer"",
-                            ""CLIENTID"": ""0066939017"",
-                            ""DATEOFBIRTH"": ""19800429"",
-                            ""ISSUEAGE"": 40,
-                            ""SEX"": ""Female""
-                        },
-                        {
-                            ""@PERSONID"": ""1"",
-                            ""FIRSTNAME"": ""John"",
-                            ""MIDDLEINITIAL"": ""S"",
-                            ""SUFFIX"": [],
-                            ""LASTNAME"": ""Pfeiffer"",
-                            ""CLIENTID"": ""002671360C"",
-                            ""MEMBERCOUNCIL"": ""04907"",
-                            ""MEMBERSTATUS"": ""Insurance"",
-                            ""INACTIVEFEEIND"": 0,
-                            ""ADDRESS1"": ""42 Appleby Ave"",
-                            ""ADDRESS2"": [],
-                            ""CITY"": ""Spotswood"",
-                            ""STATE"": ""NJ"",
-                            ""ZIP"": ""08884 1120"",
-                            ""STATEOFISSUE"": ""NJ"",
-                            ""DATEOFBIRTH"": ""19730911"",
-                            ""ISSUEAGE"": 40,
-                            ""SEX"": ""Male""
-                        }
-                    ],
-                    ""RELATION"": [
-                        {
-                            ""ORIGINATINGPERSONID"": 1,
-                            ""RELATEDPERSONID"": 2,
-                            ""ROLECODE"": 1
-                        },
-                        {
-                            ""ORIGINATINGPERSONID"": 2,
-                            ""RELATEDPERSONID"": 1,
-                            ""ROLECODE"": 1
-                        }
-                    ],
-                    ""CASEDATA"": {
-                        ""@PERSONID"": ""1"",
-                        ""POLICYNUMBER"": ""0104410069"",
-                        ""PRODUCT"": ""801UX"",
-                        ""CLASS"": ""Non-Tobacco"",
-                        ""STATUS"": ""Premium Paying"",
-                        ""RATING"": {
-                            ""TABLE1"": [],
-                            ""FLATEXTRA1"": [],
-                            ""FLATEXTRA1TOAGE"": [],
-                            ""PERMANENTFLATEXTRA1"": [],
-                            ""TABLE2"": [],
-                            ""FLATEXTRA2"": [],
-                            ""FLATEXTRA2TOAGE"": [],
-                            ""PERMANENTFLATEXTRA2"": 0.0
-                        },
-                        ""WLFACEOPTION"": ""INPFACE"",
-                        ""WLFACEPREMAMT"": 100000.0,
-                        ""WLPREMMODE"": ""Quarterly"",
-                        ""WLPAYFORM"": ""Direct Bill"",
-                        ""ISSUEDATE"": ""20140128"",
-                        ""PLANVERSIONID"": ""XX"",
-                        ""POLICY"": {
-                            ""CODE"": ""Purchase PUA""
-                        },
-                        ""INFORCE"": {
-                            ""APBCURRENTDEATHBENEFIT"": 0,
-                            ""ANNUALINCREASEAMT"": 0,
-                            ""PUADEATHBENEFIT"": 978.76,
-                            ""ACCOUNTVALUE"": 986.92,
-                            ""PAIDTODATE"": ""20240728"",
-                            ""PUACASHVALUE"": 188.73,
-                            ""POLICYNUMBER"": ""0104410069"",
-                            ""STANDARDLOAN"": 10899.36
-                        }
-                    },
-                    ""RIDER"": [
-                        {
-                            ""@PERSONID"": ""1"",
-                            ""CODE"": ""TIADBU"",
-                            ""CLASS"": ""Non-Tobacco"",
-                            ""SEX"": ""Male"",
-                            ""AMOUNT"": 0,
-                            ""UNITS"": 0.0,
-                            ""ISSAGE"": 40,
-                            ""CVGDIVOPT"": ""Purchase PUA"",
-                            ""CVGPREM"": 0.0,
-                            ""RATING"": {
-                                ""TABLE"": ""1"",
-                                ""TEMPORARYFLATTOAGE"": ""20140128""
-                            }
-                        },
-                        {
-                            ""@PERSONID"": ""2"",
-                            ""CODE"": ""84P5U"",
-                            ""CLASS"": ""Ultra Premier Non-Tobacco"",
-                            ""SEX"": ""Female"",
-                            ""AMOUNT"": 187,
-                            ""UNITS"": 187.0,
-                            ""ISSAGE"": 34,
-                            ""CVGDIVOPT"": ""Purchase PUA"",
-                            ""CVGPREM"": 359.04,
-                            ""RATING"": {
-                                ""TABLE"": ""1"",
-                                ""TEMPORARYFLATTOAGE"": ""20140128""
-                            }
-                        }
-                    ]
-                }
-            }";
+            string json = /* Your JSON string */;
 
             try
             {
-                // Parse JSON string to a JObject
-                var jsonObj = JObject.Parse(json);
+                // Deserialize JSON into Root object
+                var root = JsonConvert.DeserializeObject<Root>(json);
 
                 // Create XML
                 var xmlDoc = new XDocument(
                     new XDeclaration("1.0", "UTF-8", "yes"),
                     new XElement("FIPSCOLINKFILE",
                         new XAttribute("VERSION", "1.00"),
-                        new XElement("DATA",
-                            CreateElement("Illustration_System", jsonObj["DATA"]["Illustration_System"]),
-                            CreateAgentInformation(jsonObj["DATA"]["AGENTINFORMATION"] as JObject),
-                            CreatePersons(jsonObj["DATA"]["PERSON"] as JArray),
-                            CreateRelations(jsonObj["DATA"]["RELATION"] as JArray),
-                            CreateCaseData(jsonObj["DATA"]["CASEDATA"] as JObject),
-                            CreateRiders(jsonObj["DATA"]["RIDER"] as JArray)
-                        )
+                        CreateDataElement(root.Data)
                     )
                 );
 
@@ -182,154 +190,195 @@ namespace JsonToXmlConverter
             }
         }
 
-        static XElement CreateAgentInformation(JObject agentInfo)
+        static XElement CreateDataElement(Data data)
         {
-            if (agentInfo == null)
-                return new XElement("AGENTINFORMATION");
+            var elements = new List<object>();
 
+            if (data.IllustrationSystem != null)
+                elements.Add(new XElement("Illustration_System", data.IllustrationSystem));
+
+            if (data.AgentInformation != null)
+                elements.Add(CreateAgentInformationElement(data.AgentInformation));
+
+            if (data.Persons != null)
+                elements.AddRange(data.Persons.Select(CreatePersonElement));
+
+            if (data.Relations != null)
+                elements.AddRange(data.Relations.Select(CreateRelationElement));
+
+            if (data.CaseData != null)
+                elements.Add(CreateCaseDataElement(data.CaseData));
+
+            if (data.Riders != null)
+                elements.AddRange(data.Riders.Select(CreateRiderElement));
+
+            return new XElement("DATA", elements);
+        }
+
+        static XElement CreateAgentInformationElement(AgentInformation agentInfo)
+        {
             return new XElement("AGENTINFORMATION",
-                agentInfo.Properties().Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value))
+                new XElement("FIRSTNAME", agentInfo.FIRSTNAME),
+                new XElement("MIDDLENAME", agentInfo.MIDDLENAME),
+                new XElement("LASTNAME", agentInfo.LASTNAME),
+                new XElement("ADDRESS1", agentInfo.ADDRESS1),
+                new XElement("ADDRESS2", agentInfo.ADDRESS2),
+                new XElement("CITY", agentInfo.CITY),
+                new XElement("STATE", agentInfo.STATE),
+                new XElement("ZIP", agentInfo.ZIP),
+                new XElement("COUNTRY", agentInfo.COUNTRY),
+                new XElement("AGENTID", agentInfo.AGENTID),
+                new XElement("AGENCY", agentInfo.AGENCY),
+                new XElement("GA", agentInfo.GA),
+                new XElement("AITXT1", agentInfo.AITXT1),
+                new XElement("AITXT2", agentInfo.AITXT2),
+                new XElement("AITXT3", agentInfo.AITXT3),
+                new XElement("AINUM1", agentInfo.AINUM1),
+                new XElement("AINUM2", agentInfo.AINUM2),
+                new XElement("AINUM3", agentInfo.AINUM3),
+                new XElement("AIDT1", agentInfo.AIDT1),
+                new XElement("AIDT2", agentInfo.AIDT2),
+                new XElement("AIDT3", agentInfo.AIDT3)
             );
         }
 
-        static IEnumerable<XElement> CreatePersons(JArray persons)
+        static XElement CreatePersonElement(Person person)
         {
-            if (persons == null || !persons.Any())
+            var attributes = new List<XAttribute>();
+            if (!string.IsNullOrEmpty(person.PERSONID))
+                attributes.Add(new XAttribute("PERSONID", person.PERSONID));
+
+            var elements = new List<object>
             {
-                return Enumerable.Empty<XElement>();
-            }
+                new XElement("FIRSTNAME", person.FIRSTNAME),
+                new XElement("MIDDLEINITIAL", person.MIDDLEINITIAL),
+                new XElement("SUFFIX", person.SUFFIX),
+                new XElement("LASTNAME", person.LASTNAME),
+                new XElement("CLIENTID", person.CLIENTID),
+                new XElement("MEMBERCOUNCIL", person.MEMBERCOUNCIL),
+                new XElement("MEMBERSTATUS", person.MEMBERSTATUS),
+                new XElement("INACTIVEFEEIND", person.INACTIVEFEEIND),
+                new XElement("ADDRESS1", person.ADDRESS1),
+                new XElement("ADDRESS2", person.ADDRESS2),
+                new XElement("CITY", person.CITY),
+                new XElement("STATE", person.STATE),
+                new XElement("ZIP", person.ZIP),
+                new XElement("STATEOFISSUE", person.STATEOFISSUE),
+                new XElement("DATEOFBIRTH", person.DATEOFBIRTH),
+                new XElement("ISSUEAGE", person.ISSUEAGE),
+                new XElement("SEX", person.SEX)
+            };
 
-            return persons
-                .Where(p => p != null && p.Type == JTokenType.Object)
-                .OrderBy(p => (string)p["@PERSONID"])
-                .Select(personToken =>
-                {
-                    var person = (JObject)personToken;
-
-                    var attributes = person.Properties()
-                                           .Where(prop => prop.Name.StartsWith("@"))
-                                           .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
-
-                    var elements = person.Properties()
-                                         .Where(prop => !prop.Name.StartsWith("@"))
-                                         .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
-
-                    return new XElement("PERSON",
-                        attributes,
-                        elements
-                    );
-                });
+            return new XElement("PERSON", attributes, elements);
         }
 
-        static IEnumerable<XElement> CreateRelations(JArray relations)
+        static XElement CreateRelationElement(Relation relation)
         {
-            if (relations == null || !relations.Any())
-            {
-                return Enumerable.Empty<XElement>();
-            }
-
-            return relations
-                .Where(r => r != null && r.Type == JTokenType.Object)
-                .Select(relationToken =>
-                {
-                    var relation = (JObject)relationToken;
-
-                    var attributes = relation.Properties()
-                                             .Where(prop => prop.Name.StartsWith("@"))
-                                             .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
-
-                    var elements = relation.Properties()
-                                           .Where(prop => !prop.Name.StartsWith("@"))
-                                           .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
-
-                    return new XElement("RELATION",
-                        attributes,
-                        elements
-                    );
-                });
-        }
-
-        static XElement CreateCaseData(JObject caseData)
-        {
-            if (caseData == null)
-                return new XElement("CASEDATA");
-
-            var attributes = caseData.Properties()
-                                     .Where(prop => prop.Name.StartsWith("@"))
-                                     .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
-
-            var elements = caseData.Properties()
-                                   .Where(prop => !prop.Name.StartsWith("@"))
-                                   .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
-
-            return new XElement("CASEDATA",
-                attributes,
-                elements
+            return new XElement("RELATION",
+                new XElement("ORIGINATINGPERSONID", relation.ORIGINATINGPERSONID),
+                new XElement("RELATEDPERSONID", relation.RELATEDPERSONID),
+                new XElement("ROLECODE", relation.ROLECODE)
             );
         }
 
-        static IEnumerable<XElement> CreateRiders(JArray riders)
+        static XElement CreateCaseDataElement(CaseData caseData)
         {
-            if (riders == null || !riders.Any())
+            var attributes = new List<XAttribute>();
+            if (!string.IsNullOrEmpty(caseData.PERSONID))
+                attributes.Add(new XAttribute("PERSONID", caseData.PERSONID));
+
+            var elements = new List<object>
             {
-                return Enumerable.Empty<XElement>();
-            }
+                new XElement("POLICYNUMBER", caseData.POLICYNUMBER),
+                new XElement("PRODUCT", caseData.PRODUCT),
+                new XElement("CLASS", caseData.CLASS),
+                new XElement("STATUS", caseData.STATUS)
+            };
 
-            return riders
-                .Where(r => r != null && r.Type == JTokenType.Object)
-                .Select(riderToken =>
-                {
-                    var rider = (JObject)riderToken;
+            if (caseData.RATING != null)
+                elements.Add(CreateRatingElement(caseData.RATING));
 
-                    var attributes = rider.Properties()
-                                          .Where(prop => prop.Name.StartsWith("@"))
-                                          .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
+            elements.Add(new XElement("WLFACEOPTION", caseData.WLFACEOPTION));
+            elements.Add(new XElement("WLFACEPREMAMT", caseData.WLFACEPREMAMT));
+            elements.Add(new XElement("WLPREMMODE", caseData.WLPREMMODE));
+            elements.Add(new XElement("WLPAYFORM", caseData.WLPAYFORM));
+            elements.Add(new XElement("ISSUEDATE", caseData.ISSUEDATE));
+            elements.Add(new XElement("PLANVERSIONID", caseData.PLANVERSIONID));
 
-                    var elements = rider.Properties()
-                                        .Where(prop => !prop.Name.StartsWith("@"))
-                                        .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
+            if (caseData.POLICY != null)
+                elements.Add(CreatePolicyElement(caseData.POLICY));
 
-                    return new XElement("RIDER",
-                        attributes,
-                        elements
-                    );
-                });
+            if (caseData.INFORCE != null)
+                elements.Add(CreateInforceElement(caseData.INFORCE));
+
+            return new XElement("CASEDATA", attributes, elements);
         }
 
-        static XElement CreateElement(string name, JToken value)
+        static XElement CreateRatingElement(Rating rating)
         {
-            if (value == null || value.Type == JTokenType.Null)
-            {
-                return new XElement(name); // Empty element
-            }
-            else if (value.Type == JTokenType.Object)
-            {
-                var obj = (JObject)value;
+            return new XElement("RATING",
+                new XElement("TABLE1", rating.TABLE1),
+                new XElement("FLATEXTRA1", rating.FLATEXTRA1),
+                new XElement("FLATEXTRA1TOAGE", rating.FLATEXTRA1TOAGE),
+                new XElement("PERMANENTFLATEXTRA1", rating.PERMANENTFLATEXTRA1),
+                new XElement("TABLE2", rating.TABLE2),
+                new XElement("FLATEXTRA2", rating.FLATEXTRA2),
+                new XElement("FLATEXTRA2TOAGE", rating.FLATEXTRA2TOAGE),
+                new XElement("PERMANENTFLATEXTRA2", rating.PERMANENTFLATEXTRA2)
+            );
+        }
 
-                var attributes = obj.Properties()
-                                    .Where(prop => prop.Name.StartsWith("@"))
-                                    .Select(prop => new XAttribute(prop.Name.TrimStart('@').ToUpper(), prop.Value.ToString()));
+        static XElement CreatePolicyElement(Policy policy)
+        {
+            return new XElement("POLICY",
+                new XElement("CODE", policy.CODE)
+            );
+        }
 
-                var elements = obj.Properties()
-                                  .Where(prop => !prop.Name.StartsWith("@"))
-                                  .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
+        static XElement CreateInforceElement(Inforce inforce)
+        {
+            return new XElement("INFORCE",
+                new XElement("APBCURRENTDEATHBENEFIT", inforce.APBCURRENTDEATHBENEFIT),
+                new XElement("ANNUALINCREASEAMT", inforce.ANNUALINCREASEAMT),
+                new XElement("PUADEATHBENEFIT", inforce.PUADEATHBENEFIT),
+                new XElement("ACCOUNTVALUE", inforce.ACCOUNTVALUE),
+                new XElement("PAIDTODATE", inforce.PAIDTODATE),
+                new XElement("PUACASHVALUE", inforce.PUACASHVALUE),
+                new XElement("POLICYNUMBER", inforce.POLICYNUMBER),
+                new XElement("STANDARDLOAN", inforce.STANDARDLOAN)
+            );
+        }
 
-                return new XElement(name,
-                    attributes,
-                    elements
-                );
-            }
-            else if (value.Type == JTokenType.Array)
+        static XElement CreateRiderElement(Rider rider)
+        {
+            var attributes = new List<XAttribute>();
+            if (!string.IsNullOrEmpty(rider.PERSONID))
+                attributes.Add(new XAttribute("PERSONID", rider.PERSONID));
+
+            var elements = new List<object>
             {
-                var array = (JArray)value;
-                return new XElement(name,
-                    array.Select((item, index) => CreateElement(name + "_" + index, item))
-                );
-            }
-            else
-            {
-                return new XElement(name, value.ToString());
-            }
+                new XElement("CODE", rider.CODE),
+                new XElement("CLASS", rider.CLASS),
+                new XElement("SEX", rider.SEX),
+                new XElement("AMOUNT", rider.AMOUNT),
+                new XElement("UNITS", rider.UNITS),
+                new XElement("ISSAGE", rider.ISSAGE),
+                new XElement("CVGDIVOPT", rider.CVGDIVOPT),
+                new XElement("CVGPREM", rider.CVGPREM)
+            };
+
+            if (rider.RATING != null)
+                elements.Add(CreateRiderRatingElement(rider.RATING));
+
+            return new XElement("RIDER", attributes, elements);
+        }
+
+        static XElement CreateRiderRatingElement(RatingRider rating)
+        {
+            return new XElement("RATING",
+                new XElement("TABLE", rating.TABLE),
+                new XElement("TEMPORARYFLATTOAGE", rating.TEMPORARYFLATTOAGE)
+            );
         }
     }
 }
