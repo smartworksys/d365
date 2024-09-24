@@ -1,37 +1,40 @@
 using System;
-using System.Linq;
 using System.Collections.Generic;
+using System.Linq;
 using Newtonsoft.Json;
 using System.Xml.Linq;
 
 namespace JsonToXmlConverter
 {
-    // Define model classes within the same namespace and file
+    // Define model classes
     public class Root
     {
+        [JsonProperty("FIPSCOLINKFILE")]
+        public FipscoLinkFile FIPSCOLINKFILE { get; set; }
+    }
+
+    public class FipscoLinkFile
+    {
+        [JsonProperty("@VERSION")]
+        public string VERSION { get; set; }
+
         [JsonProperty("DATA")]
-        public Data Data { get; set; }
+        public Data DATA { get; set; }
     }
 
     public class Data
     {
-        [JsonProperty("Illustration_System")]
-        public string IllustrationSystem { get; set; }
-
         [JsonProperty("AGENTINFORMATION")]
-        public AgentInformation AgentInformation { get; set; }
+        public AgentInformation AGENTINFORMATION { get; set; }
 
         [JsonProperty("PERSON")]
-        public List<Person> Persons { get; set; }
+        public List<Person> PERSON { get; set; }
 
         [JsonProperty("RELATION")]
-        public List<Relation> Relations { get; set; }
+        public List<Relation> RELATION { get; set; }
 
         [JsonProperty("CASEDATA")]
-        public CaseData CaseData { get; set; }
-
-        [JsonProperty("RIDER")]
-        public List<Rider> Riders { get; set; }
+        public CaseData CASEDATA { get; set; }
     }
 
     public class AgentInformation
@@ -71,7 +74,7 @@ namespace JsonToXmlConverter
         public string CLIENTID { get; set; }
         public string MEMBERCOUNCIL { get; set; }
         public string MEMBERSTATUS { get; set; }
-        public int? INACTIVEFEEIND { get; set; }
+        public string INACTIVEFEEIND { get; set; }
         public string ADDRESS1 { get; set; }
         public string ADDRESS2 { get; set; }
         public string CITY { get; set; }
@@ -79,15 +82,33 @@ namespace JsonToXmlConverter
         public string ZIP { get; set; }
         public string STATEOFISSUE { get; set; }
         public string DATEOFBIRTH { get; set; }
-        public int? ISSUEAGE { get; set; }
+        public string ISSUEAGE { get; set; }
         public string SEX { get; set; }
+        public string PTXT1 { get; set; }
+        public string PTXT2 { get; set; }
+        public string PTXT3 { get; set; }
+        public string PNUM1 { get; set; }
+        public string PNUM2 { get; set; }
+        public string PNUM3 { get; set; }
+        public string PDT1 { get; set; }
+        public string PDT2 { get; set; }
+        public string PDT3 { get; set; }
     }
 
     public class Relation
     {
-        public int ORIGINATINGPERSONID { get; set; }
-        public int RELATEDPERSONID { get; set; }
-        public int ROLECODE { get; set; }
+        public string ORIGINATINGPERSONID { get; set; }
+        public string RELATEDPERSONID { get; set; }
+        public string ROLECODE { get; set; }
+        public string RTXT1 { get; set; }
+        public string RTXT2 { get; set; }
+        public string RTXT3 { get; set; }
+        public string RNUM1 { get; set; }
+        public string RNUM2 { get; set; }
+        public string RNUM3 { get; set; }
+        public string RDT1 { get; set; }
+        public string RDT2 { get; set; }
+        public string RDT3 { get; set; }
     }
 
     public class CaseData
@@ -101,13 +122,29 @@ namespace JsonToXmlConverter
         public string STATUS { get; set; }
         public Rating RATING { get; set; }
         public string WLFACEOPTION { get; set; }
-        public double? WLFACEPREMAMT { get; set; }
+        public string WLFACEPREMAMT { get; set; }
         public string WLPREMMODE { get; set; }
         public string WLPAYFORM { get; set; }
+        public string TERMCONVERSION { get; set; }
+        public string GPOEXERCISE { get; set; }
+        public string PRINT { get; set; }
+        public string ADDLOANINTTOBAL { get; set; }
+        public string WDRLTOLOANATCOSTBASIS { get; set; }
         public string ISSUEDATE { get; set; }
         public string PLANVERSIONID { get; set; }
+        public string PAYMENTYEARS { get; set; }
+        public string CTXT3 { get; set; }
+        public string CNUM1 { get; set; }
+        public string CNUM2 { get; set; }
+        public string CNUM3 { get; set; }
+        public string CDT1 { get; set; }
+        public string CDT2 { get; set; }
+        public string CDT3 { get; set; }
         public Policy POLICY { get; set; }
         public Inforce INFORCE { get; set; }
+
+        [JsonProperty("RIDER")]
+        public List<Rider> RIDER { get; set; }
     }
 
     public class Rating
@@ -119,24 +156,64 @@ namespace JsonToXmlConverter
         public string TABLE2 { get; set; }
         public string FLATEXTRA2 { get; set; }
         public string FLATEXTRA2TOAGE { get; set; }
-        public double? PERMANENTFLATEXTRA2 { get; set; }
+        public string PERMANENTFLATEXTRA2 { get; set; }
     }
 
     public class Policy
     {
+        [JsonProperty("@TYPE")]
+        public string TYPE { get; set; }
+
         public string CODE { get; set; }
     }
 
     public class Inforce
     {
-        public double? APBCURRENTDEATHBENEFIT { get; set; }
-        public double? ANNUALINCREASEAMT { get; set; }
-        public double? PUADEATHBENEFIT { get; set; }
-        public double? ACCOUNTVALUE { get; set; }
+        public string APBCURRENTDEATHBENEFIT { get; set; }
+        public string ANNUALINCREASEAMT { get; set; }
+        public string ADDAVAILABLECONV { get; set; }
+        public string AMTAVAILABLECONV { get; set; }
+        public string PUADEATHBENEFIT { get; set; }
+        public string BASELTDPUADEPOSIT { get; set; }
+        public string BASEYTDPUADEPOSIT { get; set; }
+        public string SDPUALTDPUADEPOSIT { get; set; }
+        public string SDPUAYTDPUADEPOSIT { get; set; }
+        public string MADPUALTDPUADEPOSIT { get; set; }
+        public string MADPUAYTDPUADEPOSIT { get; set; }
+        public string DATAASOFDATE { get; set; }
+        public string ISSUECLASS { get; set; }
+        public string ACCOUNTVALUE { get; set; }
         public string PAIDTODATE { get; set; }
-        public double? PUACASHVALUE { get; set; }
+        public string CUMULATIVEPREMIUM { get; set; }
+        public string CUMULATIVEWTHDRL { get; set; }
+        public string PUACASHVALUE { get; set; }
+        public string DIVACCUMS { get; set; }
         public string POLICYNUMBER { get; set; }
-        public double? STANDARDLOAN { get; set; }
+        public string STANDARDLOAN { get; set; }
+        public string TEN35AMT { get; set; }
+        public string SLIPUADEATHBENEFIT { get; set; }
+        public string APBPUADEATHBENEFIT { get; set; }
+        public string SDPUADEATHBENEFIT { get; set; }
+        public string ADPUADEATHBENEFIT { get; set; }
+        public string MADPUADEATHBENEFIT { get; set; }
+        public string PUADEPOSITLIMIT { get; set; }
+        public string LIFETODATEPUADEPOSIT { get; set; }
+        public string DBPURCHASEBYPUARIDERDIVS { get; set; }
+        public string G7PAYSTARTDATE { get; set; }
+        public string G7PAYANNUALPREMIUM { get; set; }
+        public string G7PAYPREMIUMPAID { get; set; }
+        public string CVASOFLASTMATCHANGE { get; set; }
+        public string MEC { get; set; }
+        public string EXEMPT { get; set; }
+        public string ITXT1 { get; set; }
+        public string ITXT2 { get; set; }
+        public string ITXT3 { get; set; }
+        public string INUM1 { get; set; }
+        public string INUM2 { get; set; }
+        public string INUM3 { get; set; }
+        public string IDT1 { get; set; }
+        public string IDT2 { get; set; }
+        public string IDT3 { get; set; }
     }
 
     public class Rider
@@ -147,38 +224,63 @@ namespace JsonToXmlConverter
         public string CODE { get; set; }
         public string CLASS { get; set; }
         public string SEX { get; set; }
-        public int? AMOUNT { get; set; }
-        public double? UNITS { get; set; }
-        public int? ISSAGE { get; set; }
+        public string AMOUNT { get; set; }
+        public string UNITS { get; set; }
+        public string ISSAGE { get; set; }
         public string CVGDIVOPT { get; set; }
-        public double? CVGPREM { get; set; }
+        public string CVGDIVACCUMS { get; set; }
+        public string CVGPREM { get; set; }
         public RatingRider RATING { get; set; }
+        public string TBROYTFACEAMOUNT { get; set; }
+        public string TBRSPECIFIEDWAIVEDPREMIUM { get; set; }
+        public string TBRPUAEARNEDFACE { get; set; }
+        public string TBRPUAYTDFACE { get; set; }
+        public string TBRPUAYTDSURRENDERAMT { get; set; }
+        public string FIXEDPREMIUMOVERRIDEDATE { get; set; }
+        public string TBRPUASPURCHASEDBYDIVSLTD { get; set; }
+        public string TBRPUASPURCHASEDBYDIVSYTD { get; set; }
+        public string TBRNEXTANNUALPREMIUM { get; set; }
+        public string TBRPOLPREVDIVDUR { get; set; }
+        public string TBRNEXTANNVDIVDUR { get; set; }
+        public string TBRANNUALPREMIUM { get; set; }
+        public string TBRDURATION { get; set; }
+        public string RIDERSTATUS { get; set; }
+        public string TBRPREMIUMPUAS { get; set; }
+        public string RDTXT1 { get; set; }
+        public string RDTXT2 { get; set; }
+        public string RDTXT3 { get; set; }
+        public string RDNUM1 { get; set; }
+        public string RDNUM2 { get; set; }
+        public string RDNUM3 { get; set; }
+        public string RDDT1 { get; set; }
+        public string RDDT2 { get; set; }
+        public string RDDT3 { get; set; }
     }
 
     public class RatingRider
     {
         public string TABLE { get; set; }
+        public string TEMPORARYFLATEXTRA { get; set; }
         public string TEMPORARYFLATTOAGE { get; set; }
+        public string PERMANENTFLATEXTRA { get; set; }
     }
 
     class Program
     {
         static void Main(string[] args)
         {
-            string json = /* Your JSON string */;
+            // Your JSON string
+            string json = /* Your JSON string representing the data */;
 
             try
             {
                 // Deserialize JSON into Root object
-                var root = JsonConvert.DeserializeObject<Root>(json);
+                Root root = JsonConvert.DeserializeObject<Root>(json);
 
                 // Create XML
-                var xmlDoc = new XDocument(
+                XDocument xmlDoc = new XDocument(
                     new XDeclaration("1.0", "UTF-8", "yes"),
-                    new XElement("FIPSCOLINKFILE",
-                        new XAttribute("VERSION", "1.00"),
-                        CreateDataElement(root.Data)
-                    )
+                    CreateFipscoLinkFileElement(root.FIPSCOLINKFILE)
                 );
 
                 // Output XML
@@ -190,56 +292,43 @@ namespace JsonToXmlConverter
             }
         }
 
+        static XElement CreateFipscoLinkFileElement(FipscoLinkFile fipsco)
+        {
+            var element = new XElement("FIPSCOLINKFILE",
+                new XAttribute("VERSION", fipsco.VERSION),
+                CreateDataElement(fipsco.DATA)
+            );
+
+            return element;
+        }
+
         static XElement CreateDataElement(Data data)
         {
             var elements = new List<object>();
 
-            if (data.IllustrationSystem != null)
-                elements.Add(new XElement("Illustration_System", data.IllustrationSystem));
+            if (data.AGENTINFORMATION != null)
+                elements.Add(CreateAgentInformationElement(data.AGENTINFORMATION));
 
-            if (data.AgentInformation != null)
-                elements.Add(CreateAgentInformationElement(data.AgentInformation));
+            if (data.PERSON != null)
+                elements.AddRange(data.PERSON.Select(CreatePersonElement));
 
-            if (data.Persons != null)
-                elements.AddRange(data.Persons.Select(CreatePersonElement));
+            if (data.RELATION != null)
+                elements.AddRange(data.RELATION.Select(CreateRelationElement));
 
-            if (data.Relations != null)
-                elements.AddRange(data.Relations.Select(CreateRelationElement));
-
-            if (data.CaseData != null)
-                elements.Add(CreateCaseDataElement(data.CaseData));
-
-            if (data.Riders != null)
-                elements.AddRange(data.Riders.Select(CreateRiderElement));
+            if (data.CASEDATA != null)
+                elements.Add(CreateCaseDataElement(data.CASEDATA));
 
             return new XElement("DATA", elements);
         }
 
         static XElement CreateAgentInformationElement(AgentInformation agentInfo)
         {
-            return new XElement("AGENTINFORMATION",
-                new XElement("FIRSTNAME", agentInfo.FIRSTNAME),
-                new XElement("MIDDLENAME", agentInfo.MIDDLENAME),
-                new XElement("LASTNAME", agentInfo.LASTNAME),
-                new XElement("ADDRESS1", agentInfo.ADDRESS1),
-                new XElement("ADDRESS2", agentInfo.ADDRESS2),
-                new XElement("CITY", agentInfo.CITY),
-                new XElement("STATE", agentInfo.STATE),
-                new XElement("ZIP", agentInfo.ZIP),
-                new XElement("COUNTRY", agentInfo.COUNTRY),
-                new XElement("AGENTID", agentInfo.AGENTID),
-                new XElement("AGENCY", agentInfo.AGENCY),
-                new XElement("GA", agentInfo.GA),
-                new XElement("AITXT1", agentInfo.AITXT1),
-                new XElement("AITXT2", agentInfo.AITXT2),
-                new XElement("AITXT3", agentInfo.AITXT3),
-                new XElement("AINUM1", agentInfo.AINUM1),
-                new XElement("AINUM2", agentInfo.AINUM2),
-                new XElement("AINUM3", agentInfo.AINUM3),
-                new XElement("AIDT1", agentInfo.AIDT1),
-                new XElement("AIDT2", agentInfo.AIDT2),
-                new XElement("AIDT3", agentInfo.AIDT3)
-            );
+            var properties = agentInfo.GetType().GetProperties();
+
+            var elements = properties.Select(prop =>
+                new XElement(prop.Name, prop.GetValue(agentInfo) ?? string.Empty));
+
+            return new XElement("AGENTINFORMATION", elements);
         }
 
         static XElement CreatePersonElement(Person person)
@@ -248,37 +337,23 @@ namespace JsonToXmlConverter
             if (!string.IsNullOrEmpty(person.PERSONID))
                 attributes.Add(new XAttribute("PERSONID", person.PERSONID));
 
-            var elements = new List<object>
-            {
-                new XElement("FIRSTNAME", person.FIRSTNAME),
-                new XElement("MIDDLEINITIAL", person.MIDDLEINITIAL),
-                new XElement("SUFFIX", person.SUFFIX),
-                new XElement("LASTNAME", person.LASTNAME),
-                new XElement("CLIENTID", person.CLIENTID),
-                new XElement("MEMBERCOUNCIL", person.MEMBERCOUNCIL),
-                new XElement("MEMBERSTATUS", person.MEMBERSTATUS),
-                new XElement("INACTIVEFEEIND", person.INACTIVEFEEIND),
-                new XElement("ADDRESS1", person.ADDRESS1),
-                new XElement("ADDRESS2", person.ADDRESS2),
-                new XElement("CITY", person.CITY),
-                new XElement("STATE", person.STATE),
-                new XElement("ZIP", person.ZIP),
-                new XElement("STATEOFISSUE", person.STATEOFISSUE),
-                new XElement("DATEOFBIRTH", person.DATEOFBIRTH),
-                new XElement("ISSUEAGE", person.ISSUEAGE),
-                new XElement("SEX", person.SEX)
-            };
+            var properties = person.GetType().GetProperties()
+                .Where(prop => prop.Name != "PERSONID");
+
+            var elements = properties.Select(prop =>
+                new XElement(prop.Name, prop.GetValue(person) ?? string.Empty));
 
             return new XElement("PERSON", attributes, elements);
         }
 
         static XElement CreateRelationElement(Relation relation)
         {
-            return new XElement("RELATION",
-                new XElement("ORIGINATINGPERSONID", relation.ORIGINATINGPERSONID),
-                new XElement("RELATEDPERSONID", relation.RELATEDPERSONID),
-                new XElement("ROLECODE", relation.ROLECODE)
-            );
+            var properties = relation.GetType().GetProperties();
+
+            var elements = properties.Select(prop =>
+                new XElement(prop.Name, prop.GetValue(relation) ?? string.Empty));
+
+            return new XElement("RELATION", elements);
         }
 
         static XElement CreateCaseDataElement(CaseData caseData)
@@ -287,23 +362,16 @@ namespace JsonToXmlConverter
             if (!string.IsNullOrEmpty(caseData.PERSONID))
                 attributes.Add(new XAttribute("PERSONID", caseData.PERSONID));
 
-            var elements = new List<object>
-            {
-                new XElement("POLICYNUMBER", caseData.POLICYNUMBER),
-                new XElement("PRODUCT", caseData.PRODUCT),
-                new XElement("CLASS", caseData.CLASS),
-                new XElement("STATUS", caseData.STATUS)
-            };
+            var elements = new List<object>();
+
+            var properties = caseData.GetType().GetProperties()
+                .Where(prop => prop.Name != "PERSONID" && prop.Name != "RATING" && prop.Name != "POLICY" && prop.Name != "INFORCE" && prop.Name != "RIDER");
+
+            elements.AddRange(properties.Select(prop =>
+                new XElement(prop.Name, prop.GetValue(caseData) ?? string.Empty)));
 
             if (caseData.RATING != null)
                 elements.Add(CreateRatingElement(caseData.RATING));
-
-            elements.Add(new XElement("WLFACEOPTION", caseData.WLFACEOPTION));
-            elements.Add(new XElement("WLFACEPREMAMT", caseData.WLFACEPREMAMT));
-            elements.Add(new XElement("WLPREMMODE", caseData.WLPREMMODE));
-            elements.Add(new XElement("WLPAYFORM", caseData.WLPAYFORM));
-            elements.Add(new XElement("ISSUEDATE", caseData.ISSUEDATE));
-            elements.Add(new XElement("PLANVERSIONID", caseData.PLANVERSIONID));
 
             if (caseData.POLICY != null)
                 elements.Add(CreatePolicyElement(caseData.POLICY));
@@ -311,42 +379,44 @@ namespace JsonToXmlConverter
             if (caseData.INFORCE != null)
                 elements.Add(CreateInforceElement(caseData.INFORCE));
 
+            if (caseData.RIDER != null)
+                elements.AddRange(caseData.RIDER.Select(CreateRiderElement));
+
             return new XElement("CASEDATA", attributes, elements);
         }
 
         static XElement CreateRatingElement(Rating rating)
         {
-            return new XElement("RATING",
-                new XElement("TABLE1", rating.TABLE1),
-                new XElement("FLATEXTRA1", rating.FLATEXTRA1),
-                new XElement("FLATEXTRA1TOAGE", rating.FLATEXTRA1TOAGE),
-                new XElement("PERMANENTFLATEXTRA1", rating.PERMANENTFLATEXTRA1),
-                new XElement("TABLE2", rating.TABLE2),
-                new XElement("FLATEXTRA2", rating.FLATEXTRA2),
-                new XElement("FLATEXTRA2TOAGE", rating.FLATEXTRA2TOAGE),
-                new XElement("PERMANENTFLATEXTRA2", rating.PERMANENTFLATEXTRA2)
-            );
+            var properties = rating.GetType().GetProperties();
+
+            var elements = properties.Select(prop =>
+                new XElement(prop.Name, prop.GetValue(rating) ?? string.Empty));
+
+            return new XElement("RATING", elements);
         }
 
         static XElement CreatePolicyElement(Policy policy)
         {
-            return new XElement("POLICY",
+            var attributes = new List<XAttribute>();
+            if (!string.IsNullOrEmpty(policy.TYPE))
+                attributes.Add(new XAttribute("TYPE", policy.TYPE));
+
+            var elements = new List<object>
+            {
                 new XElement("CODE", policy.CODE)
-            );
+            };
+
+            return new XElement("POLICY", attributes, elements);
         }
 
         static XElement CreateInforceElement(Inforce inforce)
         {
-            return new XElement("INFORCE",
-                new XElement("APBCURRENTDEATHBENEFIT", inforce.APBCURRENTDEATHBENEFIT),
-                new XElement("ANNUALINCREASEAMT", inforce.ANNUALINCREASEAMT),
-                new XElement("PUADEATHBENEFIT", inforce.PUADEATHBENEFIT),
-                new XElement("ACCOUNTVALUE", inforce.ACCOUNTVALUE),
-                new XElement("PAIDTODATE", inforce.PAIDTODATE),
-                new XElement("PUACASHVALUE", inforce.PUACASHVALUE),
-                new XElement("POLICYNUMBER", inforce.POLICYNUMBER),
-                new XElement("STANDARDLOAN", inforce.STANDARDLOAN)
-            );
+            var properties = inforce.GetType().GetProperties();
+
+            var elements = properties.Select(prop =>
+                new XElement(prop.Name, prop.GetValue(inforce) ?? string.Empty));
+
+            return new XElement("INFORCE", elements);
         }
 
         static XElement CreateRiderElement(Rider rider)
@@ -355,30 +425,28 @@ namespace JsonToXmlConverter
             if (!string.IsNullOrEmpty(rider.PERSONID))
                 attributes.Add(new XAttribute("PERSONID", rider.PERSONID));
 
-            var elements = new List<object>
-            {
-                new XElement("CODE", rider.CODE),
-                new XElement("CLASS", rider.CLASS),
-                new XElement("SEX", rider.SEX),
-                new XElement("AMOUNT", rider.AMOUNT),
-                new XElement("UNITS", rider.UNITS),
-                new XElement("ISSAGE", rider.ISSAGE),
-                new XElement("CVGDIVOPT", rider.CVGDIVOPT),
-                new XElement("CVGPREM", rider.CVGPREM)
-            };
+            var elements = new List<object>();
+
+            var properties = rider.GetType().GetProperties()
+                .Where(prop => prop.Name != "PERSONID" && prop.Name != "RATING");
+
+            elements.AddRange(properties.Select(prop =>
+                new XElement(prop.Name, prop.GetValue(rider) ?? string.Empty)));
 
             if (rider.RATING != null)
-                elements.Add(CreateRiderRatingElement(rider.RATING));
+                elements.Add(CreateRatingRiderElement(rider.RATING));
 
             return new XElement("RIDER", attributes, elements);
         }
 
-        static XElement CreateRiderRatingElement(RatingRider rating)
+        static XElement CreateRatingRiderElement(RatingRider rating)
         {
-            return new XElement("RATING",
-                new XElement("TABLE", rating.TABLE),
-                new XElement("TEMPORARYFLATTOAGE", rating.TEMPORARYFLATTOAGE)
-            );
+            var properties = rating.GetType().GetProperties();
+
+            var elements = properties.Select(prop =>
+                new XElement(prop.Name, prop.GetValue(rating) ?? string.Empty));
+
+            return new XElement("RATING", elements);
         }
     }
 }
