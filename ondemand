@@ -1,40 +1,35 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
+using System.Collections.Generic;
+using System.IO;
 using Newtonsoft.Json;
 using System.Xml.Linq;
 
 namespace JsonToXmlConverter
 {
-    // Define model classes
+    // Define model classes within the same namespace and file
     public class Root
     {
-        [JsonProperty("FIPSCOLINKFILE")]
-        public FipscoLinkFile FIPSCOLINKFILE { get; set; }
-    }
-
-    public class FipscoLinkFile
-    {
-        [JsonProperty("@VERSION")]
-        public string VERSION { get; set; }
-
         [JsonProperty("DATA")]
-        public Data DATA { get; set; }
+        public Data Data { get; set; }
     }
 
     public class Data
     {
+        [JsonProperty("Illustration_System")]
+        public string IllustrationSystem { get; set; }
+
         [JsonProperty("AGENTINFORMATION")]
-        public AgentInformation AGENTINFORMATION { get; set; }
+        public AgentInformation AgentInformation { get; set; }
 
         [JsonProperty("PERSON")]
-        public List<Person> PERSON { get; set; }
+        public List<Person> Persons { get; set; }
 
         [JsonProperty("RELATION")]
-        public List<Relation> RELATION { get; set; }
+        public List<Relation> Relations { get; set; }
 
         [JsonProperty("CASEDATA")]
-        public CaseData CASEDATA { get; set; }
+        public CaseData CaseData { get; set; }
     }
 
     public class AgentInformation
@@ -269,22 +264,26 @@ namespace JsonToXmlConverter
     {
         static void Main(string[] args)
         {
-            // Your JSON string
-            string json = /* Your JSON string representing the data */;
+            string jsonFilePath = "0104410069.json";
+            string jsonData = File.ReadAllText(jsonFilePath);
+            jsonData = jsonData.Replace(": []", ": \"\"");
 
             try
             {
                 // Deserialize JSON into Root object
-                Root root = JsonConvert.DeserializeObject<Root>(json);
+                var root = JsonConvert.DeserializeObject<Root>(jsonData);
 
                 // Create XML
-                XDocument xmlDoc = new XDocument(
+                var xmlDoc = new XDocument(
                     new XDeclaration("1.0", "UTF-8", "yes"),
-                    CreateFipscoLinkFileElement(root.FIPSCOLINKFILE)
+                    new XElement("FIPSCOLINKFILE",
+                        new XAttribute("VERSION", "1.00"),
+                        CreateDataElement(root.Data)
+                    )
                 );
 
                 // Output XML
-                Console.WriteLine(xmlDoc.ToString());
+                Console.WriteLine(xmlDoc.ToString(SaveOptions.DisableFormatting));
             }
             catch (Exception ex)
             {
@@ -292,161 +291,79 @@ namespace JsonToXmlConverter
             }
         }
 
-        static XElement CreateFipscoLinkFileElement(FipscoLinkFile fipsco)
-        {
-            var element = new XElement("FIPSCOLINKFILE",
-                new XAttribute("VERSION", fipsco.VERSION),
-                CreateDataElement(fipsco.DATA)
-            );
-
-            return element;
-        }
-
         static XElement CreateDataElement(Data data)
         {
             var elements = new List<object>();
 
-            if (data.AGENTINFORMATION != null)
-                elements.Add(CreateAgentInformationElement(data.AGENTINFORMATION));
+            if (data.IllustrationSystem != null)
+                elements.Add(new XElement("Illustration_System", data.IllustrationSystem));
 
-            if (data.PERSON != null)
-                elements.AddRange(data.PERSON.Select(CreatePersonElement));
+            if (data.AgentInformation != null)
+                elements.Add(CreateElementFromObject("AGENTINFORMATION", data.AgentInformation));
 
-            if (data.RELATION != null)
-                elements.AddRange(data.RELATION.Select(CreateRelationElement));
+            if (data.Persons != null)
+            {
+                // Sort Persons by PERSONID
+                var sortedPersons = data.Persons.OrderBy(p => p.PERSONID);
+                elements.AddRange(sortedPersons.Select(p => CreateElementFromObject("PERSON", p)));
+            }
 
-            if (data.CASEDATA != null)
-                elements.Add(CreateCaseDataElement(data.CASEDATA));
+            if (data.Relations != null)
+                elements.AddRange(data.Relations.Select(r => CreateElementFromObject("RELATION", r)));
+
+            if (data.CaseData != null)
+                elements.Add(CreateCaseDataElement(data.CaseData));
 
             return new XElement("DATA", elements);
         }
 
-        static XElement CreateAgentInformationElement(AgentInformation agentInfo)
+        static XElement CreateElementFromObject(string elementName, object obj)
         {
-            var properties = agentInfo.GetType().GetProperties();
-
-            var elements = properties.Select(prop =>
-                new XElement(prop.Name, prop.GetValue(agentInfo) ?? string.Empty));
-
-            return new XElement("AGENTINFORMATION", elements);
-        }
-
-        static XElement CreatePersonElement(Person person)
-        {
+            var properties = obj.GetType().GetProperties();
+            var elements = new List<object>();
             var attributes = new List<XAttribute>();
-            if (!string.IsNullOrEmpty(person.PERSONID))
-                attributes.Add(new XAttribute("PERSONID", person.PERSONID));
 
-            var properties = person.GetType().GetProperties()
-                .Where(prop => prop.Name != "PERSONID");
+            foreach (var prop in properties)
+            {
+                var value = prop.GetValue(obj) ?? string.Empty;
+                var jsonProperty = prop.GetCustomAttributes(typeof(JsonPropertyAttribute), false)
+                                        .FirstOrDefault() as JsonPropertyAttribute;
+                var name = jsonProperty != null ? jsonProperty.PropertyName.TrimStart('@') : prop.Name;
 
-            var elements = properties.Select(prop =>
-                new XElement(prop.Name, prop.GetValue(person) ?? string.Empty));
+                if (jsonProperty != null && jsonProperty.PropertyName.StartsWith("@"))
+                {
+                    // Handle attributes
+                    attributes.Add(new XAttribute(name, value));
+                }
+                else if (prop.PropertyType == typeof(List<Rider>))
+                {
+                    // Handle list of Rider
+                    var riders = value as List<Rider>;
+                    if (riders != null)
+                    {
+                        elements.AddRange(riders.Select(r => CreateElementFromObject("RIDER", r)));
+                    }
+                }
+                else if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
+                {
+                    // Handle nested objects
+                    if (value != null)
+                        elements.Add(CreateElementFromObject(name, value));
+                    else
+                        elements.Add(new XElement(name));
+                }
+                else
+                {
+                    elements.Add(new XElement(name, value));
+                }
+            }
 
-            return new XElement("PERSON", attributes, elements);
-        }
-
-        static XElement CreateRelationElement(Relation relation)
-        {
-            var properties = relation.GetType().GetProperties();
-
-            var elements = properties.Select(prop =>
-                new XElement(prop.Name, prop.GetValue(relation) ?? string.Empty));
-
-            return new XElement("RELATION", elements);
+            return new XElement(elementName, attributes, elements);
         }
 
         static XElement CreateCaseDataElement(CaseData caseData)
         {
-            var attributes = new List<XAttribute>();
-            if (!string.IsNullOrEmpty(caseData.PERSONID))
-                attributes.Add(new XAttribute("PERSONID", caseData.PERSONID));
-
-            var elements = new List<object>();
-
-            var properties = caseData.GetType().GetProperties()
-                .Where(prop => prop.Name != "PERSONID" && prop.Name != "RATING" && prop.Name != "POLICY" && prop.Name != "INFORCE" && prop.Name != "RIDER");
-
-            elements.AddRange(properties.Select(prop =>
-                new XElement(prop.Name, prop.GetValue(caseData) ?? string.Empty)));
-
-            if (caseData.RATING != null)
-                elements.Add(CreateRatingElement(caseData.RATING));
-
-            if (caseData.POLICY != null)
-                elements.Add(CreatePolicyElement(caseData.POLICY));
-
-            if (caseData.INFORCE != null)
-                elements.Add(CreateInforceElement(caseData.INFORCE));
-
-            if (caseData.RIDER != null)
-                elements.AddRange(caseData.RIDER.Select(CreateRiderElement));
-
-            return new XElement("CASEDATA", attributes, elements);
-        }
-
-        static XElement CreateRatingElement(Rating rating)
-        {
-            var properties = rating.GetType().GetProperties();
-
-            var elements = properties.Select(prop =>
-                new XElement(prop.Name, prop.GetValue(rating) ?? string.Empty));
-
-            return new XElement("RATING", elements);
-        }
-
-        static XElement CreatePolicyElement(Policy policy)
-        {
-            var attributes = new List<XAttribute>();
-            if (!string.IsNullOrEmpty(policy.TYPE))
-                attributes.Add(new XAttribute("TYPE", policy.TYPE));
-
-            var elements = new List<object>
-            {
-                new XElement("CODE", policy.CODE)
-            };
-
-            return new XElement("POLICY", attributes, elements);
-        }
-
-        static XElement CreateInforceElement(Inforce inforce)
-        {
-            var properties = inforce.GetType().GetProperties();
-
-            var elements = properties.Select(prop =>
-                new XElement(prop.Name, prop.GetValue(inforce) ?? string.Empty));
-
-            return new XElement("INFORCE", elements);
-        }
-
-        static XElement CreateRiderElement(Rider rider)
-        {
-            var attributes = new List<XAttribute>();
-            if (!string.IsNullOrEmpty(rider.PERSONID))
-                attributes.Add(new XAttribute("PERSONID", rider.PERSONID));
-
-            var elements = new List<object>();
-
-            var properties = rider.GetType().GetProperties()
-                .Where(prop => prop.Name != "PERSONID" && prop.Name != "RATING");
-
-            elements.AddRange(properties.Select(prop =>
-                new XElement(prop.Name, prop.GetValue(rider) ?? string.Empty)));
-
-            if (rider.RATING != null)
-                elements.Add(CreateRatingRiderElement(rider.RATING));
-
-            return new XElement("RIDER", attributes, elements);
-        }
-
-        static XElement CreateRatingRiderElement(RatingRider rating)
-        {
-            var properties = rating.GetType().GetProperties();
-
-            var elements = properties.Select(prop =>
-                new XElement(prop.Name, prop.GetValue(rating) ?? string.Empty));
-
-            return new XElement("RATING", elements);
+            return CreateElementFromObject("CASEDATA", caseData);
         }
     }
 }
