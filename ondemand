@@ -157,8 +157,7 @@ namespace JsonToXmlConverter
 
     public class Policy
     {
-        [JsonProperty("@TYPE")]
-        public string TYPE { get; set; }
+        public string TYPE { get; set; } // Removed JsonProperty attribute
 
         public string CODE { get; set; }
     }
@@ -214,8 +213,7 @@ namespace JsonToXmlConverter
 
     public class Rider
     {
-        [JsonProperty("@PERSONID")]
-        public string PERSONID { get; set; }
+        public string PERSONID { get; set; } // Removed JsonProperty attribute
 
         public string CODE { get; set; }
         public string CLASS { get; set; }
@@ -368,6 +366,14 @@ namespace JsonToXmlConverter
             var elements = new List<object>();
             var attributes = new List<XAttribute>();
 
+            // List of property names that should be treated as attributes
+            var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "PERSONID",
+                "VERSION",
+                "TYPE"
+            };
+
             foreach (var prop in properties)
             {
                 var value = prop.GetValue(obj) ?? string.Empty;
@@ -375,7 +381,7 @@ namespace JsonToXmlConverter
                                         .FirstOrDefault() as JsonPropertyAttribute;
                 var name = jsonProperty != null ? jsonProperty.PropertyName.TrimStart('@') : prop.Name;
 
-                if (jsonProperty != null && jsonProperty.PropertyName.StartsWith("@"))
+                if (attributeNames.Contains(name) || (jsonProperty != null && jsonProperty.PropertyName.StartsWith("@")))
                 {
                     // Handle attributes
                     attributes.Add(new XAttribute(name, value));
