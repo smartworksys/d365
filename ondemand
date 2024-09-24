@@ -139,6 +139,7 @@ namespace JsonToXmlConverter
         public Inforce INFORCE { get; set; }
 
         [JsonProperty("RIDER")]
+        [JsonConverter(typeof(SingleOrArrayConverter<Rider>))]
         public List<Rider> RIDER { get; set; }
     }
 
@@ -260,6 +261,50 @@ namespace JsonToXmlConverter
         public string PERMANENTFLATEXTRA { get; set; }
     }
 
+    // Custom JsonConverter to handle single object or array
+    public class SingleOrArrayConverter<T> : JsonConverter
+    {
+        public override bool CanConvert(Type objectType)
+        {
+            return (objectType == typeof(List<T>));
+        }
+
+        public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+        {
+            try
+            {
+                if (reader.TokenType == JsonToken.StartArray)
+                {
+                    return serializer.Deserialize<List<T>>(reader);
+                }
+                else if (reader.TokenType == JsonToken.StartObject)
+                {
+                    T instance = serializer.Deserialize<T>(reader);
+                    return new List<T> { instance };
+                }
+                else if (reader.TokenType == JsonToken.Null)
+                {
+                    return new List<T>();
+                }
+                else
+                {
+                    throw new JsonSerializationException("Unexpected token type: " + reader.TokenType);
+                }
+            }
+            catch (Exception ex)
+            {
+                throw new JsonSerializationException("Error deserializing type " + typeof(T).FullName, ex);
+            }
+        }
+
+        public override bool CanWrite => false;
+
+        public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
     class Program
     {
         static void Main(string[] args)
@@ -335,13 +380,17 @@ namespace JsonToXmlConverter
                     // Handle attributes
                     attributes.Add(new XAttribute(name, value));
                 }
-                else if (prop.PropertyType == typeof(List<Rider>))
+                else if (typeof(IEnumerable<object>).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string))
                 {
-                    // Handle list of Rider
-                    var riders = value as List<Rider>;
-                    if (riders != null)
+                    // Handle lists
+                    var items = value as IEnumerable<object>;
+                    if (items != null)
                     {
-                        elements.AddRange(riders.Select(r => CreateElementFromObject("RIDER", r)));
+                        elements.AddRange(items.Select(item => CreateElementFromObject(name, item)));
+                    }
+                    else
+                    {
+                        elements.Add(new XElement(name));
                     }
                 }
                 else if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
