@@ -1,58 +1,13 @@
-using System;
-using System.Text;
-using System.Threading.Tasks;
-using Azure.Identity;
-using Azure.Storage.Blobs;
-using Azure.Storage.Blobs.Models;
-using System.IO;
-
-namespace UploadJsonStringToBlobStorageWithAAD
-{
-    class Program
-    {
-        static async Task Main(string[] args)
+static string FormatJson(string jsonString)
         {
-            // Replace with your storage account blob service URI
-            Uri blobServiceUri = new Uri("https://your_storage_account.blob.core.windows.net");
-
-            // Replace with your container name
-            string containerName = "your-container-name";
-
-            // Your JSON string
-            string jsonString = "{ \"name\": \"John Doe\", \"age\": 30 }";
-
-            // Replace with the blob name you want to use in Azure Storage
-            string blobName = "data.json";
-
-            // Create a BlobServiceClient using DefaultAzureCredential
-            BlobServiceClient blobServiceClient = new BlobServiceClient(blobServiceUri, new DefaultAzureCredential());
-
-            // Upload the JSON string to Azure Blob Storage
-            await UploadJsonStringToBlobStorageAsync(blobServiceClient, containerName, jsonString, blobName);
-
-            Console.WriteLine("JSON string uploaded successfully.");
-        }
-
-        static async Task UploadJsonStringToBlobStorageAsync(BlobServiceClient blobServiceClient, string containerName, string jsonString, string blobName)
-        {
-            // Create the container if it doesn't exist
-            BlobContainerClient containerClient = blobServiceClient.GetBlobContainerClient(containerName);
-            await containerClient.CreateIfNotExistsAsync(PublicAccessType.None);
-
-            // Get a reference to the blob
-            BlobClient blobClient = containerClient.GetBlobClient(blobName);
-
-            Console.WriteLine($"Uploading JSON string to Blob storage as blob:\n\t {blobClient.Uri}");
-
-            // Convert the JSON string to a byte array
-            byte[] byteArray = Encoding.UTF8.GetBytes(jsonString);
-
-            // Create a MemoryStream from the byte array
-            using (MemoryStream stream = new MemoryStream(byteArray))
+            try
             {
-                // Upload the stream to the blob
-                await blobClient.UploadAsync(stream, overwrite: true);
+                var parsedJson = JsonConvert.DeserializeObject(jsonString);
+                return JsonConvert.SerializeObject(parsedJson, Formatting.Indented);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Invalid JSON string.");
+                throw;
             }
         }
-    }
-}
