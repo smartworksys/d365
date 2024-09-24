@@ -364,7 +364,7 @@ namespace JsonToXmlConverter
 
         static XElement CreateElementFromObject(string elementName, object obj)
         {
-            var properties = obj.GetType().GetProperties();
+            var properties = obj.GetType().GetProperties().Where(p => p.GetIndexParameters().Length == 0);
             var elements = new List<object>();
             var attributes = new List<XAttribute>();
 
