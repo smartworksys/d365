@@ -203,12 +203,7 @@ namespace JsonToXmlConverter
                 .OrderBy(p => (string)p["@PERSONID"])
                 .Select(personToken =>
                 {
-                    var person = personToken as JObject;
-                    if (person == null)
-                    {
-                        return null; // Skip if person is not an object
-                    }
-
+                    var person = (JObject)personToken;
                     var personId = (string)person["@PERSONID"] ?? string.Empty;
 
                     var properties = person.Properties()
@@ -219,8 +214,7 @@ namespace JsonToXmlConverter
                         new XAttribute("PERSONID", personId),
                         properties.Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value))
                     );
-                })
-                .Where(x => x != null); // Exclude any null XElement results
+                });
         }
 
         static IEnumerable<XElement> CreateRelations(JArray relations)
@@ -234,11 +228,7 @@ namespace JsonToXmlConverter
                 .Where(r => r != null && r.Type == JTokenType.Object)
                 .Select(relationToken =>
                 {
-                    var relation = relationToken as JObject;
-                    if (relation == null)
-                    {
-                        return null; // Skip if relation is not an object
-                    }
+                    var relation = (JObject)relationToken;
 
                     var properties = relation.Properties()
                                               .Where(prop => prop.Value != null);
@@ -246,8 +236,7 @@ namespace JsonToXmlConverter
                     return new XElement("RELATION",
                         properties.Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value))
                     );
-                })
-                .Where(x => x != null); // Exclude any null XElement results
+                });
         }
 
         static XElement CreateCaseData(JObject caseData)
@@ -258,52 +247,13 @@ namespace JsonToXmlConverter
             var personId = (string)caseData["@PERSONID"] ?? string.Empty;
 
             var properties = caseData.Properties()
-                                     .Where(p => p.Name != "@PERSONID" && p.Name != "RATING" && p.Name != "POLICY" && p.Name != "INFORCE")
+                                     .Where(p => p.Name != "@PERSONID")
                                      .Where(p => p.Value != null);
 
             return new XElement("CASEDATA",
                 new XAttribute("PERSONID", personId),
-                properties.Select(p => CreateElement(p.Name.ToUpper(), p.Value)),
-                CreateRating(caseData["RATING"] as JObject),
-                CreatePolicy(caseData["POLICY"] as JObject),
-                CreateInforce(caseData["INFORCE"] as JObject)
+                properties.Select(p => CreateElement(p.Name.ToUpper(), p.Value))
             );
-        }
-
-        static XElement CreateRating(JObject rating)
-        {
-            if (rating == null)
-                return null;
-
-            var elements = rating.Properties()
-                                 .Where(prop => prop.Value != null)
-                                 .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
-
-            return new XElement("RATING", elements);
-        }
-
-        static XElement CreatePolicy(JObject policy)
-        {
-            if (policy == null)
-                return null;
-
-            var elements = policy.Properties()
-                                 .Where(prop => prop.Value != null)
-                                 .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
-
-            return new XElement("POLICY", elements);
-        }
-
-        static XElement CreateInforce(JObject inforce)
-        {
-            if (inforce == null)
-                return null;
-
-            var elements = inforce.Properties()
-                                  .Where(prop => prop.Value != null)
-                                  .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
-
-            return new XElement("INFORCE", elements);
         }
 
         static IEnumerable<XElement> CreateRiders(JArray riders)
@@ -317,12 +267,7 @@ namespace JsonToXmlConverter
                 .Where(r => r != null && r.Type == JTokenType.Object)
                 .Select(riderToken =>
                 {
-                    var rider = riderToken as JObject;
-                    if (rider == null)
-                    {
-                        return null; // Skip if rider is not an object
-                    }
-
+                    var rider = (JObject)riderToken;
                     var personId = (string)rider["@PERSONID"] ?? string.Empty;
 
                     var properties = rider.Properties()
@@ -333,46 +278,34 @@ namespace JsonToXmlConverter
                         new XAttribute("PERSONID", personId),
                         properties.Select(p => CreateElement(p.Name.ToUpper(), p.Value))
                     );
-                })
-                .Where(x => x != null); // Exclude any null XElement results
+                });
         }
 
         static XElement CreateElement(string name, JToken value)
         {
-            if (value == null || value.Type == JTokenType.Null || (value.Type == JTokenType.Array && !value.HasValues))
+            if (value == null || value.Type == JTokenType.Null)
             {
                 return new XElement(name); // Empty element
-            }
-            else if (value.Type == JTokenType.Array)
-            {
-                // Handle empty arrays by creating empty elements
-                if (!value.HasValues)
-                {
-                    return new XElement(name);
-                }
-                else
-                {
-                    // If the array has values, create elements for each item
-                    return new XElement(name,
-                        value.Children().Select((child, index) => CreateElement(name + "_" + index, child)));
-                }
             }
             else if (value.Type == JTokenType.Object)
             {
                 // Handle objects by creating nested elements
-                var obj = value as JObject;
-                if (obj != null)
-                {
-                    return new XElement(name,
-                        obj.Properties().Select(p => CreateElement(p.Name.ToUpper(), p.Value)));
-                }
-                else
-                {
-                    return new XElement(name);
-                }
+                var obj = (JObject)value;
+                return new XElement(name,
+                    obj.Properties().Select(p => CreateElement(p.Name.ToUpper(), p.Value))
+                );
+            }
+            else if (value.Type == JTokenType.Array)
+            {
+                // Handle arrays by creating elements for each item
+                var array = (JArray)value;
+                return new XElement(name,
+                    array.Select((item, index) => CreateElement(name + "_" + index, item))
+                );
             }
             else
             {
+                // Handle primitive types (String, Integer, Float, etc.)
                 return new XElement(name, value.ToString());
             }
         }
