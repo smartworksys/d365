@@ -326,28 +326,15 @@ namespace JsonToXmlConverter
                     var personId = (string)rider["@PERSONID"] ?? string.Empty;
 
                     var properties = rider.Properties()
-                                          .Where(p => p.Name != "@PERSONID" && p.Name != "RATING")
+                                          .Where(p => p.Name != "@PERSONID")
                                           .Where(p => p.Value != null);
 
                     return new XElement("RIDER",
                         new XAttribute("PERSONID", personId),
-                        properties.Select(p => CreateElement(p.Name.ToUpper(), p.Value)),
-                        CreateRiderRating(rider["RATING"] as JObject)
+                        properties.Select(p => CreateElement(p.Name.ToUpper(), p.Value))
                     );
                 })
                 .Where(x => x != null); // Exclude any null XElement results
-        }
-
-        static XElement CreateRiderRating(JObject rating)
-        {
-            if (rating == null)
-                return null;
-
-            var elements = rating.Properties()
-                                 .Where(prop => prop.Value != null)
-                                 .Select(prop => CreateElement(prop.Name.ToUpper(), prop.Value));
-
-            return new XElement("RATING", elements);
         }
 
         static XElement CreateElement(string name, JToken value)
@@ -370,6 +357,20 @@ namespace JsonToXmlConverter
                         value.Children().Select((child, index) => CreateElement(name + "_" + index, child)));
                 }
             }
+            else if (value.Type == JTokenType.Object)
+            {
+                // Handle objects by creating nested elements
+                var obj = value as JObject;
+                if (obj != null)
+                {
+                    return new XElement(name,
+                        obj.Properties().Select(p => CreateElement(p.Name.ToUpper(), p.Value)));
+                }
+                else
+                {
+                    return new XElement(name);
+                }
+            }
             else
             {
                 return new XElement(name, value.ToString());
@@ -377,4 +378,3 @@ namespace JsonToXmlConverter
         }
     }
 }
-
