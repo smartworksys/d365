@@ -1,37 +1,104 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.WebJobs;
-using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
-using System.Threading.Tasks;
+async function callPowerAutomateFlow(executionContext, formMode) {
+    debugger;
+    Xrm.Utility.showProgressIndicator("Processing...");
 
-public static class FunctionExample
-{
-    [FunctionName("FunctionExample")]
-    public static async Task<IActionResult> Run(
-        [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
-        ILogger log)
-    {
-        string type = req.Query["type"]?.Trim();
-        string policyNo = req.Query["policyNo"]?.Trim();
-        string contactID = req.Query["contactID"]?.Trim();
-        // Ensure to trim and check for null or whitespace
-        string operation = req.Query["operation "]?.Trim(); // Note: Check your parameter name in the query
+    var formContext = executionContext.getFormContext();
 
-        string transTrackingID = null;
-        string payLoadData = null;
+    var accounttypeFieldName = "nf1pbm_accounttype";
+    var accounttypeLookupValue = getLookupFieldValue(formContext, accounttypeFieldName);
+    var accounttype = accounttypeLookupValue ? accounttypeLookupValue.id : "";
 
-        if (!string.IsNullOrWhiteSpace(type) && type.Equals("contact"))
-        {
-            var contactData = new NavigatorClientXML(log);
-            payLoadData = contactData.getNavContactData(contactID);
-            if (!string.IsNullOrWhiteSpace(operation) && operation.Equals("download"))
-            {
-                return new OkObjectResult(payLoadData);
-            }
+    var accessnumberFieldName = "nf1pbm_memberaccessnumber";
+    var accessnumberLookupValue = getLookupFieldValue(formContext, accessnumberFieldName);
+    var accessnumber = accessnumberLookupValue ? accessnumberLookupValue.id : "";
+
+    var accountsubtype = "";
+    if (accounttype === "619BDE1C-DD50-EF11-A317-000D3A1007BB") {
+        accountsubtype = "SC";
+    } else if (accounttype === "08AC6D30-DD50-EF11-A317-000D3A1007BB") {
+        accountsubtype = "IR";
+    } else if (accounttype === "7F5A6823-DD50-EF11-A317-000D3A1007BB") {
+        accountsubtype = "ED";
+    }
+
+    if (!accounttypeLookupValue || !accessnumberLookupValue) {
+        console.log("Lookup values are required to proceed.");
+        Xrm.Utility.closeProgressIndicator();
+        return;
+    }
+
+    try {
+        var retrievedContact = await getContactRecordById(accessnumber);
+        var memberaccess = retrievedContact.nf0base_memberaccessnumber;
+
+        var flowUrl = await getEnvironmentVariable("nf1pbm_VarEnvFlowURLGetAccountRelationships");
+
+        var maturityinstructionuser = Xrm.Utility.getGlobalContext().userSettings.userId.replace("{", "").replace("}", "");
+
+        var data = {
+            accessnumber: accessnumber,
+            accounttype: accounttype,
+            maturityinstructionuser: maturityinstructionuser,
+            accountsubtype: accountsubtype,
+            memberaccess: memberaccess
+        };
+
+        var response = await fetch(flowUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(data)
+        });
+
+        if (!response.ok) {
+            throw new Error("Network response was not ok: " + response.statusText);
         }
 
-        // If the operation is not "download" or any required field is missing/null
-        return new BadRequestObjectResult("Invalid or missing operation type or parameters.");
+        var responseData = await response.json();
+        console.log("Response from Power Automate:", responseData);
+
+        // Update UI based on the response
+        updateWebResource(formContext, responseData, accountsubtype, formMode);
+
+        // Update products based on account type
+        updateProductsByAccountType(formContext, accounttype);
+    } catch (error) {
+        console.error("Error during operation:", error);
+    } finally {
+        Xrm.Utility.closeProgressIndicator();
+    }
+}
+
+async function getEnvironmentVariable(variableName) {
+    var query = `?$select=defaultvalue,displayname&$expand=environmentvariabledefinition_environmentvariablevalue($select=value)&$filter=schemaname eq '${variableName}'`;
+    var result = await Xrm.WebApi.online.retrieveMultipleRecords("environmentvariabledefinition", query);
+    if (result.entities.length > 0 && result.entities[0].environmentvariabledefinition_environmentvariablevalue.length > 0) {
+        return result.entities[0].environmentvariabledefinition_environmentvariablevalue[0].value;
+    }
+    throw new Error("Environment variable not found.");
+}
+
+function updateWebResource(formContext, data, accountsubtype, formMode) {
+    var webResourceControl = formContext.getControl("WebResource_member_accounts");
+    if (webResourceControl) {
+        var webResourceWindow = webResourceControl.getContentWindow();
+        webResourceWindow.then(window => {
+            window.receiveDataFromParent({
+                formContext: formContext,
+                data: data,
+                accountsubtype: accountsubtype,
+                mode: formMode,
+                affiliateAcNo: formContext.getAttribute("nf1pbm_affiliateaccountnumber").getValue()
+            });
+        });
+    }
+}
+
+function updateProductsByAccountType(formContext, accounttype) {
+    if (accounttype === "619BDE1C-DD50-EF11-A317-000D3A1007BB") {
+        filterProducts(formContext, "451130003", "nf1pbm_certificaterenewaltype");
+    } else if (accounttype === "08AC6D30-DD50-EF11-A317-000D3A1007BB") {
+        filterProducts(formContext, "451130000", "nf1pbm_certificaterenewaltype");
+    } else if (accounttype === "7F5A6823-DD50-EF11-A317-000D3A1007BB") {
+        filterProducts(formContext, "451130004", "nf1pbm_certificaterenewaltype");
     }
 }
