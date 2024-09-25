@@ -1,64 +1,15 @@
-static XElement CreateElementFromObject(string elementName, object obj)
-{
-    var properties = obj.GetType().GetProperties().Where(p => p.GetIndexParameters().Length == 0);
-    var elements = new List<object>();
-    var attributes = new List<XAttribute>();
-
-    // List of property names that should be treated as attributes
-    var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    {
-        "PERSONID",
-        "VERSION",
-        "TYPE"
-    };
-
-    foreach (var prop in properties)
-    {
-        var value = prop.GetValue(obj) ?? string.Empty;
-        var jsonProperty = prop.GetCustomAttributes(typeof(JsonPropertyAttribute), false)
-                                .FirstOrDefault() as JsonPropertyAttribute;
-        var name = jsonProperty != null ? jsonProperty.PropertyName.TrimStart('@') : prop.Name;
-
-        if (attributeNames.Contains(name) || (jsonProperty != null && jsonProperty.PropertyName.StartsWith("@")))
-        {
-            // Handle attributes
-            attributes.Add(new XAttribute(name, value));
-        }
-        else if (typeof(IEnumerable<object>).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string))
-        {
-            // Handle lists
-            var items = value as IEnumerable<object>;
-            if (items != null)
-            {
-                elements.AddRange(items.Select(item => CreateElementFromObject(name, item)));
-            }
-            else
-            {
-                elements.Add(new XElement(name));
-            }
-        }
-        else if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
-        {
-            // Handle nested objects
-            if (value != null)
-                elements.Add(CreateElementFromObject(name, value));
-            else
-                elements.Add(new XElement(name));
-        }
-        else
-        {
-            var valueString = value.ToString().Trim();
-
-            if (!string.IsNullOrEmpty(valueString))
-            {
-                elements.Add(new XElement(name, valueString));
-            }
-            else
-            {
-                elements.Add(new XElement(name));
-            }
-        }
+async function getContactRecordById(contactId) {
+    if (!contactId) {
+        throw new Error("Contact ID is required");
     }
 
-    return new XElement(elementName, attributes, elements);
+    try {
+        const result = await Xrm.WebApi.retrieveRecord("contact", contactId, "?$select=nf0base_memberaccessnumber");
+        console.log("Contact retrieved successfully:", result);
+        // Return the access number field from the result
+        return result.nf0base_memberaccessnumber;
+    } catch (error) {
+        console.error("Error retrieving contact:", error.message);
+        throw new Error(error.message);
+    }
 }
