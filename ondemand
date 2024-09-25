@@ -1,1 +1,30 @@
+async function enableSectionOnLookupChange(executionContext) {
+    var formContext = executionContext.getFormContext();
+    showHideSection(formContext, "nf1pbm_accounttype", "pb_maturity_Instruction", "maturity_instruction_details");
+    showHideSection(formContext, "nf1pbm_accounttype", "pb_maturity_Instruction", "pb_maturity_Instruction_notes");
+    var certificateaccountnumber = formContext.getAttribute("nf1pbm_certificateaccountnumber").getValue();
+    
+    // Assuming apiData is available here, if not, this needs to be adjusted
+    for (let item of apiData) {
+        if (certificateaccountnumber === item.accountNumber) {
+            formContext.getAttribute("nf1pbm_maturitydate").setValue(null);
+            if (item.maturityDate != null) {
+                console.log("Filtered Data: " + item.maturityDate);
+                var mdate = new Date(item.maturityDate);
+                formContext.getAttribute("nf1pbm_maturitydate").setValue(mdate);
+            }
+            formContext.getAttribute("nf1pbm_certificatebalance").setValue(0);
+            if (item.availableBalance != null) {
+                console.log("availableBalance: " + item.availableBalance);    
+                var availableBalance = parseFloat(item.availableBalance);            
+                formContext.getAttribute("nf1pbm_certificatebalance").setValue(availableBalance);
+            }
+            try {
+                await callPowerAutomate_CertificateDetails(executionContext, certificateaccountnumber);
+            } catch (error) {
+                console.error("Error during async operation:", error);
+            }
+        }
+    }
+}
 
