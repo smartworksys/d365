@@ -1,15 +1,37 @@
-async function getContactRecordById(contactId) {
-    if (!contactId) {
-        throw new Error("Contact ID is required");
-    }
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using System.Threading.Tasks;
 
-    try {
-        const result = await Xrm.WebApi.retrieveRecord("contact", contactId, "?$select=nf0base_memberaccessnumber");
-        console.log("Contact retrieved successfully:", result);
-        // Return the access number field from the result
-        return result.nf0base_memberaccessnumber;
-    } catch (error) {
-        console.error("Error retrieving contact:", error.message);
-        throw new Error(error.message);
+public static class FunctionExample
+{
+    [FunctionName("FunctionExample")]
+    public static async Task<IActionResult> Run(
+        [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
+        ILogger log)
+    {
+        string type = req.Query["type"]?.Trim();
+        string policyNo = req.Query["policyNo"]?.Trim();
+        string contactID = req.Query["contactID"]?.Trim();
+        // Ensure to trim and check for null or whitespace
+        string operation = req.Query["operation "]?.Trim(); // Note: Check your parameter name in the query
+
+        string transTrackingID = null;
+        string payLoadData = null;
+
+        if (!string.IsNullOrWhiteSpace(type) && type.Equals("contact"))
+        {
+            var contactData = new NavigatorClientXML(log);
+            payLoadData = contactData.getNavContactData(contactID);
+            if (!string.IsNullOrWhiteSpace(operation) && operation.Equals("download"))
+            {
+                return new OkObjectResult(payLoadData);
+            }
+        }
+
+        // If the operation is not "download" or any required field is missing/null
+        return new BadRequestObjectResult("Invalid or missing operation type or parameters.");
     }
 }
