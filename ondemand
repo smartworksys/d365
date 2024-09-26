@@ -1,19 +1,22 @@
-function formatAddress(executionContext) {
-    // Get the form context
-    var formContext = executionContext.getFormContext();
+function showFormNotification(executionContext, message, level) {
+    var formContext = executionContext.getFormContext(); // Get the form context
 
-    // Get field values (assuming field names are street, city, state, and zip)
-    var street = formContext.getAttribute("street_field_name").getValue();
-    var city = formContext.getAttribute("city_field_name").getValue();
-    var state = formContext.getAttribute("state_field_name").getValue();
-    var zip = formContext.getAttribute("zip_field_name").getValue();
+    // level could be "ERROR", "WARNING", or "INFO"
+    formContext.ui.setFormNotification(message, level, "notificationId");
 
-    // Build the formatted address string with new lines
-    var formattedAddress = (street ? street + "\n" : "") +
-                           (city ? city + ", " : "") +
-                           (state ? state + " " : "") +
-                           (zip ? zip : "");
+    // Optionally, clear the notification after a delay
+    setTimeout(function() {
+        formContext.ui.clearFormNotification("notificationId");
+    }, 10000); // Clears after 10 seconds
+}
 
-    // Set the formatted address in the multi-line text box
-    formContext.getAttribute("multiline_textbox_field_name").setValue(formattedAddress);
+function validateBusinessLogic(executionContext) {
+    // Example condition check
+    if (/* your condition here */) {
+        // Call to show notification
+        showFormNotification(executionContext, "Your custom message here", "ERROR");
+    } else {
+        // Logic when conditions are met or cleared
+        executionContext.getFormContext().ui.clearFormNotification("notificationId");
+    }
 }
