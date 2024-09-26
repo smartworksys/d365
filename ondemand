@@ -1,9 +1,19 @@
-async function getEnvironmentVariable(variableName) {
-    var query = `?$select=defaultvalue,displayname&$filter=schemaname eq '${variableName}'&$expand=environmentvariablevalue`;
-    var result = await Xrm.WebApi.online.retrieveMultipleRecords("environmentvariabledefinition", query);
-    if (result.entities.length > 0 && result.entities[0].environmentvariablevalue && result.entities[0].environmentvariablevalue.length > 0) {
-        return result.entities[0].environmentvariablevalue[0].value;
-    } else {
-        throw new Error("Environment variable not found.");
-    }
+function formatAddress(executionContext) {
+    // Get the form context
+    var formContext = executionContext.getFormContext();
+
+    // Get field values (assuming field names are street, city, state, and zip)
+    var street = formContext.getAttribute("street_field_name").getValue();
+    var city = formContext.getAttribute("city_field_name").getValue();
+    var state = formContext.getAttribute("state_field_name").getValue();
+    var zip = formContext.getAttribute("zip_field_name").getValue();
+
+    // Build the formatted address string with new lines
+    var formattedAddress = (street ? street + "\n" : "") +
+                           (city ? city + ", " : "") +
+                           (state ? state + " " : "") +
+                           (zip ? zip : "");
+
+    // Set the formatted address in the multi-line text box
+    formContext.getAttribute("multiline_textbox_field_name").setValue(formattedAddress);
 }
