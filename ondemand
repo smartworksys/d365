@@ -1,22 +1,12 @@
-function showFormNotification(executionContext, message, level) {
+function getOptionSetValue(executionContext, fieldName) {
     var formContext = executionContext.getFormContext(); // Get the form context
+    var optionSetField = formContext.getAttribute(fieldName);
 
-    // level could be "ERROR", "WARNING", or "INFO"
-    formContext.ui.setFormNotification(message, level, "notificationId");
-
-    // Optionally, clear the notification after a delay
-    setTimeout(function() {
-        formContext.ui.clearFormNotification("notificationId");
-    }, 10000); // Clears after 10 seconds
-}
-
-function validateBusinessLogic(executionContext) {
-    // Example condition check
-    if (/* your condition here */) {
-        // Call to show notification
-        showFormNotification(executionContext, "Your custom message here", "ERROR");
+    if (optionSetField) {
+        var optionSetValue = optionSetField.getValue(); // Returns the integer value of the selected option
+        return optionSetValue;
     } else {
-        // Logic when conditions are met or cleared
-        executionContext.getFormContext().ui.clearFormNotification("notificationId");
+        console.error("Field not found or not an option set");
+        return null; // Field not found or not an option set
     }
 }
