@@ -98,35 +98,53 @@ namespace KOFC_Navigator_Integration
         // Handles specific properties for PERSON
         static XElement CreatePersonElement(string elementName, Person person)
         {
-            return new XElement(elementName,
-                CreateElement("PERSONID", person.PERSONID),
-                CreateElement("FIRSTNAME", person.FIRSTNAME),
-                CreateElement("MIDDLEINITIAL", person.MIDDLEINITIAL),
-                CreateElement("SUFFIX", person.SUFFIX),
-                CreateElement("LASTNAME", person.LASTNAME),
-                CreateElement("CLIENTID", person.CLIENTID),
-                CreateElement("MEMBERCOUNCIL", person.MEMBERCOUNCIL),
-                CreateElement("MEMBERSTATUS", person.MEMBERSTATUS),
-                CreateElement("INACTIVEFEEIND", person.INACTIVEFEEIND?.ToString()),
-                CreateElement("ADDRESS1", person.ADDRESS1),
-                CreateElement("ADDRESS2", person.ADDRESS2),
-                CreateElement("CITY", person.CITY),
-                CreateElement("STATE", person.STATE),
-                CreateElement("ZIP", person.ZIP),
-                CreateElement("STATEOFISSUE", person.STATEOFISSUE),
-                CreateElement("DATEOFBIRTH", person.DATEOFBIRTH),
-                CreateElement("ISSUEAGE", person.ISSUEAGE?.ToString()),
-                CreateElement("SEX", person.SEX),
-                CreateElement("PTXT1", person.PTXT1),
-                CreateElement("PTXT2", person.PTXT2),
-                CreateElement("PTXT3", person.PTXT3),
-                CreateElement("PNUM1", person.PNUM1),
-                CreateElement("PNUM2", person.PNUM2),
-                CreateElement("PNUM3", person.PNUM3),
-                CreateElement("PDT1", person.PDT1),
-                CreateElement("PDT2", person.PDT2),
-                CreateElement("PDT3", person.PDT3)
-            );
+            if (person.PERSONID == "1")
+            {
+                // Full set of properties for PERSONID == 1
+                return new XElement(elementName,
+                    CreateElement("PERSONID", person.PERSONID),
+                    CreateElement("FIRSTNAME", person.FIRSTNAME),
+                    CreateElement("MIDDLEINITIAL", person.MIDDLEINITIAL),
+                    CreateElement("SUFFIX", person.SUFFIX),
+                    CreateElement("LASTNAME", person.LASTNAME),
+                    CreateElement("CLIENTID", person.CLIENTID),
+                    CreateElement("MEMBERCOUNCIL", person.MEMBERCOUNCIL),
+                    CreateElement("MEMBERSTATUS", person.MEMBERSTATUS),
+                    CreateElement("INACTIVEFEEIND", person.INACTIVEFEEIND?.ToString()),
+                    CreateElement("ADDRESS1", person.ADDRESS1),
+                    CreateElement("ADDRESS2", person.ADDRESS2),
+                    CreateElement("CITY", person.CITY),
+                    CreateElement("STATE", person.STATE),
+                    CreateElement("ZIP", person.ZIP),
+                    CreateElement("STATEOFISSUE", person.STATEOFISSUE),
+                    CreateElement("DATEOFBIRTH", person.DATEOFBIRTH),
+                    CreateElement("ISSUEAGE", person.ISSUEAGE?.ToString()),
+                    CreateElement("SEX", person.SEX),
+                    CreateElement("PTXT1", person.PTXT1),
+                    CreateElement("PTXT2", person.PTXT2),
+                    CreateElement("PTXT3", person.PTXT3),
+                    CreateElement("PNUM1", person.PNUM1),
+                    CreateElement("PNUM2", person.PNUM2),
+                    CreateElement("PNUM3", person.PNUM3),
+                    CreateElement("PDT1", person.PDT1),
+                    CreateElement("PDT2", person.PDT2),
+                    CreateElement("PDT3", person.PDT3)
+                );
+            }
+            else
+            {
+                // Limited properties for PERSONID != 1
+                return new XElement(elementName,
+                    CreateElement("PERSONID", person.PERSONID),
+                    CreateElement("FIRSTNAME", person.FIRSTNAME),
+                    CreateElement("MIDDLEINITIAL", person.MIDDLEINITIAL),
+                    CreateElement("LASTNAME", person.LASTNAME),
+                    CreateElement("CLIENTID", person.CLIENTID),
+                    CreateElement("DATEOFBIRTH", person.DATEOFBIRTH),
+                    CreateElement("ISSUEAGE", person.ISSUEAGE?.ToString()),
+                    CreateElement("SEX", person.SEX)
+                );
+            }
         }
 
         static XElement CreateCaseDataElement(CaseData caseData)
