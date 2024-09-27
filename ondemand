@@ -1,3 +1,51 @@
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System;
+using System.Collections.Generic;
+
+public class RiderConverter : JsonConverter
+{
+    public override bool CanConvert(Type objectType)
+    {
+        return (objectType == typeof(List<Rider>));
+    }
+
+    public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
+    {
+        var riders = new List<Rider>();
+
+        if (reader.TokenType == JsonToken.StartArray)
+        {
+            // Handle the case where RIDER is an array
+            riders = serializer.Deserialize<List<Rider>>(reader);
+        }
+        else if (reader.TokenType == JsonToken.StartObject)
+        {
+            // Handle the case where RIDER is a single object
+            var singleRider = serializer.Deserialize<Rider>(reader);
+            riders.Add(singleRider);
+        }
+
+        return riders;
+    }
+
+    public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
+    {
+        var riders = value as List<Rider>;
+        if (riders.Count == 1)
+        {
+            // If there's only one rider, serialize it as an object
+            serializer.Serialize(writer, riders[0]);
+        }
+        else
+        {
+            // Otherwise, serialize as an array
+            serializer.Serialize(writer, riders);
+        }
+    }
+}
+
+
 public class CaseData
 {
     [JsonProperty("@PERSONID")]
@@ -30,11 +78,11 @@ public class CaseData
     public Policy POLICY { get; set; }
     public Inforce INFORCE { get; set; }
 
-    // This is now a List<Rider> to handle multiple riders in the JSON array
+    // Use custom converter to handle both object and array cases
     [JsonProperty("RIDER")]
+    [JsonConverter(typeof(RiderConverter))]
     public List<Rider> RIDER { get; set; }
 }
-
 
 static XElement CreateCaseDataElement(CaseData caseData)
 {
@@ -79,17 +127,3 @@ static XElement CreateCaseDataElement(CaseData caseData)
 
     return caseDataElement;
 }
-
-
-static XElement CreateRiderElement(Rider rider)
-{
-    return new XElement("RIDER",
-        new XAttribute("PERSONID", rider.PERSONID ?? string.Empty),
-        new XElement("CODE", rider.CODE ?? string.Empty),
-        new XElement("SEX", rider.SEX ?? string.Empty),
-        new XElement("AMOUNT", rider.AMOUNT.ToString()),  // Handle decimal
-        new XElement("ISSAGE", rider.ISSAGE.ToString()),  // Handle int
-        CreateRatingElement(rider.RATING)  // Nested Rating inside Rider
-    );
-}
-
