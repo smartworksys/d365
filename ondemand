@@ -1,1 +1,95 @@
+public class CaseData
+{
+    [JsonProperty("@PERSONID")]
+    public string PERSONID { get; set; }
+
+    public string POLICYNUMBER { get; set; }
+    public string PRODUCT { get; set; }
+    public string CLASS { get; set; }
+    public string STATUS { get; set; }
+    public Rating RATING { get; set; }
+    public string WLFACEOPTION { get; set; }
+    public decimal WLFACEPREMAMT { get; set; }
+    public string WLPREMMODE { get; set; }
+    public string WLPAYFORM { get; set; }
+    public string TERMCONVERSION { get; set; }
+    public string GPOEXERCISE { get; set; }
+    public string PRINT { get; set; }
+    public string ADDLOANINTTOBAL { get; set; }
+    public string WDRLTOLOANATCOSTBASIS { get; set; }
+    public string ISSUEDATE { get; set; }
+    public string PLANVERSIONID { get; set; }
+    public string PAYMENTYEARS { get; set; }
+    public string CTXT3 { get; set; }
+    public string CNUM1 { get; set; }
+    public string CNUM2 { get; set; }
+    public string CNUM3 { get; set; }
+    public string CDT1 { get; set; }
+    public string CDT2 { get; set; }
+    public string CDT3 { get; set; }
+    public Policy POLICY { get; set; }
+    public Inforce INFORCE { get; set; }
+
+    // This is now a List<Rider> to handle multiple riders in the JSON array
+    [JsonProperty("RIDER")]
+    public List<Rider> RIDER { get; set; }
+}
+
+
+static XElement CreateCaseDataElement(CaseData caseData)
+{
+    var caseDataElement = new XElement("CASEDATA",
+        new XAttribute("PERSONID", caseData.PERSONID ?? string.Empty),
+        new XElement("POLICYNUMBER", caseData.POLICYNUMBER ?? string.Empty),
+        new XElement("PRODUCT", caseData.PRODUCT ?? string.Empty),
+        new XElement("CLASS", caseData.CLASS ?? string.Empty),
+        new XElement("STATUS", caseData.STATUS ?? string.Empty),
+        CreateRatingElement(caseData.RATING),  // Nested RATING section
+        new XElement("WLFACEOPTION", caseData.WLFACEOPTION ?? string.Empty),
+        new XElement("WLFACEPREMAMT", caseData.WLFACEPREMAMT.ToString()),  // Handle decimal
+        new XElement("WLPREMMODE", caseData.WLPREMMODE ?? string.Empty),
+        new XElement("WLPAYFORM", caseData.WLPAYFORM ?? string.Empty),
+        new XElement("TERMCONVERSION", caseData.TERMCONVERSION ?? string.Empty),
+        new XElement("GPOEXERCISE", caseData.GPOEXERCISE ?? string.Empty),
+        new XElement("PRINT", caseData.PRINT ?? string.Empty),
+        new XElement("ADDLOANINTTOBAL", caseData.ADDLOANINTTOBAL ?? string.Empty),
+        new XElement("WDRLTOLOANATCOSTBASIS", caseData.WDRLTOLOANATCOSTBASIS ?? string.Empty),
+        new XElement("ISSUEDATE", caseData.ISSUEDATE ?? string.Empty),
+        new XElement("PLANVERSIONID", caseData.PLANVERSIONID ?? string.Empty),
+        new XElement("PAYMENTYEARS", caseData.PAYMENTYEARS ?? string.Empty),
+        new XElement("CTXT3", caseData.CTXT3 ?? string.Empty),
+        new XElement("CNUM1", caseData.CNUM1 ?? string.Empty),
+        new XElement("CNUM2", caseData.CNUM2 ?? string.Empty),
+        new XElement("CNUM3", caseData.CNUM3 ?? string.Empty),
+        new XElement("CDT1", caseData.CDT1 ?? string.Empty),
+        new XElement("CDT2", caseData.CDT2 ?? string.Empty),
+        new XElement("CDT3", caseData.CDT3 ?? string.Empty),
+        CreatePolicyElement(caseData.POLICY),  // Nested POLICY section
+        CreateInforceElement(caseData.INFORCE)  // Nested INFORCE section
+    );
+
+    // Iterate over the RIDER list and add each Rider as an element
+    if (caseData.RIDER != null)
+    {
+        foreach (var rider in caseData.RIDER)
+        {
+            caseDataElement.Add(CreateRiderElement(rider));
+        }
+    }
+
+    return caseDataElement;
+}
+
+
+static XElement CreateRiderElement(Rider rider)
+{
+    return new XElement("RIDER",
+        new XAttribute("PERSONID", rider.PERSONID ?? string.Empty),
+        new XElement("CODE", rider.CODE ?? string.Empty),
+        new XElement("SEX", rider.SEX ?? string.Empty),
+        new XElement("AMOUNT", rider.AMOUNT.ToString()),  // Handle decimal
+        new XElement("ISSAGE", rider.ISSAGE.ToString()),  // Handle int
+        CreateRatingElement(rider.RATING)  // Nested Rating inside Rider
+    );
+}
 
