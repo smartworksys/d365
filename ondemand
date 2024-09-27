@@ -10,6 +10,16 @@ function showFormNotification(executionContext, message, level) {
     }, 10000); // Clears after 10 seconds
 }
 
+function makeFormReadOnly(executionContext) {
+    var formContext = executionContext.getFormContext(); // Get the form context
+
+    formContext.ui.controls.forEach(function (control) {
+        if (control.getDisabled && !control.getDisabled()) {
+            control.setDisabled(true); // Set all controls to read-only
+        }
+    });
+}
+
 async function getMaturityInstructions(executionContext, accessNumber, accountTypeId, accountNumber) {
     const fetchXml = `
     <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
@@ -33,7 +43,12 @@ async function getMaturityInstructions(executionContext, accessNumber, accountTy
             const existingRecordId = result.entities[0].nf1pbm_maturityinstructionsid;
             const message = `Record already exists with this combination. ID: ${existingRecordId}`;
             
+            // Show error notification
             showFormNotification(executionContext, message, "ERROR");
+
+            // Make the form read-only
+            makeFormReadOnly(executionContext);
+            
             return; // Stop execution if the record exists
         }
 
@@ -44,18 +59,3 @@ async function getMaturityInstructions(executionContext, accessNumber, accountTy
         throw new Error(error.message);
     }
 }
-
-
-
-
-
-
-
-getMaturityInstructions(executionContext, "00000000022688", "{619BDE1C-DD50-EF11-A317-000D3A1007BB}", "04000850640013")
-    .then((instructions) => {
-        console.log(instructions);
-    })
-    .catch((error) => {
-        console.error(error);
-    });
-
