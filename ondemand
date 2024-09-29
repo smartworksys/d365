@@ -1,14 +1,3 @@
-// Helper function to show form notifications
-function showFormNotification(executionContext, message, level) {
-    var formContext = executionContext.getFormContext();
-    formContext.ui.setFormNotification(message, level, "notificationId");
-
-    // Optionally, clear the notification after a delay
-    setTimeout(function () {
-        formContext.ui.clearFormNotification("notificationId");
-    }, 10000);
-}
-
 // Helper function to retrieve lookup field values
 function getLookupFieldValue(formContext, fieldName) {
     var lookupFieldValue = formContext.getAttribute(fieldName).getValue();
@@ -18,14 +7,14 @@ function getLookupFieldValue(formContext, fieldName) {
     return null;
 }
 
-// Function to get the contact record by ID asynchronously
-async function getContactRecordById(contactId) {
+// Function to retrieve contact record by access number
+async function getContactRecordById(accessnumber) {
     try {
-        const result = await Xrm.WebApi.retrieveRecord("contact", contactId, "?$select=nf0base_memberaccessnumber");
-        return result.nf0base_memberaccessnumber;
+        const contact = await Xrm.WebApi.retrieveRecord("contact", accessnumber, "?$select=nf0base_memberaccessnumber");
+        return contact.nf0base_memberaccessnumber;
     } catch (error) {
         console.error("Failed to retrieve contact:", error);
-        throw error;
+        throw new Error("Failed to retrieve contact.");
     }
 }
 
@@ -41,14 +30,14 @@ async function getPowerAutomateFlowUrl() {
             return result.entities[0].environmentvariabledefinition_environmentvariablevalue[0].value;
         }
 
-        throw new Error("Flow URL not found in environment variables");
+        throw new Error("Flow URL not found.");
     } catch (error) {
         console.error("Error retrieving flow URL:", error);
-        throw error;
+        throw new Error("Failed to retrieve Power Automate Flow URL.");
     }
 }
 
-// Function to call the Power Automate flow
+// Function to call Power Automate Flow
 async function callPowerAutomateFlowAsync(flowUrl, data) {
     try {
         const response = await fetch(flowUrl, {
@@ -65,53 +54,50 @@ async function callPowerAutomateFlowAsync(flowUrl, data) {
 
         return await response.json();
     } catch (error) {
-        console.error("Error calling Power Automate flow:", error);
-        throw error;
+        console.error("Error calling Power Automate Flow:", error);
+        throw new Error("Failed to call Power Automate Flow.");
     }
 }
 
-// Main function to handle the process
-async function handleFlowProcess(executionContext, formMode) {
-    Xrm.Utility.showProgressIndicator("Processing...");
-    var formContext = executionContext.getFormContext();
-
-    var accounttype = "";
-    var accessnumber = "";
-    var accountsubtype = "";
-    var retrievedContact = null;
-
+// Main function to handle Power Automate Flow process asynchronously
+async function callPowerAutomateFlow(executionContext, formMode) {
     try {
+        // Show the Dynamics 365 OOTB loading spinner
+        Xrm.Utility.showProgressIndicator("Processing...");
+
+        var formContext = executionContext.getFormContext();
+        var accountsubtype = "";
+        var maturityinstructionuser = Xrm.Utility.getGlobalContext().userSettings.userId.replace("{", "").replace("}", "");
+
         // Retrieve account type and access number
         var accounttypelookupValue = getLookupFieldValue(formContext, "nf1pbm_accounttype");
         var accessnumberlookupValue = getLookupFieldValue(formContext, "nf1pbm_memberaccessnumber");
 
-        if (accounttypelookupValue) {
-            accounttype = accounttypelookupValue.id;
-        } else {
-            console.log("No value found for the lookup field accounttype.");
-            return;
+        if (!accounttypelookupValue || !accessnumberlookupValue) {
+            throw new Error("Account type or Access number not found.");
         }
 
-        if (accessnumberlookupValue) {
-            accessnumber = accessnumberlookupValue.id;
-        } else {
-            console.log("No value found for the lookup field accessnumber.");
-            return;
+        var accounttype = accounttypelookupValue.id;
+        var accessnumber = accessnumberlookupValue.id;
+
+        // Determine account subtype based on account type
+        if (accounttype === "619BDE1C-DD50-EF11-A317-000D3A1007BB") {
+            accountsubtype = "SC";
+        } else if (accounttype === "08AC6D30-DD50-EF11-A317-000D3A1007BB") {
+            accountsubtype = "IR";
+        } else if (accounttype === "7F5A6823-DD50-EF11-A317-000D3A1007BB") {
+            accountsubtype = "ED";
         }
 
-        // Set account subtype based on account type
-        accountsubtype = getAccountSubtype(accounttype);
-
-        // Retrieve contact record
-        retrievedContact = await getContactRecordById(accessnumber);
-
-        // Retrieve Power Automate flow URL
-        const flowUrl = await getPowerAutomateFlowUrl();
-
-        // Retrieve user ID and prepare data
-        var maturityinstructionuser = Xrm.Utility.getGlobalContext().userSettings.userId.replace("{", "").replace("}", "");
         var certificateAffiliateAccountNumber = formContext.getAttribute("nf1pbm_affiliateaccountnumber").getValue();
 
+        // Retrieve contact record
+        var retrievedContact = await getContactRecordById(accessnumber);
+
+        // Retrieve Power Automate Flow URL
+        var flowUrl = await getPowerAutomateFlowUrl();
+
+        // Prepare the data object to be sent
         var data = {
             accessnumber: accessnumber,
             accounttype: accounttype,
@@ -120,61 +106,44 @@ async function handleFlowProcess(executionContext, formMode) {
             memberaccess: retrievedContact,
         };
 
-        // Call Power Automate flow
-        const apiResponse = await callPowerAutomateFlowAsync(flowUrl, data);
+        // Call the Power Automate flow and process the response
+        const apiData = await callPowerAutomateFlowAsync(flowUrl, data);
 
-        // Process the response and handle UI changes
-        processApiResponse(apiResponse, formContext, accountsubtype, formMode, certificateAffiliateAccountNumber, retrievedContact);
+        // Process the response and update the form
+        let count = 0;
+        apiData.forEach(function (item) {
+            if (accountsubtype === "ED") {
+                if (item.subType === "IR" && item.iraPlanSequenceNumber === "EDN") {
+                    count++;
+                }
+            } else if (accountsubtype === "IR") {
+                if (item.subType === "IR" && item.iraPlanSequenceNumber === "IRA") {
+                    count++;
+                }
+            } else {
+                if (item.subType === accountsubtype) {
+                    count++;
+                }
+            }
+        });
+
+        formContext.getAttribute("nf1pbm_accessnumberint").setValue(retrievedContact);
+
+        if (count === 0) {
+            Xrm.Navigation.openAlertDialog({ text: "Certificate Accounts not found for this Access Number Account Type." });
+        } else {
+            showHideSection(formContext, "nf1pbm_accounttype", "pb_maturity_Instruction", "pbm_member_accounts");
+
+            // Pass data to the HTML web resource
+            passDataToWebResource(formContext, formMode, apiData, accountsubtype, certificateAffiliateAccountNumber);
+        }
 
     } catch (error) {
-        console.error(error.message);
+        console.error("Error processing the flow:", error.message);
+        Xrm.Navigation.openErrorDialog({ message: error.message });
     } finally {
+        // Hide the Dynamics 365 OOTB loading spinner
         Xrm.Utility.closeProgressIndicator();
-    }
-}
-
-// Function to determine the account subtype based on account type
-function getAccountSubtype(accounttype) {
-    switch (accounttype) {
-        case "619BDE1C-DD50-EF11-A317-000D3A1007BB":
-            return "SC";
-        case "08AC6D30-DD50-EF11-A317-000D3A1007BB":
-            return "IR";
-        case "7F5A6823-DD50-EF11-A317-000D3A1007BB":
-            return "ED";
-        default:
-            return "";
-    }
-}
-
-// Function to process the response from the Power Automate flow
-function processApiResponse(apiData, formContext, accountsubtype, formMode, certificateAffiliateAccountNumber, retrievedContact) {
-    let count = 0;
-    apiData.forEach(function (item) {
-        if (accountsubtype === "ED") {
-            if (item.subType === "IR" && item.iraPlanSequenceNumber === "EDN") {
-                count++;
-            }
-        } else if (accountsubtype === "IR") {
-            if (item.subType === "IR" && item.iraPlanSequenceNumber === "IRA") {
-                count++;
-            }
-        } else {
-            if (item.subType === accountsubtype) {
-                count++;
-            }
-        }
-    });
-
-    formContext.getAttribute("nf1pbm_accessnumberint").setValue(retrievedContact);
-
-    if (count === 0) {
-        Xrm.Navigation.openAlertDialog({ text: "Certificate Accounts not found for this Access Number Account Type." });
-    } else {
-        showHideSection(formContext, "nf1pbm_accounttype", "pb_maturity_Instruction", "pbm_member_accounts");
-
-        // Pass data to web resource
-        passDataToWebResource(formContext, formMode, apiData, accountsubtype, certificateAffiliateAccountNumber);
     }
 }
 
