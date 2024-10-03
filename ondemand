@@ -1,6 +1,16 @@
-// Sort apiData by account number
-        apiData.sort(function (a, b) {
-            if (a.accountnumber < b.accountnumber) return -1;
-            if (a.accountnumber > b.accountnumber) return 1;
-            return 0;
-        });
+function getSelectedOptionSetValue(executionContext) {
+    // Get the form context
+    var formContext = executionContext.getFormContext();
+    
+    // Retrieve the value of the Option Set (replace 'new_exampleOptionSet' with your field schema name)
+    var optionSetValue = formContext.getAttribute("new_exampleOptionSet").getValue();
+    
+    // Check if an option is selected
+    if (optionSetValue != null) {
+        console.log("Selected Option Set Value: " + optionSetValue);
+        return optionSetValue;  // Return the selected option set value
+    } else {
+        console.log("No option is selected.");
+        return null;
+    }
+}
