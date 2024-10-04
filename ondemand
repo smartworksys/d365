@@ -1,16 +1,37 @@
-function getSelectedOptionSetValue(executionContext) {
-    // Get the form context
-    var formContext = executionContext.getFormContext();
-    
-    // Retrieve the value of the Option Set (replace 'new_exampleOptionSet' with your field schema name)
-    var optionSetValue = formContext.getAttribute("new_exampleOptionSet").getValue();
-    
-    // Check if an option is selected
-    if (optionSetValue != null) {
-        console.log("Selected Option Set Value: " + optionSetValue);
-        return optionSetValue;  // Return the selected option set value
-    } else {
-        console.log("No option is selected.");
-        return null;
-    }
+function buildFetchXml(shortDescriptions, expirationDate) {
+    // Start building the FetchXML query
+    let fetchXml = `
+<fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
+    <entity name="nfc_otdb_product">
+        <attribute name="nfc_otdb_productid" />
+        <attribute name="nfc_otdb_name" />
+        <attribute name="createdon" />
+        <attribute name="nfc_otdb_expirationdate" />
+        <order attribute="nfc_otdb_name" descending="false" />
+        <filter type="and">
+            <condition attribute="nfc_otdb_shortdescription" operator="neq" value="OBSOLETE" />
+            <filter type="or">`;
+
+    // Loop through shortDescriptions array and add conditions
+    shortDescriptions.forEach(description => {
+        fetchXml += `
+                <condition attribute="nfc_otdb_shortdescription" operator="eq" value="${description}" />`;
+    });
+
+    // Continue building the rest of the query
+    fetchXml += `
+            </filter>
+            <condition attribute="statecode" operator="eq" value="0" />
+            <condition attribute="nfc_otdb_productstatus" operator="eq" value="451130000" />
+            <condition attribute="nfc_otdb_expirationdate" operator="gt" value="${expirationDate}" />
+        </filter>
+    </entity>
+</fetch>`;
+
+    return fetchXml;
 }
+
+// Example usage with dynamic values
+let shortDescriptions = ["IRA", "Roth IRA", "SEP"]; // This can be 2 or 3 or any number of values
+let today = new Date().toISOString().split('T')[0]; // Current date in YYYY-MM-DD format
+console.log(buildFetchXml(shortDescriptions, today));
