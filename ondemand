@@ -1,37 +1,29 @@
-function buildFetchXml(shortDescriptions, expirationDate) {
-    // Start building the FetchXML query
-    let fetchXml = `
-<fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
-    <entity name="nfc_otdb_product">
+function filterProducts(formContext, descId, lookupFieldName, planType) {
+    let expirationDate = new Date().toISOString().split('T')[0];
+    var fetchXml = `
+      <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
+      <entity name="nfc_otdb_product">
         <attribute name="nfc_otdb_productid" />
         <attribute name="nfc_otdb_name" />
         <attribute name="createdon" />
-        <attribute name="nfc_otdb_expirationdate" />
         <order attribute="nfc_otdb_name" descending="false" />
         <filter type="and">
-            <condition attribute="nfc_otdb_shortdescription" operator="neq" value="OBSOLETE" />
-            <filter type="or">`;
-
-    // Loop through shortDescriptions array and add conditions
-    shortDescriptions.forEach(description => {
-        fetchXml += `
-                <condition attribute="nfc_otdb_shortdescription" operator="eq" value="${description}" />`;
-    });
-
-    // Continue building the rest of the query
-    fetchXml += `
-            </filter>
-            <condition attribute="statecode" operator="eq" value="0" />
-            <condition attribute="nfc_otdb_productstatus" operator="eq" value="451130000" />
-            <condition attribute="nfc_otdb_expirationdate" operator="gt" value="${expirationDate}" />
+          <condition attribute="nfc_otdb_shortdescription" operator="eq" value="${descId}" />
+          <condition attribute="statecode" operator="eq" value="0" />
+          <condition attribute="nfc_otdb_productstatus" operator="eq" value="451130000" />
+          <condition attribute="nfc_otdb_expirationdate" operator="gt" value="${expirationDate}" />
         </filter>
-    </entity>
-</fetch>`;
+      </entity>
+    </fetch>`;
 
-    return fetchXml;
+    // Get the control for the lookup field
+    var lookupControl = formContext.getControl(lookupFieldName);
+
+    // Clear existing pre-search filters
+    lookupControl.removePreSearch();
+
+    // Add the new custom filter to the lookup field
+    lookupControl.addPreSearch(function() {
+        lookupControl.addCustomFilter(fetchXml);
+    });
 }
-
-// Example usage with dynamic values
-let shortDescriptions = ["IRA", "Roth IRA", "SEP"]; // This can be 2 or 3 or any number of values
-let today = new Date().toISOString().split('T')[0]; // Current date in YYYY-MM-DD format
-console.log(buildFetchXml(shortDescriptions, today));
