@@ -1,6 +1,9 @@
+// Define the Filterfunction outside the main function so that it is persistent across calls
+var Filterfunction = null;
+
 var filterProducts = function(formContext, descId, lookupFieldName, planType) {
     let expirationDate = new Date().toISOString().split('T')[0];
-    
+
     var fetchXml = `
       <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
       <entity name="nfc_otdb_product">
@@ -17,14 +20,16 @@ var filterProducts = function(formContext, descId, lookupFieldName, planType) {
       </entity>
     </fetch>`;
 
-    // Define the filter function using function expression
-    var Filterfunction = function() {
-        formContext.getControl(lookupFieldName).addCustomFilter(fetchXml, "nfc_otdb_product");
-    };
+    // Define the filter function only if it has not been defined already
+    if (!Filterfunction) {
+        Filterfunction = function() {
+            formContext.getControl(lookupFieldName).addCustomFilter(fetchXml, "nfc_otdb_product");
+        };
+    }
 
-    // Remove any existing pre-search filters using function expression
+    // Remove the previous preSearch handler if it exists
     formContext.getControl(lookupFieldName).removePreSearch(Filterfunction);
 
-    // Add the custom filter to the lookup field
+    // Add the custom filter using the existing or new function reference
     formContext.getControl(lookupFieldName).addPreSearch(Filterfunction);
 };
