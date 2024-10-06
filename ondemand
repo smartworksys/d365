@@ -1,7 +1,9 @@
 // Async function to get the product by product code
 async function getProductByCodeAsync(productCode) {
     try {
-        var query = `/api/data/v9.0/nfc_otdb_products?$select=nfc_otdb_productid,nfc_otdb_name&$filter=nfc_otbd_ProductCode eq '${productCode}'`;
+        // Ensure proper single quotes and formatting in the query
+        var query = `/api/data/v9.0/nfc_otdb_products?$select=nfc_otdb_productid,nfc_otdb_name&$filter=nfc_otbd_ProductCode eq '${encodeURIComponent(productCode)}'`;
+        
         var result = await Xrm.WebApi.retrieveMultipleRecords("nfc_otdb_product", query);
         
         if (result.entities.length > 0) {
@@ -30,15 +32,4 @@ async function setProductLookupDefaultValue(formContext, productCode, lookupFiel
     } else {
         console.log("Failed to set the default product lookup value.");
     }
-}
-
-function onFormLoad(executionContext) {
-    var formContext = executionContext.getFormContext();
-    
-    // Example product code and lookup field schema name
-    var productCode = "YOUR_PRODUCT_CODE";
-    var lookupFieldName = "yourLookupFieldName"; // Replace with the actual schema name of the lookup field
-
-    // Set the default lookup value based on the product code
-    setProductLookupDefaultValue(formContext, productCode, lookupFieldName);
 }
