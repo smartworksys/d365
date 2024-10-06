@@ -1,5 +1,6 @@
-function filterProducts(formContext, descId, lookupFieldName, planType) {
+var filterProducts = function(formContext, descId, lookupFieldName, planType) {
     let expirationDate = new Date().toISOString().split('T')[0];
+    
     var fetchXml = `
       <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
       <entity name="nfc_otdb_product">
@@ -16,14 +17,14 @@ function filterProducts(formContext, descId, lookupFieldName, planType) {
       </entity>
     </fetch>`;
 
-    // Get the control for the lookup field
-    var lookupControl = formContext.getControl(lookupFieldName);
+    // Define the filter function using function expression
+    var Filterfunction = function() {
+        formContext.getControl(lookupFieldName).addCustomFilter(fetchXml, "nfc_otdb_product");
+    };
 
-    // Clear existing pre-search filters
-    lookupControl.removePreSearch();
+    // Remove any existing pre-search filters using function expression
+    formContext.getControl(lookupFieldName).removePreSearch(Filterfunction);
 
-    // Add the new custom filter to the lookup field
-    lookupControl.addPreSearch(function() {
-        lookupControl.addCustomFilter(fetchXml);
-    });
-}
+    // Add the custom filter to the lookup field
+    formContext.getControl(lookupFieldName).addPreSearch(Filterfunction);
+};
