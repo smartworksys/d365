@@ -1,9 +1,10 @@
-// Define the Filterfunction outside the main function so that it is persistent across calls
-var Filterfunction = null;
+// Variable to store the current Filterfunction reference
+var currentFilterFunction = null;
 
 var filterProducts = function(formContext, descId, lookupFieldName, planType) {
     let expirationDate = new Date().toISOString().split('T')[0];
 
+    // Create fetchXml dynamically based on descId (from parent dropdown)
     var fetchXml = `
       <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
       <entity name="nfc_otdb_product">
@@ -20,16 +21,16 @@ var filterProducts = function(formContext, descId, lookupFieldName, planType) {
       </entity>
     </fetch>`;
 
-    // Define the filter function only if it has not been defined already
-    if (!Filterfunction) {
-        Filterfunction = function() {
-            formContext.getControl(lookupFieldName).addCustomFilter(fetchXml, "nfc_otdb_product");
-        };
+    // Remove any previous filter function if it exists
+    if (currentFilterFunction) {
+        formContext.getControl(lookupFieldName).removePreSearch(currentFilterFunction);
     }
 
-    // Remove the previous preSearch handler if it exists
-    formContext.getControl(lookupFieldName).removePreSearch(Filterfunction);
+    // Define a new filter function that dynamically adds the new fetchXml
+    currentFilterFunction = function() {
+        formContext.getControl(lookupFieldName).addCustomFilter(fetchXml, "nfc_otdb_product");
+    };
 
-    // Add the custom filter using the existing or new function reference
-    formContext.getControl(lookupFieldName).addPreSearch(Filterfunction);
+    // Add the new filter function
+    formContext.getControl(lookupFieldName).addPreSearch(currentFilterFunction);
 };
