@@ -1,36 +1,44 @@
-// Variable to store the current Filterfunction reference
-var currentFilterFunction = null;
-
-var filterProducts = function(formContext, descId, lookupFieldName, planType) {
-    let expirationDate = new Date().toISOString().split('T')[0];
-
-    // Create fetchXml dynamically based on descId (from parent dropdown)
-    var fetchXml = `
-      <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
-      <entity name="nfc_otdb_product">
-        <attribute name="nfc_otdb_productid" />
-        <attribute name="nfc_otdb_name" />
-        <attribute name="createdon" />
-        <order attribute="nfc_otdb_name" descending="false" />
-        <filter type="and">
-          <condition attribute="nfc_otdb_shortdescription" operator="eq" value="${descId}" />
-          <condition attribute="statecode" operator="eq" value="0" />
-          <condition attribute="nfc_otdb_productstatus" operator="eq" value="451130000" />
-          <condition attribute="nfc_otdb_expirationdate" operator="gt" value="${expirationDate}" />
-        </filter>
-      </entity>
-    </fetch>`;
-
-    // Remove any previous filter function if it exists
-    if (currentFilterFunction) {
-        formContext.getControl(lookupFieldName).removePreSearch(currentFilterFunction);
+// Async function to get the product by product code
+async function getProductByCodeAsync(productCode) {
+    try {
+        var query = `/api/data/v9.0/nfc_otdb_products?$select=nfc_otdb_productid,nfc_otdb_name&$filter=nfc_otbd_ProductCode eq '${productCode}'`;
+        var result = await Xrm.WebApi.retrieveMultipleRecords("nfc_otdb_product", query);
+        
+        if (result.entities.length > 0) {
+            return {
+                id: result.entities[0].nfc_otdb_productid, // Product GUID
+                name: result.entities[0].nfc_otdb_name, // Product Name
+                entityType: "nfc_otdb_product" // Product Entity Type
+            };
+        } else {
+            console.log("No product found for the provided product code.");
+            return null;
+        }
+    } catch (error) {
+        console.log("Error retrieving product: " + error.message);
+        return null;
     }
+}
 
-    // Define a new filter function that dynamically adds the new fetchXml
-    currentFilterFunction = function() {
-        formContext.getControl(lookupFieldName).addCustomFilter(fetchXml, "nfc_otdb_product");
-    };
+// Function to set the default value of the product lookup
+async function setProductLookupDefaultValue(formContext, productCode, lookupFieldName) {
+    var product = await getProductByCodeAsync(productCode);
+    
+    if (product) {
+        formContext.getAttribute(lookupFieldName).setValue([product]);
+        console.log("Default product lookup value set.");
+    } else {
+        console.log("Failed to set the default product lookup value.");
+    }
+}
 
-    // Add the new filter function
-    formContext.getControl(lookupFieldName).addPreSearch(currentFilterFunction);
-};
+function onFormLoad(executionContext) {
+    var formContext = executionContext.getFormContext();
+    
+    // Example product code and lookup field schema name
+    var productCode = "YOUR_PRODUCT_CODE";
+    var lookupFieldName = "yourLookupFieldName"; // Replace with the actual schema name of the lookup field
+
+    // Set the default lookup value based on the product code
+    setProductLookupDefaultValue(formContext, productCode, lookupFieldName);
+}
