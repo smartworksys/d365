@@ -1,78 +1,51 @@
-Add to Cert (Balance):
+Scenario 1: Add to Certificate
+Initial Balances:
 
-Affilate Account Balance > Cert Balance + Amount  
+Affiliate Account Balance: 500
+Current Certificate Balance: 1500
+Action:
 
+Add 1000 to the Certificate Balance.
+Result:
 
-5000 > (1500 + 15000) = 3000
+New Certificate Balance = 1500 (current balance) + 1000 (added amount) = 2500.
+Remaining Affiliate Balance = 500 (initial) - 1000 (added) = -500.
+Conditions:
 
+If Affiliate Balance - Add Amount >= 0, the result is Positive.
+If Affiliate Balance - Add Amount < 0, the result is Negative.
+Scenario 2: Withdraw from Certificate
+Initial Balances:
 
-Affilate Account Balance = 3000
-Current Cert Balance = 1500
+Affiliate Account Balance: 500
+Current Certificate Balance: 1500
+Certificate Minimum Balance: 1000
+Action:
 
-1. Add to Cert:
+Withdraw 200 from the Certificate Balance.
+Result:
 
-Amount = 1000
-New Certificate Min Balance = 1000
+New Affiliate Balance = 500 (initial) + 200 (withdrawn) = 700.
+New Certificate Balance = 1500 - 200 = 1300.
+Condition to Check:
 
-New Certificate Balance = 1500 (Current Balance) + 1000 (Add to Cert Amount) = 2500.
+After withdrawal, Certificate Balance must be greater than the minimum balance:
+(Current Balance - Withdrawal Amount) > Minimum Balance
+Scenario 3: Specific Balance Target
+Initial Balances:
 
-Remaining Affiliate = (3000 - 1000) = 2000.
+Affiliate Account Balance: 500
+Current Certificate Balance: 1500
+Certificate Minimum Balance: 1000
+Goal:
 
---------------------------------------------------------------
-Affilate Account Balance = 500
-Current Cert Balance = 1500
+Set Certificate Balance to a specific target, e.g., 1800.
+Steps:
 
-New Certificate Min Balance = 1000
+If the target balance (1800) is greater than the current balance (1500), add the difference.
+If the target balance is less than the current balance, withdraw the difference.
+Examples:
 
-New Certificate Balance = 1500 (Current Balance) + 1000 (Add to Cert Amount) = 2500.
-
-Remaining Affiliate = (500 (Affiliate Balance) - 1000 (Add to Cert Amount) = -500 (Remaining Balance)
-
-Formula: Affilate Balance - Add to Cert Amount >= 0 (POSITIVE)
-Formula: Affilate Balance - Add to Cert Amount < 0 (NEGATIVE)
---------------------------------------------------------------
-
-Withdraw from Cert:
-
-Affilate Account Balance = 500
-Current Cert Balance = 1500
-
-New Certificate Min Balance = 1000
-
-Withdraw from Cert: 200.
-
-New Affiliate Balance = (500 + 200) = 700
-
-Remaining Certificate Balance = 1300.
-New Certificate Balance = 1300.
-
-Formula: (CB - AM W) > Cert MIN Balance
-
-              (1500 CB - 200 AM W > 1000 Min B)
-              (1500 - 600 < 1000) - Show message.
-                        900 < 1000
-----------------------------------------------
-
-Specific Balance:
-
-Affilate Account Balance = 500
-Current Cert Balance = 1500
-
-New Certificate Min Balance = 1000
-
-Specific Balance: 1800.
-
-If (Specific Balance - Current Cert Balance) > 0
-
-Case Add to CERT:
-
-Else
-
-Withdraw
-
-1800 (SP B) - 1500 (CERT AMount) = 300 (Add Cert) = Add Formula
-
-2100 (SP B) - 1500 = 600 Amount to Add
-
-1000 (SP B) - 1500 = -500 Withdraw  
-
+1800 - 1500 = 300 → Add 300 to the Certificate.
+2100 - 1500 = 600 → Add 600 to the Certificate.
+1000 - 1500 = -500 → Withdraw 500 from the Certificate.
