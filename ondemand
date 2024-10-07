@@ -1,1 +1,78 @@
+Add to Cert (Balance):
+
+Affilate Account Balance > Cert Balance + Amount  
+
+
+5000 > (1500 + 15000) = 3000
+
+
+Affilate Account Balance = 3000
+Current Cert Balance = 1500
+
+1. Add to Cert:
+
+Amount = 1000
+New Certificate Min Balance = 1000
+
+New Certificate Balance = 1500 (Current Balance) + 1000 (Add to Cert Amount) = 2500.
+
+Remaining Affiliate = (3000 - 1000) = 2000.
+
+--------------------------------------------------------------
+Affilate Account Balance = 500
+Current Cert Balance = 1500
+
+New Certificate Min Balance = 1000
+
+New Certificate Balance = 1500 (Current Balance) + 1000 (Add to Cert Amount) = 2500.
+
+Remaining Affiliate = (500 (Affiliate Balance) - 1000 (Add to Cert Amount) = -500 (Remaining Balance)
+
+Formula: Affilate Balance - Add to Cert Amount >= 0 (POSITIVE)
+Formula: Affilate Balance - Add to Cert Amount < 0 (NEGATIVE)
+--------------------------------------------------------------
+
+Withdraw from Cert:
+
+Affilate Account Balance = 500
+Current Cert Balance = 1500
+
+New Certificate Min Balance = 1000
+
+Withdraw from Cert: 200.
+
+New Affiliate Balance = (500 + 200) = 700
+
+Remaining Certificate Balance = 1300.
+New Certificate Balance = 1300.
+
+Formula: (CB - AM W) > Cert MIN Balance
+
+              (1500 CB - 200 AM W > 1000 Min B)
+              (1500 - 600 < 1000) - Show message.
+                        900 < 1000
+----------------------------------------------
+
+Specific Balance:
+
+Affilate Account Balance = 500
+Current Cert Balance = 1500
+
+New Certificate Min Balance = 1000
+
+Specific Balance: 1800.
+
+If (Specific Balance - Current Cert Balance) > 0
+
+Case Add to CERT:
+
+Else
+
+Withdraw
+
+1800 (SP B) - 1500 (CERT AMount) = 300 (Add Cert) = Add Formula
+
+2100 (SP B) - 1500 = 600 Amount to Add
+
+1000 (SP B) - 1500 = -500 Withdraw  
 
