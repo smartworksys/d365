@@ -1,51 +1,57 @@
-Scenario 1: Add to Certificate
-Initial Balances:
+function amountChange(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var amount = formContext.getAttribute("nf1pbm_certificatetransactionamount").getValue();
+    var affiliateBalanceAmount = formContext.getAttribute("nf1pbm_affiliatebalanceamount").getValue();
+    var optionSetField = formContext.getAttribute("nf1pbm_amountto");
+    var certificateBalanceAmount = formContext.getAttribute("nf1pbm_certificatebalance").getValue();
+    var minBalance = 1000; // Define the minimum balance requirement here or fetch it dynamically if needed
 
-Affiliate Account Balance: 500
-Current Certificate Balance: 1500
-Action:
+    if (optionSetField && amount != null) {
+        var optionSetValue = optionSetField.getValue();
 
-Add 1000 to the Certificate Balance.
-Result:
+        if (optionSetValue === 582860000) { // Add to Cert
+            var balCheck = affiliateBalanceAmount - amount;
+            var certCheck = certificateBalanceAmount + amount;
+            
+            if (balCheck < minBalance || certCheck < minBalance) {
+                showFormNotification(executionContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
+            } else {
+                formContext.ui.clearFormNotification("minBalanceNotification");
+            }
+        } 
+        else if (optionSetValue === 582860001) { // Withdraw from Cert
+            var certWithdrawCheck = certificateBalanceAmount - amount;
+            
+            if (certWithdrawCheck < minBalance) {
+                showFormNotification(executionContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
+            } else {
+                formContext.ui.clearFormNotification("minBalanceNotification");
+            }
+        } 
+        else if (optionSetValue === 582860002) { // Specific Balance
+            var specificBalCheck = certificateBalanceAmount - amount;
 
-New Certificate Balance = 1500 (current balance) + 1000 (added amount) = 2500.
-Remaining Affiliate Balance = 500 (initial) - 1000 (added) = -500.
-Conditions:
+            if (specificBalCheck > 0) { // Indicates Withdraw from Cert
+                if (specificBalCheck < minBalance) {
+                    showFormNotification(executionContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
+                } else {
+                    formContext.ui.clearFormNotification("minBalanceNotification");
+                }
+            } else { // Indicates Add to Cert
+                var affiliateCheck = affiliateBalanceAmount - amount;
+                var certAddCheck = certificateBalanceAmount + amount;
 
-If Affiliate Balance - Add Amount >= 0, the result is Positive.
-If Affiliate Balance - Add Amount < 0, the result is Negative.
-Scenario 2: Withdraw from Certificate
-Initial Balances:
+                if (affiliateCheck < minBalance || certAddCheck < minBalance) {
+                    showFormNotification(executionContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
+                } else {
+                    formContext.ui.clearFormNotification("minBalanceNotification");
+                }
+            }
+        }
+    }
+}
 
-Affiliate Account Balance: 500
-Current Certificate Balance: 1500
-Certificate Minimum Balance: 1000
-Action:
-
-Withdraw 200 from the Certificate Balance.
-Result:
-
-New Affiliate Balance = 500 (initial) + 200 (withdrawn) = 700.
-New Certificate Balance = 1500 - 200 = 1300.
-Condition to Check:
-
-After withdrawal, Certificate Balance must be greater than the minimum balance:
-(Current Balance - Withdrawal Amount) > Minimum Balance
-Scenario 3: Specific Balance Target
-Initial Balances:
-
-Affiliate Account Balance: 500
-Current Certificate Balance: 1500
-Certificate Minimum Balance: 1000
-Goal:
-
-Set Certificate Balance to a specific target, e.g., 1800.
-Steps:
-
-If the target balance (1800) is greater than the current balance (1500), add the difference.
-If the target balance is less than the current balance, withdraw the difference.
-Examples:
-
-1800 - 1500 = 300 → Add 300 to the Certificate.
-2100 - 1500 = 600 → Add 600 to the Certificate.
-1000 - 1500 = -500 → Withdraw 500 from the Certificate.
+function showFormNotification(executionContext, message, level, notificationId) {
+    var formContext = executionContext.getFormContext();
+    formContext.ui.setFormNotification(message, level, notificationId);
+}
