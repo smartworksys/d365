@@ -1,54 +1,128 @@
-function amountChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var amount = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.TRANSACTION_AMOUNT).getValue();
-    var affiliateBalanceAmount = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT).getValue();
-    var certificateBalanceAmount = formContext.getAttribute("nf1pbm_certificatebalance").getValue();
-    var optionSetField = formContext.getAttribute("nf1pbm_amountto");
-    var minBalance = CONSTANTS.MIN_BALANCE;
-    var totalAmount = affiliateBalanceAmount + certificateBalanceAmount;
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Xml.Linq;
 
-    if (optionSetField && amount !== null) {
-        var optionSetValue = optionSetField.getValue();
+namespace KOFC_Navigator_Integration
+{
+    public class InforcePolicyData
+    {
+        private const string EmptyTagPlaceholder = "__EMPTY_TAG__";  // Unique placeholder for empty tags
 
-        if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.ADD_TO_CERT) { 
-            // Add to Cert
-            var newCertificateBalance = certificateBalanceAmount + amount;
+        public string GetNavInforcePolicyData(string responseJsonObj)
+        {
+            // Replace empty arrays with the unique placeholder "__EMPTY_TAG__"
+            string jsonData = responseJsonObj.Replace(":[]", $": \"{EmptyTagPlaceholder}\"");
 
-            if (newCertificateBalance > totalAmount || newCertificateBalance < minBalance) {
-                showFormNotification(formContext, CONSTANTS.MESSAGES.MINIMUM_FUNDS_WARNING, "WARNING", "minBalanceNotification");
-            } else {
-                formContext.ui.clearFormNotification("minBalanceNotification");
+            try
+            {
+                // Deserialize JSON into Root object
+                var root = JsonConvert.DeserializeObject<Root>(jsonData);
+
+                // Create XML with the XML declaration at the top
+                var xmlDoc = new XDocument(
+                    new XDeclaration("1.0", "UTF-8", "yes"),
+                    new XElement("FIPSCOLINKFILE",
+                        new XAttribute("VERSION", "1.00"),
+                        CreateDataElement(root.Data)  // Excluding <Illustration_System>
+                    )
+                );
+
+                // Output XML
+                Console.WriteLine(xmlDoc.ToString(SaveOptions.None));
+                return xmlDoc.ToString();
             }
-        } else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT) { 
-            // Withdraw from Cert
-            var remainingCertificateBalance = certificateBalanceAmount - amount;
-
-            if (remainingCertificateBalance < minBalance) {
-                showFormNotification(formContext, CONSTANTS.MESSAGES.MINIMUM_FUNDS_WARNING, "WARNING", "minBalanceNotification");
-            } else {
-                formContext.ui.clearFormNotification("minBalanceNotification");
+            catch (Exception ex)
+            {
+                Console.WriteLine($"An error occurred during JSON to XML conversion: {ex.Message}");
             }
-        } else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.SPECIFIC_BALANCE) { 
-            // Specific Balance
-            var specificBalCheck = certificateBalanceAmount - amount;
-            
-            if (specificBalCheck > 0) { 
-                // Withdraw from Cert case
-                if (specificBalCheck < minBalance) {
-                    showFormNotification(formContext, CONSTANTS.MESSAGES.MINIMUM_FUNDS_WARNING, "WARNING", "minBalanceNotification");
-                } else {
-                    formContext.ui.clearFormNotification("minBalanceNotification");
+            return null;
+        }
+
+        static XElement CreateDataElement(Data data)
+        {
+            var elements = new List<object>();
+
+            // Exclude the Illustration_System element from XML output
+            // if (!string.IsNullOrEmpty(data.IllustrationSystem))
+            //     elements.Add(new XElement("Illustration_System", data.IllustrationSystem));
+
+            if (data.AgentInformation != null)
+                elements.Add(CreateElementFromObject("AGENTINFORMATION", data.AgentInformation));
+
+            if (data.Persons != null && data.Persons.Any())
+            {
+                var sortedPersons = data.Persons.OrderBy(p => p.PERSONID);
+                elements.AddRange(sortedPersons.Select(p => CreateElementFromObject("PERSON", p)));
+            }
+
+            if (data.Relations != null && data.Relations.Any())
+                elements.AddRange(data.Relations.Select(r => CreateElementFromObject("RELATION", r)));
+
+            if (data.CaseData != null)
+                elements.Add(CreateElementFromObject("CASEDATA", data.CaseData));
+
+            return new XElement("DATA", elements);
+        }
+
+        static XElement CreateElementFromObject(string elementName, object obj)
+        {
+            var properties = obj.GetType().GetProperties().Where(p => p.GetIndexParameters().Length == 0);
+            var elements = new List<object>();
+            var attributes = new List<XAttribute>();
+
+            var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "PERSONID", "VERSION", "TYPE"
+            };
+
+            foreach (var prop in properties)
+            {
+                var value = prop.GetValue(obj);
+                var jsonProperty = prop.GetCustomAttributes(typeof(JsonPropertyAttribute), false)
+                                        .FirstOrDefault() as JsonPropertyAttribute;
+                var name = jsonProperty != null ? jsonProperty.PropertyName.TrimStart('@') : prop.Name;
+
+                if (attributeNames.Contains(name) || (jsonProperty != null && jsonProperty.PropertyName.StartsWith("@")))
+                {
+                    if (value != null)
+                    {
+                        attributes.Add(new XAttribute(name, value));
+                    }
                 }
-            } else { 
-                // Add to Cert case
-                var newBalCheck = certificateBalanceAmount + amount;
-                
-                if (newBalCheck > totalAmount || newBalCheck < minBalance) {
-                    showFormNotification(formContext, CONSTANTS.MESSAGES.MINIMUM_FUNDS_WARNING, "WARNING", "minBalanceNotification");
-                } else {
-                    formContext.ui.clearFormNotification("minBalanceNotification");
+                else if (value != null && value.ToString() == EmptyTagPlaceholder)
+                {
+                    elements.Add(new XElement(name));
+                }
+                else if (value != null)
+                {
+                    if (typeof(IEnumerable<object>).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string))
+                    {
+                        var items = value as IEnumerable<object>;
+                        if (items != null && items.Any())
+                        {
+                            elements.AddRange(items.Select(item => CreateElementFromObject(name, item)));
+                        }
+                    }
+                    else if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
+                    {
+                        elements.Add(CreateElementFromObject(name, value));
+                    }
+                    else
+                    {
+                        elements.Add(new XElement(name, value.ToString().Trim()));
+                    }
                 }
             }
+
+            // Special case: Add TYPE="DIVIDEND" for POLICY element
+            if (elementName.Equals("POLICY", StringComparison.OrdinalIgnoreCase))
+            {
+                attributes.Add(new XAttribute("TYPE", "DIVIDEND"));
+            }
+
+            return new XElement(elementName, attributes, elements);
         }
     }
 }
