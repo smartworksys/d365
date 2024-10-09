@@ -4,45 +4,49 @@ function amountChange(executionContext) {
     var affiliateBalanceAmount = formContext.getAttribute("nf1pbm_affiliatebalanceamount").getValue();
     var optionSetField = formContext.getAttribute("nf1pbm_amountto");
     var certificateBalanceAmount = formContext.getAttribute("nf1pbm_certificatebalance").getValue();
-    var minBalance = 1000; // Define the minimum balance requirement here or fetch it dynamically if needed
+    var minBalance = 1000; // Define the minimum balance requirement here
+    var totalAmount = affiliateBalanceAmount + certificateBalanceAmount;
 
     if (optionSetField && amount != null) {
         var optionSetValue = optionSetField.getValue();
 
         if (optionSetValue === 582860000) { // Add to Cert
-            var balCheck = affiliateBalanceAmount - amount;
-            var certCheck = certificateBalanceAmount + amount;
-            
-            if (balCheck < minBalance || certCheck < minBalance) {
-                showFormNotification(executionContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
+            var transAmount = amount - certificateBalanceAmount;
+            var balCheck = certificateBalanceAmount + transAmount;
+
+            if (balCheck > totalAmount || balCheck < minBalance) {
+                showFormNotification(formContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
             } else {
                 formContext.ui.clearFormNotification("minBalanceNotification");
             }
         } 
         else if (optionSetValue === 582860001) { // Withdraw from Cert
-            var certWithdrawCheck = certificateBalanceAmount - amount;
-            
-            if (certWithdrawCheck < minBalance) {
-                showFormNotification(executionContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
+            var transAmount = certificateBalanceAmount - amount;
+            var balCheck = certificateBalanceAmount - transAmount;
+
+            if (balCheck < minBalance) {
+                showFormNotification(formContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
             } else {
                 formContext.ui.clearFormNotification("minBalanceNotification");
             }
         } 
         else if (optionSetValue === 582860002) { // Specific Balance
-            var specificBalCheck = certificateBalanceAmount - amount;
+            if (amount >= certificateBalanceAmount) { // Add to Cert case
+                var transAmount = amount - certificateBalanceAmount;
+                var balCheck = certificateBalanceAmount + transAmount;
 
-            if (specificBalCheck > 0) { // Indicates Withdraw from Cert
-                if (specificBalCheck < minBalance) {
-                    showFormNotification(executionContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
+                if (balCheck > totalAmount || balCheck < minBalance) {
+                    showFormNotification(formContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
                 } else {
                     formContext.ui.clearFormNotification("minBalanceNotification");
                 }
-            } else { // Indicates Add to Cert
-                var affiliateCheck = affiliateBalanceAmount - amount;
-                var certAddCheck = certificateBalanceAmount + amount;
+            } 
+            else { // Withdraw from Cert case (amount < certificateBalanceAmount)
+                var transAmount = certificateBalanceAmount - amount;
+                var balCheck = certificateBalanceAmount - transAmount;
 
-                if (affiliateCheck < minBalance || certAddCheck < minBalance) {
-                    showFormNotification(executionContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
+                if (balCheck < minBalance) {
+                    showFormNotification(formContext, "Certificate renewal does not meet the minimum funds requirement.", "WARNING", "minBalanceNotification");
                 } else {
                     formContext.ui.clearFormNotification("minBalanceNotification");
                 }
@@ -51,7 +55,7 @@ function amountChange(executionContext) {
     }
 }
 
-function showFormNotification(executionContext, message, level, notificationId) {
-    var formContext = executionContext.getFormContext();
+// Helper function to show form notifications
+function showFormNotification(formContext, message, level, notificationId) {
     formContext.ui.setFormNotification(message, level, notificationId);
 }
