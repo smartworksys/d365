@@ -10,11 +10,13 @@ function confirmManualReviewSave(executionContext) {
     // Show the confirmation dialog
     Xrm.Navigation.openConfirmDialog(confirmOptions).then(
         function (result) {
-            if (!result.confirmed) {
+            if (result.confirmed) {
+                // If "Yes" is clicked, proceed with the save operation
+                formContext.data.entity.save();
+            } else {
                 // If "No" is clicked, cancel the save operation
                 executionContext.getEventArgs().preventDefault();
             }
-            // If "Yes" is clicked, do nothing to allow the save operation to continue
         }
     );
 }
