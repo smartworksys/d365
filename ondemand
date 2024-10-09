@@ -60,7 +60,7 @@ namespace KOFC_Navigator_Integration
                 elements.AddRange(data.Relations.Select(r => CreateElementFromObject("RELATION", r)));
 
             if (data.CaseData != null)
-                elements.Add(CreateCaseDataElement(data.CaseData));
+                elements.Add(CreateElementFromObject("CASEDATA", data.CaseData));
 
             return new XElement("DATA", elements);
         }
@@ -85,7 +85,6 @@ namespace KOFC_Navigator_Integration
 
                 if (attributeNames.Contains(name) || (jsonProperty != null && jsonProperty.PropertyName.StartsWith("@")))
                 {
-                    // Treat as attribute
                     if (value != null)
                     {
                         attributes.Add(new XAttribute(name, value));
@@ -93,23 +92,32 @@ namespace KOFC_Navigator_Integration
                 }
                 else if (value != null && value.ToString() == EmptyTagPlaceholder)
                 {
-                    // Create an empty tag only for the unique placeholder value "__EMPTY_TAG__"
                     elements.Add(new XElement(name));
                 }
                 else if (value != null)
                 {
-                    // Add tag with the actual non-empty, non-placeholder value
-                    elements.Add(new XElement(name, value.ToString().Trim()));
+                    if (typeof(IEnumerable<object>).IsAssignableFrom(prop.PropertyType) && prop.PropertyType != typeof(string))
+                    {
+                        // Handle lists of objects (like Rider list)
+                        var items = value as IEnumerable<object>;
+                        if (items != null && items.Any())
+                        {
+                            elements.AddRange(items.Select(item => CreateElementFromObject(name, item)));
+                        }
+                    }
+                    else if (prop.PropertyType.IsClass && prop.PropertyType != typeof(string))
+                    {
+                        // Handle nested objects (e.g., Inforce, Policy, etc.)
+                        elements.Add(CreateElementFromObject(name, value));
+                    }
+                    else
+                    {
+                        elements.Add(new XElement(name, value.ToString().Trim()));
+                    }
                 }
-                // Else do nothing for null values
             }
 
             return new XElement(elementName, attributes, elements);
-        }
-
-        static XElement CreateCaseDataElement(CaseData caseData)
-        {
-            return CreateElementFromObject("CASEDATA", caseData);
         }
     }
 }
