@@ -1,1 +1,26 @@
+function toggleFieldRequirementBasedOnFinancialInstitution(executionContext) {
+    var formContext = executionContext.getFormContext();
+    
+    // Retrieve the value of nf1pbm_anotherfininstitution
+    var isOtherInstitution = formContext.getAttribute("nf1pbm_anotherfininstitution").getValue();
+    
+    // Define the fields that will be required/optional based on the condition
+    var fields = [
+        "nf1pbm_bankname",
+        "nf1pbm_otherbankaccountnumber",
+        "nf1pbm_otheraddressline1",
+        "nf1pbm_othercity",
+        "nf1pbm_otherstate",
+        "nf1pbm_otherzip"
+    ];
+    
+    // Set required/optional based on the value of nf1pbm_anotherfininstitution
+    fields.forEach(function(field) {
+        if (isOtherInstitution) {
+            formContext.getAttribute(field).setRequiredLevel("required");
+        } else {
+            formContext.getAttribute(field).setRequiredLevel("none");
+        }
+    });
+}
 
