@@ -29,9 +29,10 @@ namespace KOFC_Navigator_Integration
                     )
                 );
 
-                // Output XML
-                Console.WriteLine(xmlDoc.ToString(SaveOptions.None));
-                return xmlDoc.ToString();
+                // Output XML with declaration
+                string xmlString = xmlDoc.ToString(SaveOptions.DisableFormatting);
+                Console.WriteLine(xmlString);
+                return xmlString;
             }
             catch (Exception ex)
             {
@@ -45,8 +46,6 @@ namespace KOFC_Navigator_Integration
             var elements = new List<object>();
 
             // Exclude the Illustration_System element from XML output
-            // if (!string.IsNullOrEmpty(data.IllustrationSystem))
-            //     elements.Add(new XElement("Illustration_System", data.IllustrationSystem));
 
             if (data.AgentInformation != null)
                 elements.Add(CreateElementFromObject("AGENTINFORMATION", data.AgentInformation));
