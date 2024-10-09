@@ -1,22 +1,28 @@
 function confirmManualReviewSave(executionContext) {
     var formContext = executionContext.getFormContext();
+    var saveEvent = executionContext.getEventArgs();
     
-    // Define the confirmation dialog options
-    var confirmOptions = {
-        title: "Confirmation Required",
-        text: "Manual review is currently turned on which will bypass the automatic submission to ST. Do you want to continue?"
-    };
-    
-    // Show the confirmation dialog
-    Xrm.Navigation.openConfirmDialog(confirmOptions).then(
-        function (result) {
-            if (result.confirmed) {
-                // If "Yes" is clicked, proceed with the save operation
-                formContext.data.entity.save();
-            } else {
-                // If "No" is clicked, cancel the save operation
-                executionContext.getEventArgs().preventDefault();
+    // Check if the save mode is either "Save" or "Save and Close"
+    var saveMode = saveEvent.getSaveMode();
+    if (saveMode === 1 || saveMode === 5) {
+        // Define the confirmation dialog options
+        var confirmOptions = {
+            title: "Confirmation Required",
+            text: "Manual review is currently turned on which will bypass the automatic submission to ST. Do you want to continue?"
+        };
+        
+        // Show the confirmation dialog
+        Xrm.Navigation.openConfirmDialog(confirmOptions).then(
+            function (result) {
+                if (!result.confirmed) {
+                    // If "No" is clicked, prevent the save operation
+                    saveEvent.preventDefault();
+                }
+                // If "Yes" is clicked, proceed with the save action
             }
-        }
-    );
+        );
+
+        // Prevent default save action while waiting for dialog result
+        saveEvent.preventDefault();
+    }
 }
