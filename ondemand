@@ -1,877 +1,115 @@
-// Constants for commonly used values
-const CONSTANTS = {
-    ENTITY_NAMES: {
-        PRODUCT: "nfc_otdb_product",
-        CONTACT: "contact",
-        ACCOUNT: "account",
-        MATURITY_INSTRUCTIONS: "nf1pbm_maturityinstructions"
-    },
-    ATTRIBUTE_NAMES: {
-        PRODUCT_ID: "nfc_otdb_productid",
-        PRODUCT_NAME: "nfc_otdb_name",
-        PRODUCT_STATUS: "nfc_otdb_productstatus",
-        EXPIRATION_DATE: "nfc_otdb_expirationdate",
-        SHORT_DESCRIPTION: "nfc_otdb_shortdescription",
-        STATE_CODE: "statecode",
-        MEMBER_ACCESS_NUMBER: "nf0base_memberaccessnumber",
-        BUSINESS_MEMBER_ACCESS_NUMBER: "nf0base_businessmemberaccessnumber",
-        CERTIFICATE_ACCOUNT_NUMBER: "nf1pbm_certificateaccountnumber",
-        CERTIFICATE_ACCOUNT_TYPE_TEXT: "nf1pbm_certificateaccounttypetext",
-        ACCOUNT_TYPE: "nf1pbm_accounttype",
-        MATURITY_DATE: "nf1pbm_maturitydate",
-        AVAILABLE_BALANCE: "availableBalance",
-        CURRENT_RENEWAL_TYPE_CODE: "nf1pbm_currentrenewaltypecode",
-        NEW_RENEWAL_TYPE_CODE: "nf1pbm_newrenewaltypecode",
-        MINIMUM_BALANCE: "nfc_otdb_minimumbalance",
-        PRODUCT_CODE: "nfc_otdb_productcode",
-        MANUAL_REVIEW: "nf1pbm_manualreview",
-        AFFILIATE_ACCOUNT_NUMBER: "nf1pbm_affiliateaccountnumber",
-        AFFILIATE_BALANCE_AMOUNT: "nf1pbm_affiliatebalanceamount",
-        TRANSACTION_AMOUNT: "nf1pbm_certificatetransactionamount"
-    },
-    MESSAGES: {
-        REQUIRED_FIELD: "The '{0}' is required. Please fill it before saving.",
-        MANUAL_REVIEW_CONFIRMATION: "Manual review is currently turned on which will bypass the automatic submission to ST. Do you want to continue?",
-        NO_PRODUCT_FOUND: "No product found for the provided product code.",
-        ERROR_RETRIEVING_PRODUCT: "Error retrieving product: ",
-        ENV_VAR_NOT_FOUND: "Environment variable not found.",
-        DUPLICATE_RECORD: "Record already exists with this Access #, Account Type and Account Number combination. Existing Maturity Instruction ID: {0}",
-        MINIMUM_FUNDS_WARNING: "Certificate renewal does not meet the minimum funds requirement.",
-        FLOW_URL_NOT_FOUND: "Flow URL not found.",
-        API_RESPONSE_ERROR: "Mulesoft API is down. Please try again later. Error: {0}",
-        ACCOUNTS_NOT_FOUND: "Certificate Accounts not found for this Access Number and Account Type."
-    },
-    OPTION_SET_VALUES: {
-        ADD_TO_CERT: 582860000,
-        WITHDRAW_FROM_CERT: 582860001,
-        SPECIFIC_BALANCE: 582860002
-    }
-};
+using Newtonsoft.Json;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Xml.Linq;
 
-// Function to replace placeholders with actual values in messages
-function formatString(template, ...values) {
-    return template.replace(/{(\d+)}/g, function(match, number) { 
-        return typeof values[number] != 'undefined' ? values[number] : match;
-    });
-}
+namespace KOFC_Navigator_Integration
+{
+    public class InforcePolicyData
+    {
+        private const string EmptyTagPlaceholder = "__EMPTY_TAG__";  // Unique placeholder for empty tags
 
-var currentFilterFunction = null;
+        public string GetNavInforcePolicyData(string responseJsonObj)
+        {
+            // Replace empty arrays with the unique placeholder "__EMPTY_TAG__"
+            string jsonData = responseJsonObj.Replace(":[]", $": \"{EmptyTagPlaceholder}\"");
 
-var filterProducts = function(formContext, descId, lookupFieldName, planType) {
-    let expirationDate = new Date().toISOString().split('T')[0];
+            try
+            {
+                // Deserialize JSON into Root object
+                var root = JsonConvert.DeserializeObject<Root>(jsonData);
 
-    var fetchXml = `
-      <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
-      <entity name="${CONSTANTS.ENTITY_NAMES.PRODUCT}">
-        <attribute name="${CONSTANTS.ATTRIBUTE_NAMES.PRODUCT_ID}" />
-        <attribute name="${CONSTANTS.ATTRIBUTE_NAMES.PRODUCT_NAME}" />
-        <attribute name="createdon" />
-        <order attribute="${CONSTANTS.ATTRIBUTE_NAMES.PRODUCT_NAME}" descending="false" />
-        <filter type="and">
-          <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.SHORT_DESCRIPTION}" operator="eq" value="${descId}" />
-          <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.STATE_CODE}" operator="eq" value="0" />
-          <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.PRODUCT_STATUS}" operator="eq" value="451130000" />
-          <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.EXPIRATION_DATE}" operator="gt" value="${expirationDate}" />
-        </filter>
-      </entity>
-    </fetch>`;
+                // Create XML
+                var xmlDoc = new XDocument(
+                    new XDeclaration("1.0", "UTF-8", "yes"),
+                    new XElement("FIPSCOLINKFILE",
+                        new XAttribute("VERSION", "1.00"),
+                        CreateDataElement(root.Data)
+                    )
+                );
 
-    if (currentFilterFunction) {
-        formContext.getControl(lookupFieldName).removePreSearch(currentFilterFunction);
-    }
-
-    currentFilterFunction = function() {
-        formContext.getControl(lookupFieldName).addCustomFilter(fetchXml, CONSTANTS.ENTITY_NAMES.PRODUCT);
-    };
-
-    formContext.getControl(lookupFieldName).addPreSearch(currentFilterFunction);
-};
-
-function onLoad(executionContext) {
-    var formContext = executionContext.getFormContext();
-    if(formContext.ui.getFormType() != 1) {
-        showHideTabs(formContext, "pb_maturity_Instruction", "maturity_instruction_details", true);
-        showHideTabs(formContext, "pb_maturity_Instruction", "pb_maturity_Instruction_notes", true);
-       
-        var certificateAccountTypeText = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_TYPE_TEXT).getValue();
-        var certificateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER).getValue();
-               
-        if (certificateAccountTypeText && certificateAccountNumber) {
-             Xrm.Page.getControl(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_TYPE_TEXT).setVisible(true);
-             Xrm.Page.getControl(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER).setVisible(true);
-             Xrm.Page.getControl(CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE).setVisible(false);
-             showHideFrame(formContext, "pb_maturity_Instruction", "pbm_member_accounts", true);
-             callPowerAutomateFlow(executionContext, "Edit");
-             amountChange(executionContext);
-        }
-    }
-}
-
-async function enableSectionOnLookupChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-    showHideSection(formContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE, "pb_maturity_Instruction", "maturity_instruction_details");
-    showHideSection(formContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE, "pb_maturity_Instruction", "pb_maturity_Instruction_notes");
-    var certificateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER).getValue();
-    var accNum = formContext.getAttribute("nf1pbm_accessnumberint").getValue();
-   
-    getMaturityInstructions(executionContext, accNum, "{"+ accounttype +"}", certificateAccountNumber)
-    .then((instructions) => {
-        console.log(instructions);
-    })
-    .catch((error) => {
-        console.error(error);
-    });
-   
-    for (let item of apiData) {
-        if (certificateAccountNumber === item.accountNumber) {
-            formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_DATE).setValue(null);
-            if (item.maturityDate != null) {
-                console.log("Maturity Date: " + item.maturityDate);
-                var mdate = new Date(item.maturityDate);
-                formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_DATE).setValue(mdate);
+                // Output XML
+                Console.WriteLine(xmlDoc.ToString(SaveOptions.None));
+                return xmlDoc.ToString();
             }
-            formContext.getAttribute("nf1pbm_certificatebalance").setValue(0);
-            if (item.availableBalance != null) {
-                console.log("availableBalance: " + item.availableBalance);    
-                var availableBalance = parseFloat(item.availableBalance);            
-                formContext.getAttribute("nf1pbm_certificatebalance").setValue(availableBalance);
+            catch (Exception ex)
+            {
+                Console.WriteLine($"An error occurred during JSON to XML conversion: {ex.Message}");
             }
-            try {
-                var accountTypeLookupValue = getLookupFieldValue(formContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE);
-                accounttype = accountTypeLookupValue.id;
-               
-                let today = new Date().toISOString().split('T')[0];
-               
-                if(accounttype == "619BDE1C-DD50-EF11-A317-000D3A1007BB") {
-                    filterProducts(formContext, "451130003", "nf1pbm_certificaterenewaltype");
-                }
-                else if(accounttype == "08AC6D30-DD50-EF11-A317-000D3A1007BB" && item.iraPlanSequenceNumber=="IRA") {
-                    filterProducts(formContext, "451130000", "nf1pbm_certificaterenewaltype");
-                }
-                else if(accounttype == "08AC6D30-DD50-EF11-A317-000D3A1007BB" && item.iraPlanSequenceNumber=="SEP") {
-                    filterProducts(formContext, "451130001", "nf1pbm_certificaterenewaltype");
-                }
-                else if(accounttype == "08AC6D30-DD50-EF11-A317-000D3A1007BB" && item.iraPlanSequenceNumber=="RTH") {
-                    filterProducts(formContext, "451130002", "nf1pbm_certificaterenewaltype");
-                }
-                else if(accounttype == "7F5A6823-DD50-EF11-A317-000D3A1007BB") {
-                    filterProducts(formContext, "451130004", "nf1pbm_certificaterenewaltype");
-                }
-           
-                if (item.productCode != null) {
-                    console.log("Existing Product Code: " + item.productCode);
-                    var productCode = item.productCode;
-                    var lookupFieldName = "nf1pbm_certificaterenewaltype";
-                    setProductLookupDefaultValue(formContext, productCode, lookupFieldName);
-                    formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CURRENT_RENEWAL_TYPE_CODE).setValue(item.productCode);
-                }    
-             
-                await callPowerAutomateCertificateDetails(executionContext, certificateAccountNumber);
-                console.log("Contact Info: " + contactData);
-                var formattedAddress = (contactData.addressLine1 ? contactData.addressLine1 + "\n" : "") +
-                                       (contactData.city ? contactData.city + ", \n" : "") +
-                                       (contactData.state ? contactData.state + " " : "") +
-                                       (contactData.postalCode ? contactData.postalCode : "");
-
-                formContext.getAttribute("nf1pbm_addressofrecord").setValue(formattedAddress);          
-               
-            } catch (error) {
-                console.error("Error during async operation:", error);
-            }        
-
-        }
-    }
-   
-    amountChange(executionContext);    
-}
-
-function resetAndShowCertificateAccountType(executionContext) {
-    resetAndShowChoiceFieldOnLookupChange(executionContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE, "nf1pbm_memberaccessnumber");
-    resetAndShowChoiceFieldOnLookupChange(executionContext, "nf1pbm_accountnumber", "nf1pbm_accessnumber");
-}
-
-function resetAndShowCertificateAccountNumber(executionContext) {
-    var formContext = executionContext.getFormContext();
-    callPowerAutomateFlow(executionContext, "Create");
-}
-
-function resetAndShowChoiceFieldOnLookupChange(executionContext, fieldName, parent) {
-    var formContext = executionContext.getFormContext();
-   
-    var lookupField = formContext.getAttribute(parent);
-
-    if (!lookupField) {
-        console.error("Lookup field not found");
-        return;
-    }
-
-    var lookupValue = lookupField.getValue();
-    console.log("Lookup field value:", lookupValue);
-   
-    var choiceFieldControl = Xrm.Page.getControl(fieldName);
-    var choiceFieldAttribute = formContext.getAttribute(fieldName);
-
-    if (!choiceFieldControl || !choiceFieldAttribute) {
-        console.error("Choice field not found");
-        return;
-    }
-
-    if (lookupValue && lookupValue.length > 0) {
-        // Show the choice field
-        choiceFieldControl.setVisible(true);
-    } else {
-        // Hide the choice field
-        choiceFieldControl.setVisible(false);
-    }
-}
-
-function showHideTabs(formContext, tabName, sectionName, flag) {
-    var tab = formContext.ui.tabs.get(tabName);
-    if (tab) {
-        var section = tab.sections.get(sectionName);
-
-        if (section) {
-            section.setVisible(flag);
-        } else {
-            console.log("Section not found");
-        }
-    } else {
-        console.log("Tab not found");
-    }
-}
-
-function showHideSection(formContext, lookupFieldName, tabName, sectionName) {
-    // Get the lookup field value
-    var lookupField = formContext.getAttribute(lookupFieldName);
-
-    if (lookupField) {
-        var lookupValue = lookupField.getValue();
-       
-        // Get the tab containing the section
-        var tab = formContext.ui.tabs.get(tabName);
-
-        if (tab) {
-            var section = tab.sections.get(sectionName);
-
-            if (section) {
-                if (lookupValue && lookupValue.length > 0) {
-                    // Enable the section if lookup has a value
-                    section.setVisible(true);
-                } else {
-                    // Disable the section if lookup has no value
-                    section.setVisible(false);
-                }
-            } else {
-                console.log("Section not found");
-            }
-        } else {
-            console.log("Tab not found");
-        }
-    } else {
-        console.log("Lookup field not found");
-    }
-}
-
-function setCustomUserLookupOnLoad(formContext) {
-    var customUserLookupField = "nf1pbm_maturityinstructionuser";
-
-    // Get the Owner field value
-    var ownerValue = formContext.getAttribute("ownerid").getValue();
-
-    if (ownerValue && ownerValue.length > 0) {
-        // Get the details of the owner
-        var ownerId = ownerValue[0].id;
-        var ownerName = ownerValue[0].name;
-        var ownerEntityType = ownerValue[0].entityType;
-
-        // Set the custom user lookup field with the owner details
-        var lookupValue = [{
-            id: ownerId,
-            name: ownerName,
-            entityType: ownerEntityType
-        }];
-
-        formContext.getAttribute(customUserLookupField).setValue(lookupValue);
-    } else {
-        // Clear the custom user lookup field if no owner is set
-        formContext.getAttribute(customUserLookupField).setValue(null);
-    }
-}
-
-// Function to retrieve the Power Automate Flow URL from environment variables
-async function getPowerAutomateFlowUrl() {
-    try {
-        const result = await Xrm.WebApi.online.retrieveMultipleRecords(
-            "environmentvariabledefinition",
-            "?$select=defaultvalue,displayname&$expand=environmentvariabledefinition_environmentvariablevalue($select=value)&$filter=schemaname eq 'nf1pbm_VarEnvFlowURLGetAccountRelationships'"
-        );
-
-        if (result.entities.length > 0 && result.entities[0].environmentvariabledefinition_environmentvariablevalue.length > 0) {
-            return result.entities[0].environmentvariabledefinition_environmentvariablevalue[0].value;
-        }
-
-        throw new Error(CONSTANTS.MESSAGES.FLOW_URL_NOT_FOUND);
-    } catch (error) {
-        console.error("Error retrieving flow URL:", error);
-        throw new Error(CONSTANTS.MESSAGES.FLOW_URL_NOT_FOUND);
-    }
-}
-
-// Function to call Power Automate Flow
-async function callPowerAutomateFlowAsync(flowUrl, data) {
-    try {
-        const response = await fetch(flowUrl, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify(data),
-        });
-
-        if (!response.ok) {
-            throw new Error(formatString(CONSTANTS.MESSAGES.API_RESPONSE_ERROR, response.statusText));
-            const message = formatString(CONSTANTS.MESSAGES.API_RESPONSE_ERROR, response.statusText);
-           
-            showFormNotification(executionContext, message, "ERROR", "apiresponseError");            
-            // Make the form read-only
-            makeFormReadOnly(executionContext);
-        }
-
-        return await response.json();
-    } catch (error) {
-        console.error("Error calling Power Automate Flow:", error);
-        throw new Error(formatString(CONSTANTS.MESSAGES.API_RESPONSE_ERROR, error.message));
-    }
-}
-
-// Function to retrieve contact record by access number
-async function getContactRecordById(accessnumber) {
-    try {
-        const contact = await Xrm.WebApi.retrieveRecord(CONSTANTS.ENTITY_NAMES.CONTACT, accessnumber, `?$select=${CONSTANTS.ATTRIBUTE_NAMES.MEMBER_ACCESS_NUMBER}`);
-        return contact[CONSTANTS.ATTRIBUTE_NAMES.MEMBER_ACCESS_NUMBER];
-    } catch (error) {
-        console.error("Failed to retrieve contact:", error);
-        throw new Error(formatString(CONSTANTS.MESSAGES.ERROR_RETRIEVING_PRODUCT, error.message));
-    }
-}
-
-// Function to retrieve contact record by access number
-async function getAccountRecordById(accessnumber) {
-    try {
-        const account = await Xrm.WebApi.retrieveRecord(CONSTANTS.ENTITY_NAMES.ACCOUNT, accessnumber, `?$select=${CONSTANTS.ATTRIBUTE_NAMES.BUSINESS_MEMBER_ACCESS_NUMBER}`);
-        return account[CONSTANTS.ATTRIBUTE_NAMES.BUSINESS_MEMBER_ACCESS_NUMBER];
-    } catch (error) {
-        console.error("Failed to retrieve contact:", error);
-        throw new Error(formatString(CONSTANTS.MESSAGES.ERROR_RETRIEVING_PRODUCT, error.message));
-    }
-}
-
-// Main function to handle Power Automate Flow process asynchronously
-async function callPowerAutomateFlow(executionContext, formMode) {
-    try {
-        // Show the Dynamics 365 OOTB loading spinner
-        Xrm.Utility.showProgressIndicator("Processing...");
-
-        var formContext = executionContext.getFormContext();
-        var accountsubtype = "";
-        var maturityinstructionuser = Xrm.Utility.getGlobalContext().userSettings.userId.replace("{", "").replace("}", "");
-
-        // Retrieve account type and access number
-        var accounttypelookupValue = getLookupFieldValue(formContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE);
-        var accessnumberlookupValue = getLookupFieldValue(formContext, "nf1pbm_memberaccessnumber");
-
-        if (!accounttypelookupValue || !accessnumberlookupValue) {
-            throw new Error("Account type or Access number not found.");
-        }
-
-        accounttype = accounttypelookupValue.id;
-        accessnumber = accessnumberlookupValue.id;
-
-        // Determine account subtype based on account type
-        if (accounttype === "619BDE1C-DD50-EF11-A317-000D3A1007BB") {
-            accountsubtype = "SC";
-        } else if (accounttype === "08AC6D30-DD50-EF11-A317-000D3A1007BB") {
-            accountsubtype = "IR";
-        } else if (accounttype === "7F5A6823-DD50-EF11-A317-000D3A1007BB") {
-            accountsubtype = "ED";
-        }
-
-        var certificateAffiliateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER).getValue();
-        var retrievedContact;
-        if(accessnumberlookupValue.entityType === CONSTANTS.ENTITY_NAMES.CONTACT) {
-            // Retrieve contact record
-            retrievedContact = await getContactRecordById(accessnumber);
-        } else {
-            // Retrieve account record
-            retrievedContact = await getAccountRecordById(accessnumber);
-        }
-
-        // Retrieve Power Automate Flow URL
-        var flowUrl = await getPowerAutomateFlowUrl();
-
-        // Prepare the data object to be sent
-        var data = {
-            accessnumber: accessnumber,
-            accounttype: accounttype,
-            maturityinstructionuser: maturityinstructionuser,
-            accountsubtype: accountsubtype,
-            memberaccess: retrievedContact,
-        };
-
-        // Call the Power Automate flow and process the response
-        const apiDataresponse = await callPowerAutomateFlowAsync(flowUrl, data);
-        apiDataresponse.sort(function (a, b) {
-            if (a.accountNumber < b.accountNumber) return -1;
-            if (a.accountNumber > b.accountNumber) return 1;
-            return 0;
-        });
-       
-        apiData = apiDataresponse;
-        // Process the response and update the form
-        let count = 0;
-        apiData.forEach(function (item) {
-            if (accountsubtype === "ED") {
-                if (item.subType === "IR" && item.iraPlanSequenceNumber === "EDN") {
-                    count++;
-                }
-            } else if (accountsubtype === "IR") {
-                if (item.subType === "IR" && (item.iraPlanSequenceNumber === "IRA" || item.iraPlanSequenceNumber === "SEP" || item.iraPlanSequenceNumber === "RTH")) {
-                    count++;
-                }
-            } else {
-                if (item.subType === accountsubtype) {
-                    count++;
-                }
-            }
-        });
-
-        formContext.getAttribute("nf1pbm_accessnumberint").setValue(retrievedContact);
-
-        if (count === 0) {
-            const message = CONSTANTS.MESSAGES.ACCOUNTS_NOT_FOUND;
-           
-            showFormNotification(executionContext, message, "ERROR", "accountsNotFound");            
-            // Make the form read-only
-            makeFormReadOnly(executionContext);
-        } else {
-            showHideSection(formContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE, "pb_maturity_Instruction", "pbm_member_accounts");
-
-            // Pass data to the HTML web resource
-            passDataToaccountDropdowns(formContext, formMode, apiData, accountsubtype, certificateAffiliateAccountNumber);
-        }  
-
-    } catch (error) {
-        console.error("Error processing the flow:", error.message);
-        Xrm.Navigation.openErrorDialog({ message: error.message });
-    } finally {
-        // Hide the Dynamics 365 OOTB loading spinner
-        Xrm.Utility.closeProgressIndicator();
-    }
-}
-
-// Function to pass data to an HTML web resource
-function passDataToaccountDropdowns(formContext, formMode, apiData, accountsubtype, affiliateAcNo) {
-    var webResourceControl = formContext.getControl("WebResource_member_accounts");
-
-    if (webResourceControl !== null) {
-        webResourceControl.getContentWindow().then(function (window) {
-            window.receiveDataFromParent({
-                formContext: formContext,
-                data: apiData,
-                accountsubtype: accountsubtype,
-                mode: formMode,
-                affiliateAcNo: affiliateAcNo,
-            });
-        });
-    }
-}
-
-function getLookupFieldValue(formContext, lookupFieldName) {
-debugger;
-    var lookupField = formContext.getAttribute(lookupFieldName);
-    if (lookupField != null) {
-        var lookupValue = lookupField.getValue();
-        if (lookupValue != null && lookupValue.length > 0) {
-            var lookupId = lookupValue[0].id;
-            lookupId = lookupId.replace("{", "").replace("}", "");
-            var lookupName = lookupValue[0].name;
-            var lookupEntity = lookupValue[0].entityType;
-
-            return {
-                id: lookupId,
-                name: lookupName,
-                entityType: lookupEntity
-            };
-        }
-    }
-    return null;
-}
-
-function toggleLookupReadOnly(executionContext, lookupField, isReadOnly) {
-    var formContext = executionContext.getFormContext();
-
-    var lookupField = formContext.getControl(lookupField);
-
-    if (lookupField) {
-        if (isReadOnly) {
-            lookupField.setDisabled(true);
-        } else {
-            lookupField.setDisabled(false);
-        }
-    } else {
-        console.log("Lookup field not found.");
-    }
-}
-
-function showHideFrame(formContext, tabName, sectionName, flag) {
-    // Get the tab containing the section
-    var tab = formContext.ui.tabs.get(tabName);
-
-    if (tab) {
-        var section = tab.sections.get(sectionName);
-
-        if (section) {
-            section.setVisible(flag);
-        } else {
-            console.log("Section not found");
-        }
-    } else {
-        console.log("Tab not found");
-    }
-}
-
-function validateFieldsOnSave(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var certificateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER).getValue();
-    var affiliateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER).getValue();
-
-    if (certificateAccountNumber === null || certificateAccountNumber === "") {
-        Xrm.Navigation.openAlertDialog({ text: formatString(CONSTANTS.MESSAGES.REQUIRED_FIELD, "Certificate Account Number") });
-        executionContext.getEventArgs().preventDefault();
-        return;
-    }
-    else if (affiliateAccountNumber === null || affiliateAccountNumber === "") {
-        Xrm.Navigation.openAlertDialog({ text: formatString(CONSTANTS.MESSAGES.REQUIRED_FIELD, "Affiliate Account Number") });
-        executionContext.getEventArgs().preventDefault();
-        return;
-    }
-
-    // Define the confirmation dialog options
-    var confirmOptions = {
-        title: "Confirmation Required",
-        text: CONSTANTS.MESSAGES.MANUAL_REVIEW_CONFIRMATION
-    };
-
-    var saveEvent = executionContext.getEventArgs();
-    var manualReview = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).getValue();
-    if (manualReview) {
-        if (saveEvent._saveMode === 1) {
-            // Show the confirmation dialog
-            Xrm.Navigation.openConfirmDialog(confirmOptions).then(
-                function (result) {
-                    if (result.confirmed) {
-                        console.log("Confirmed.");
-                    }
-                }
-            );
-        }
-        else if(saveEvent._saveMode === 2) {
-            saveEvent.preventDefault();
-
-            // Show the confirmation dialog
-            Xrm.Navigation.openConfirmDialog(confirmOptions).then(
-                function (result) {
-                    if (result.confirmed) {
-                        // If "Yes" is clicked, proceed with the save operation
-                        formContext.data.entity.save("saveandclose");
-                    } else {
-                        // If "No" is clicked, cancel the save operation
-                        executionContext.getEventArgs().preventDefault();
-                    }
-                }
-            );    
-        }
-    }
-}
-
-function onAffiliateAccountNumberChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var affiliateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER).getValue();
-    console.log("Affiliate Account No: " + affiliateAccountNumber);
-    if(affiliateAccountNumber != "--Select--") {
-        apiData.forEach(function(item) {
-            if(affiliateAccountNumber === item.accountNumber) {
-                console.log("affiliateavailableBalance: " + item.availableBalance);  
-                var affiliateBalance = parseFloat(item.availableBalance);
-                formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT).setValue(affiliateBalance);
-            }
-        });
-    }
-    else {
-        formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT).setValue(null);
-    }
-    amountChange(executionContext);
-}
-
-async function getProductRecordById(productId) {
-    if (!productId) {
-        throw new Error("Product ID is required");
-    }
-
-    try {
-        const result = await Xrm.WebApi.retrieveRecord(CONSTANTS.ENTITY_NAMES.PRODUCT, productId, `?$select=${CONSTANTS.ATTRIBUTE_NAMES.MINIMUM_BALANCE},${CONSTANTS.ATTRIBUTE_NAMES.PRODUCT_CODE}`);
-        console.log("Product retrieved successfully:", result);
-        // Return the access number field from the result
-        return result;
-    } catch (error) {
-        console.error("Error retrieving contact:", error.message);
-        throw new Error(error.message);
-    }
-}
-
-function onMaturityOptionChange(executionContext) {
-    amountChange(executionContext);
-}
-
-async function onProductionSelectionChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-
-    var productLookupValue = getLookupFieldValue(formContext, "nf1pbm_certificaterenewaltype");
-
-    if (productLookupValue != null) {
-        let productId = productLookupValue.id;
-        let response = await getProductRecordById(productId);
-        minBalance = response[CONSTANTS.ATTRIBUTE_NAMES.MINIMUM_BALANCE];
-        productCode = response[CONSTANTS.ATTRIBUTE_NAMES.PRODUCT_CODE];
-        formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.NEW_RENEWAL_TYPE_CODE).setValue(productCode);
-        console.log("Product minimum balance:", minBalance);
-        amountChange(executionContext);
-    } else {
-        console.log("No value found for the lookup field product.");
-    }
-}
-
-async function callPowerAutomateCertificateDetails(executionContext, accountNumber) {
-    var formContext = executionContext.getFormContext();
-
-    try {
-        var flowUrl = await getEnvironmentVariable("nf1pbm_VarEnvFlowURLGetCertificateAccountDetails");
-        var data = {
-            accountNumber: accountNumber
-        };
-
-        var response = await fetch(flowUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(data)
-        });
-
-        if (!response.ok) {
-            throw new Error("Network response was not ok: " + response.statusText);
-        }
-
-        var responseData = await response.json();
-        console.log("Response from Power Automate:", responseData.stAccount.contactInfo);
-        certificateDetails = responseData;
-        contactData = responseData.stAccount.contactInfo;
-    } catch (error) {
-        console.error("Error during operation:", error);
-    } finally {
-        //Xrm.Utility.closeProgressIndicator();
-    }
-}
-
-async function getEnvironmentVariable(variableName) {
-    var query = `?$select=defaultvalue,displayname&$filter=schemaname eq '${variableName}'&$expand=environmentvariabledefinition_environmentvariablevalue($select=value)`;
-    var result = await Xrm.WebApi.online.retrieveMultipleRecords("environmentvariabledefinition", query);
-
-    if (result.entities.length > 0 && result.entities[0].environmentvariabledefinition_environmentvariablevalue && result.entities[0].environmentvariabledefinition_environmentvariablevalue.length > 0) {
-        return result.entities[0].environmentvariabledefinition_environmentvariablevalue[0].value;
-    } else {
-        throw new Error(CONSTANTS.MESSAGES.ENV_VAR_NOT_FOUND);
-    }
-}
-
-function amountChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var amount = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.TRANSACTION_AMOUNT).getValue();
-    var affiliateBalanceAmount = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT).getValue();
-    var optionSetField = formContext.getAttribute("nf1pbm_amountto");
-    var certificateBalanceAmount = formContext.getAttribute("nf1pbm_certificatebalance").getValue();
-    var totalAmount = affiliateBalanceAmount + certificateBalanceAmount;
-
-    if (optionSetField && amount != null) {
-        var optionSetValue = optionSetField.getValue();
-
-        if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.ADD_TO_CERT) { // Add to Cert
-            var transAmount = amount - certificateBalanceAmount;
-            var balCheck = certificateBalanceAmount + transAmount;
-
-            if (balCheck > totalAmount || balCheck < minBalance) {
-                showFormNotification(formContext, CONSTANTS.MESSAGES.MINIMUM_FUNDS_WARNING, "WARNING", "minBalanceNotification");
-            } else {
-                formContext.ui.clearFormNotification("minBalanceNotification");
-            }
-        }
-        else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT) { // Withdraw from Cert
-            var transAmount = certificateBalanceAmount - amount;
-            var balCheck = certificateBalanceAmount - transAmount;
-
-            if (balCheck < minBalance) {
-                showFormNotification(formContext, CONSTANTS.MESSAGES.MINIMUM_FUNDS_WARNING, "WARNING", "minBalanceNotification");
-            } else {
-                formContext.ui.clearFormNotification("minBalanceNotification");
-            }
-        }
-        else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.SPECIFIC_BALANCE) { // Specific Balance
-            if (amount >= certificateBalanceAmount) { // Add to Cert case
-                var transAmount = amount - certificateBalanceAmount;
-                var balCheck = certificateBalanceAmount + transAmount;
-
-                if (balCheck > totalAmount || balCheck < minBalance) {
-                    showFormNotification(formContext, CONSTANTS.MESSAGES.MINIMUM_FUNDS_WARNING, "WARNING", "minBalanceNotification");
-                } else {
-                    formContext.ui.clearFormNotification("minBalanceNotification");
-                }
-            }
-            else { // Withdraw from Cert case (amount < certificateBalanceAmount)
-                var transAmount = certificateBalanceAmount - amount;
-                var balCheck = certificateBalanceAmount - transAmount;
-
-                if (balCheck < minBalance) {
-                    showFormNotification(formContext, CONSTANTS.MESSAGES.MINIMUM_FUNDS_WARNING, "WARNING", "minBalanceNotification");
-                } else {
-                    formContext.ui.clearFormNotification("minBalanceNotification");
-                }
-            }
-        }
-    }
-}
-
-function showFormNotification(executionContext, message, level, notificationId) {
-    var formContext = executionContext.getFormContext();
-    // level could be "ERROR", "WARNING", or "INFO"
-    formContext.ui.setFormNotification(message, level, notificationId);
-}
-
-async function getMaturityInstructions(executionContext, accessNumber, accountTypeId, accountNumber) {
-    const fetchXml = `
-    <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
-      <entity name="${CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS}">
-        <attribute name="nf1pbm_maturityinstructionsid" />
-        <attribute name="nf1pbm_maturityinstructionid" />
-        <attribute name="createdon" />
-        <order attribute="nf1pbm_maturityinstructionid" descending="false" />
-        <filter type="and">
-          <condition attribute="nf1pbm_accessnumberint" operator="eq" value="${accessNumber}" />
-          <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE}" operator="eq" uiname="Share Certificate" uitype="nf1pbm_certificateaccounttype" value="${accountTypeId}" />
-          <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER}" operator="eq" value="${accountNumber}" />
-        </filter>
-      </entity>
-    </fetch>`;
-
-    try {
-        const result = await Xrm.WebApi.retrieveMultipleRecords(CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS, `?fetchXml=${encodeURIComponent(fetchXml)}`);
-
-        if (result.entities.length > 0) {
-            const existingRecordId = result.entities[0].nf1pbm_maturityinstructionid;
-            const message = formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, existingRecordId);
-
-            showFormNotification(executionContext, message, "ERROR", "duplicateRecordError");
-            // Make the form read-only
-            makeFormReadOnly(executionContext);
-            return;
-        }
-
-        console.log("Maturity instructions retrieved successfully:", result.entities);
-        return result.entities;
-    } catch (error) {
-        console.error("Error retrieving maturity instructions:", error.message);
-        throw new Error(error.message);
-    }
-}
-
-function makeFormReadOnly(executionContext) {
-    var formContext = executionContext.getFormContext();
-
-    formContext.ui.controls.forEach(function (control) {
-        if (control.getDisabled && !control.getDisabled()) {
-            control.setDisabled(true);
-        }
-    });
-}
-
-function onAnotherFinInstitutionChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var val = getSelectedOptionSetValue(executionContext);
-    console.log("Selected Value: " + val);
-    if(val) {
-        showHideTabs(formContext, "pb_maturity_Instruction", "maturity_Instruction_Another_Fin", true);
-    } else {
-        showHideTabs(formContext, "pb_maturity_Instruction", "maturity_Instruction_Another_Fin", false);
-    }
-
-    var fields = [
-        "nf1pbm_bankname",
-        "nf1pbm_otherbankaccountnumber",
-        "nf1pbm_otheraddressline1",
-        "nf1pbm_othercity",
-        "nf1pbm_otherstate",
-        "nf1pbm_otherzip"
-    ];
-
-    fields.forEach(function(field) {
-        if (val) {
-            formContext.getAttribute(field).setRequiredLevel("required");
-        } else {
-            formContext.getAttribute(field).setRequiredLevel("none");
-        }
-    });
-}
-
-function getSelectedOptionSetValue(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var optionSetValue = formContext.getAttribute("nf1pbm_anotherfininstitution").getValue();
-    // Check if an option is selected
-    if (optionSetValue != null) {
-        console.log("Selected Option Set Value: " + optionSetValue);
-        return optionSetValue;
-    } else {
-        console.log("No option is selected.");
-        return null;
-    }
-}
-
-async function getProductByCodeAsync(productCode) {
-    try {
-        // Ensure proper single quotes and formatting in the query
-        var query = `?$select=nfc_otdb_productid,nfc_otdb_name&$filter=nfc_otdb_productcode eq '${encodeURIComponent(productCode)}'`;
-
-        var result = await Xrm.WebApi.retrieveMultipleRecords(CONSTANTS.ENTITY_NAMES.PRODUCT, query);
-
-        if (result.entities.length > 0) {
-            return {
-                id: result.entities[0].nfc_otdb_productid, // Product GUID
-                name: result.entities[0].nfc_otdb_name, // Product Name
-                entityType: "nfc_otdb_product" // Product Entity Type
-            };
-        } else {
-            console.log(CONSTANTS.MESSAGES.NO_PRODUCT_FOUND);
             return null;
         }
-    } catch (error) {
-        console.log(formatString(CONSTANTS.MESSAGES.ERROR_RETRIEVING_PRODUCT, error.message));
-        return null;
-    }
-}
 
-async function setProductLookupDefaultValue(formContext, productCode, lookupFieldName) {
-    var product = await getProductByCodeAsync(productCode);
+        static XElement CreateDataElement(Data data)
+        {
+            var elements = new List<object>();
 
-    if (product) {
-        formContext.getAttribute(lookupFieldName).setValue([product]);
-        console.log("Default product lookup value set.");
-    } else {
-        console.log("Failed to set the default product lookup value.");
+            if (!string.IsNullOrEmpty(data.IllustrationSystem))
+                elements.Add(new XElement("Illustration_System", data.IllustrationSystem));
+
+            if (data.AgentInformation != null)
+                elements.Add(CreateElementFromObject("AGENTINFORMATION", data.AgentInformation));
+
+            if (data.Persons != null && data.Persons.Any())
+            {
+                var sortedPersons = data.Persons.OrderBy(p => p.PERSONID);
+                elements.AddRange(sortedPersons.Select(p => CreateElementFromObject("PERSON", p)));
+            }
+
+            if (data.Relations != null && data.Relations.Any())
+                elements.AddRange(data.Relations.Select(r => CreateElementFromObject("RELATION", r)));
+
+            if (data.CaseData != null)
+                elements.Add(CreateCaseDataElement(data.CaseData));
+
+            return new XElement("DATA", elements);
+        }
+
+        static XElement CreateElementFromObject(string elementName, object obj)
+        {
+            var properties = obj.GetType().GetProperties().Where(p => p.GetIndexParameters().Length == 0);
+            var elements = new List<object>();
+            var attributes = new List<XAttribute>();
+
+            var attributeNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "PERSONID", "VERSION", "TYPE"
+            };
+
+            foreach (var prop in properties)
+            {
+                var value = prop.GetValue(obj);
+                var jsonProperty = prop.GetCustomAttributes(typeof(JsonPropertyAttribute), false)
+                                        .FirstOrDefault() as JsonPropertyAttribute;
+                var name = jsonProperty != null ? jsonProperty.PropertyName.TrimStart('@') : prop.Name;
+
+                if (attributeNames.Contains(name) || (jsonProperty != null && jsonProperty.PropertyName.StartsWith("@")))
+                {
+                    // Treat as attribute
+                    if (value != null)
+                    {
+                        attributes.Add(new XAttribute(name, value));
+                    }
+                }
+                else if (value != null && value.ToString() == EmptyTagPlaceholder)
+                {
+                    // Create an empty tag only for the unique placeholder value "__EMPTY_TAG__"
+                    elements.Add(new XElement(name));
+                }
+                else if (value != null)
+                {
+                    // Add tag with the actual non-empty, non-placeholder value
+                    elements.Add(new XElement(name, value.ToString().Trim()));
+                }
+                // Else do nothing for null values
+            }
+
+            return new XElement(elementName, attributes, elements);
+        }
+
+        static XElement CreateCaseDataElement(CaseData caseData)
+        {
+            return CreateElementFromObject("CASEDATA", caseData);
+        }
     }
 }
