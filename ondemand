@@ -20,17 +20,16 @@ namespace KOFC_Navigator_Integration
                 // Deserialize JSON into Root object
                 var root = JsonConvert.DeserializeObject<Root>(jsonData);
 
-                // Create XML with the XML declaration at the top
+                // Create the main XML content without the declaration
                 var xmlDoc = new XDocument(
-                    new XDeclaration("1.0", "UTF-8", "yes"),
                     new XElement("FIPSCOLINKFILE",
                         new XAttribute("VERSION", "1.00"),
                         CreateDataElement(root.Data)  // Excluding <Illustration_System>
                     )
                 );
 
-                // Output XML with declaration
-                string xmlString = xmlDoc.ToString(SaveOptions.DisableFormatting);
+                // Convert to string and manually add the XML declaration
+                string xmlString = "<?xml version='1.0' encoding='UTF-8'?>\n" + xmlDoc.ToString(SaveOptions.None);
                 Console.WriteLine(xmlString);
                 return xmlString;
             }
