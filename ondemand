@@ -1,27 +1,49 @@
-function onSave(executionContext) {
+function validateFieldsOnSave(executionContext) {
     var formContext = executionContext.getFormContext();
+    var certificateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER).getValue();
+    var affiliateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER).getValue();
+
+    if (!certificateAccountNumber) {
+        Xrm.Navigation.openAlertDialog({ text: formatString(CONSTANTS.MESSAGES.REQUIRED_FIELD, "Certificate Account Number") });
+        executionContext.getEventArgs().preventDefault();
+        return;
+    }
+    if (!affiliateAccountNumber) {
+        Xrm.Navigation.openAlertDialog({ text: formatString(CONSTANTS.MESSAGES.REQUIRED_FIELD, "Affiliate Account Number") });
+        executionContext.getEventArgs().preventDefault();
+        return;
+    }
+
+    // Define the confirmation dialog options
+    var confirmOptions = {
+        title: "Confirmation Required",
+        text: CONSTANTS.MESSAGES.MANUAL_REVIEW_CONFIRMATION
+    };
+
     var saveEvent = executionContext.getEventArgs();
     var saveMode = saveEvent.getSaveMode();
-
-    var confirmOptions = { text: "Are you sure you want to proceed?" };
-    var manualReview = formContext.getAttribute("manual_review").getValue();
+    var manualReview = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).getValue();
     if (manualReview) {
         saveEvent.preventDefault(); // Prevent default save to control the flow
-
         Xrm.Navigation.openConfirmDialog(confirmOptions).then(function (result) {
             if (result.confirmed) {
-                // Set attribute to always submit to ensure save operation proceeds
-                formContext.getAttribute("manual_review").setSubmitMode("always");
-
-                // Handle both save and save and close based on the mode detected
-                if (saveMode === 1 || saveMode === 70) { // Normal save or autosave
-                    formContext.data.save();
-                } else if (saveMode === 2) { // Save and close
-                    formContext.data.save("saveandclose");
+                // Optionally force the attribute to submit
+                // formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).setSubmitMode("always");
+                // Proceed based on save mode
+                switch (saveMode) {
+                    case 1:
+                    case 70: // Normal save or autosave
+                        formContext.data.save();
+                        break;
+                    case 2: // Save and close
+                        formContext.data.save("saveandclose");
+                        break;
                 }
             } else {
                 console.log("Save canceled by user.");
             }
+        }).catch(function(error) {
+            console.log("Error in confirmation dialog: " + error);
         });
     }
 }
