@@ -1,8 +1,8 @@
 function validateFieldsOnSave(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var saveEvent = executionContext.getEventArgs();
-    saveEvent.preventDefault(); // Always prevent default to control the flow explicitly.
+    var eventArgs = executionContext.getEventArgs();
+    eventArgs.preventDefault(); // Stop the form save process here.
 
+    var formContext = executionContext.getFormContext();
     var certificateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER).getValue();
     var affiliateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER).getValue();
 
@@ -15,7 +15,6 @@ function validateFieldsOnSave(executionContext) {
         return;
     }
 
-    // Only proceed with confirmation if manual review is required
     var manualReview = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).getValue();
     if (manualReview) {
         var confirmOptions = {
@@ -25,13 +24,8 @@ function validateFieldsOnSave(executionContext) {
 
         Xrm.Navigation.openConfirmDialog(confirmOptions).then(function (result) {
             if (result.confirmed) {
-                // Decide what type of save based on the mode after confirmation
-                var saveMode = saveEvent.getSaveMode();
-                if (saveMode === 1 || saveMode === 70) { // Normal save or autosave
-                    formContext.data.save();
-                } else if (saveMode === 2) { // Save and close
-                    formContext.data.save("saveandclose");
-                }
+                // User confirmed, proceed with save based on the mode
+                performSave(formContext, eventArgs);
             } else {
                 console.log("Save canceled by user.");
             }
@@ -39,7 +33,20 @@ function validateFieldsOnSave(executionContext) {
             console.log("Error in confirmation dialog: " + error);
         });
     } else {
-        // If no manual review is required, proceed to save normally.
-        // Optionally, you might want to handle different save modes here as well.
+        // No manual review needed, just perform the save directly
+        performSave(formContext, eventArgs);
+    }
+}
+
+function performSave(formContext, eventArgs) {
+    var saveMode = eventArgs.getSaveMode();
+    switch (saveMode) {
+        case 1: // Save
+        case 70: // AutoSave (if enabled and necessary)
+            formContext.data.save();
+            break;
+        case 2: // Save and Close
+            formContext.data.save("saveandclose");
+            break;
     }
 }
