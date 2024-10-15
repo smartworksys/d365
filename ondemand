@@ -1,49 +1,29 @@
-function validateFieldsOnSave(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var certificateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER).getValue();
-    var affiliateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER).getValue();
+var count = 0;
 
-    if (!certificateAccountNumber) {
-        Xrm.Navigation.openAlertDialog({ text: formatString(CONSTANTS.MESSAGES.REQUIRED_FIELD, "Certificate Account Number") });
-        executionContext.getEventArgs().preventDefault();
-        return;
-    }
-    if (!affiliateAccountNumber) {
-        Xrm.Navigation.openAlertDialog({ text: formatString(CONSTANTS.MESSAGES.REQUIRED_FIELD, "Affiliate Account Number") });
-        executionContext.getEventArgs().preventDefault();
-        return;
-    }
+function OnFormSave(executionObj) {
+    var eventArgs = executionObj.getEventArgs();
+    var formContext = executionObj.getFormContext();
 
-    // Define the confirmation dialog options
-    var confirmOptions = {
-        title: "Confirmation Required",
-        text: CONSTANTS.MESSAGES.MANUAL_REVIEW_CONFIRMATION
-    };
+    // Prevent default save operation initially
+    if (count === 0) {
+        eventArgs.preventDefault();
 
-    var saveEvent = executionContext.getEventArgs();
-    var saveMode = saveEvent.getSaveMode();
-    var manualReview = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).getValue();
-    if (manualReview) {
-        saveEvent.preventDefault(); // Prevent default save to control the flow
-        Xrm.Navigation.openConfirmDialog(confirmOptions).then(function (result) {
-            if (result.confirmed) {
-                // Optionally force the attribute to submit
-                // formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).setSubmitMode("always");
-                // Proceed based on save mode
-                switch (saveMode) {
-                    case 1:
-                    case 70: // Normal save or autosave
-                        formContext.data.save();
-                        break;
-                    case 2: // Save and close
-                        formContext.data.save("saveandclose");
-                        break;
-                }
-            } else {
-                console.log("Save canceled by user.");
-            }
-        }).catch(function(error) {
-            console.log("Error in confirmation dialog: " + error);
-        });
+        if (formContext.ui.getFormType() === 1) {
+            var confirmStrings = {
+                text: "Are you sure you want to continue to save the record?",
+                title: "Warning"
+            };
+            var confirmOptions = { height: 250, width: 500 };
+            Xrm.Navigation.openConfirmDialog(confirmStrings, confirmOptions).then(
+                function (result) {
+                    if (result.confirmed) {
+                        count++; // Increment count to avoid repeated confirmations
+                        formContext.data.save(); // Attempt to save the form
+                    } else {
+                        console.log("User cancelled the save.");
+                        // Handle cancellation logic, if any
+                    }
+                });
+        }
     }
 }
