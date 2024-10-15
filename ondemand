@@ -1,15 +1,37 @@
-function checkFormMode(executionContext) {
+function onSave(executionContext) {
     var formContext = executionContext.getFormContext();
-    
-    // Retrieve the form type
-    var formType = formContext.ui.getFormType();
+    var saveEvent = executionContext.getEventArgs();
 
-    // Check if the form is in Create mode (1) or Edit mode (2)
-    if (formType === 1) {
-        console.log("Form is in Create mode.");
-        // Perform actions specific to Create mode
-    } else if (formType === 2) {
-        console.log("Form is in Edit mode.");
-        // Perform actions specific to Edit mode
+    // Constants and options for confirmation dialog
+    var confirmOptions = { text: "Are you sure you want to proceed?" };
+
+    var manualReview = formContext.getAttribute("manual_review").getValue(); // Ensure the correct logical name is used
+    if (manualReview) {
+        var saveMode = saveEvent.getSaveMode();
+
+        if (saveMode === 1 || saveMode === 70) { // 1: Save, 70: AutoSave (if applicable)
+            // Show the confirmation dialog
+            Xrm.Navigation.openConfirmDialog(confirmOptions).then(function (result) {
+                if (result.confirmed) {
+                    console.log("User confirmed.");
+                    formContext.data.save(); // This will trigger a normal save
+                } else {
+                    console.log("User did not confirm.");
+                    saveEvent.preventDefault(); // Prevent the save if not confirmed
+                }
+            });
+        } else if (saveMode === 2) { // 2: Save and Close
+            saveEvent.preventDefault(); // Prevent default save first
+            // Show the confirmation dialog
+            Xrm.Navigation.openConfirmDialog(confirmOptions).then(function (result) {
+                if (result.confirmed) {
+                    // If "Yes" is clicked, proceed with the save operation
+                    formContext.data.save("saveandclose");
+                } else {
+                    // If "No" is clicked, keep the form open
+                    console.log("User canceled the operation.");
+                }
+            });
+        }
     }
 }
