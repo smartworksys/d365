@@ -1,37 +1,27 @@
 function onSave(executionContext) {
     var formContext = executionContext.getFormContext();
     var saveEvent = executionContext.getEventArgs();
+    var saveMode = saveEvent.getSaveMode();
 
-    // Constants and options for confirmation dialog
     var confirmOptions = { text: "Are you sure you want to proceed?" };
-
-    var manualReview = formContext.getAttribute("manual_review").getValue(); // Ensure the correct logical name is used
+    var manualReview = formContext.getAttribute("manual_review").getValue();
     if (manualReview) {
-        var saveMode = saveEvent.getSaveMode();
+        saveEvent.preventDefault(); // Prevent default save to control the flow
 
-        if (saveMode === 1 || saveMode === 70) { // 1: Save, 70: AutoSave (if applicable)
-            // Show the confirmation dialog
-            Xrm.Navigation.openConfirmDialog(confirmOptions).then(function (result) {
-                if (result.confirmed) {
-                    console.log("User confirmed.");
-                    formContext.data.save(); // This will trigger a normal save
-                } else {
-                    console.log("User did not confirm.");
-                    saveEvent.preventDefault(); // Prevent the save if not confirmed
-                }
-            });
-        } else if (saveMode === 2) { // 2: Save and Close
-            saveEvent.preventDefault(); // Prevent default save first
-            // Show the confirmation dialog
-            Xrm.Navigation.openConfirmDialog(confirmOptions).then(function (result) {
-                if (result.confirmed) {
-                    // If "Yes" is clicked, proceed with the save operation
+        Xrm.Navigation.openConfirmDialog(confirmOptions).then(function (result) {
+            if (result.confirmed) {
+                // Set attribute to always submit to ensure save operation proceeds
+                formContext.getAttribute("manual_review").setSubmitMode("always");
+
+                // Handle both save and save and close based on the mode detected
+                if (saveMode === 1 || saveMode === 70) { // Normal save or autosave
+                    formContext.data.save();
+                } else if (saveMode === 2) { // Save and close
                     formContext.data.save("saveandclose");
-                } else {
-                    // If "No" is clicked, keep the form open
-                    console.log("User canceled the operation.");
                 }
-            });
-        }
+            } else {
+                console.log("Save canceled by user.");
+            }
+        });
     }
 }
