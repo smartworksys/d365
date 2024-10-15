@@ -1,13 +1,15 @@
-// JavaScript function to enable/disable a field based on the selected value in a choice field
-function onChangeChoiceField(executionContext) {
+function checkFormMode(executionContext) {
     var formContext = executionContext.getFormContext();
     
-    // Retrieve the value of the choice field
-    var choiceValue = formContext.getAttribute("nf1pbm_amountto").getValue();
+    // Retrieve the form type
+    var formType = formContext.ui.getFormType();
 
-    // Check if the selected value is either 582860001 or 582860002
-    var isEnabled = (choiceValue === 582860001 || choiceValue === 582860002);
-
-    // Enable or disable the Yes/No field based on the condition
-    formContext.getControl("enableDisableField").setDisabled(!isEnabled);
+    // Check if the form is in Create mode (1) or Edit mode (2)
+    if (formType === 1) {
+        console.log("Form is in Create mode.");
+        // Perform actions specific to Create mode
+    } else if (formType === 2) {
+        console.log("Form is in Edit mode.");
+        // Perform actions specific to Edit mode
+    }
 }
