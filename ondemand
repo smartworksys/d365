@@ -1,19 +1,38 @@
 using System;
-using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
 
-class Program
+namespace GetPublicIPAddress
 {
-    static void Main()
+    class Program
     {
-        string ip_address = "8.8.8.8"; // Example IP address (Google's DNS server)
-        try
+        static async Task Main(string[] args)
         {
-            IPHostEntry host = Dns.GetHostEntry(ip_address);
-            Console.WriteLine($"The hostname for IP address {ip_address} is {host.HostName}");
-        }
-        catch (SocketException)
-        {
-            Console.WriteLine("No host name associated with the IP address found.");
+            // URL of the service that returns the IP address
+            string url = "https://httpbin.org/ip";
+
+            using (HttpClient client = new HttpClient())
+            {
+                try
+                {
+                    // Send a GET request to the specified Uri
+                    HttpResponseMessage response = await client.GetAsync(url);
+
+                    // Ensure the request was successful
+                    response.EnsureSuccessStatusCode();
+
+                    // Read the response as a string
+                    string responseBody = await response.Content.ReadAsStringAsync();
+
+                    // Display the response body
+                    Console.WriteLine("Your public IP is: " + responseBody);
+                }
+                catch (HttpRequestException e)
+                {
+                    Console.WriteLine("\nException Caught!");
+                    Console.WriteLine("Message :{0} ", e.Message);
+                }
+            }
         }
     }
 }
