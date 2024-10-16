@@ -1,13 +1,19 @@
+using System;
 using System.Net;
 
-// Your destination URL
-string url = "http://example.com";
-Uri uri = new Uri(url);
-
-// Get the IP addresses associated with a hostname.
-IPAddress[] addressList = Dns.GetHostAddresses(uri.Host);
-
-foreach (IPAddress address in addressList)
+class Program
 {
-    Console.WriteLine(address);
+    static void Main()
+    {
+        string ip_address = "8.8.8.8"; // Example IP address (Google's DNS server)
+        try
+        {
+            IPHostEntry host = Dns.GetHostEntry(ip_address);
+            Console.WriteLine($"The hostname for IP address {ip_address} is {host.HostName}");
+        }
+        catch (SocketException)
+        {
+            Console.WriteLine("No host name associated with the IP address found.");
+        }
+    }
 }
