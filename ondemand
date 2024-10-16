@@ -1,41 +1,44 @@
 using System;
-using System.Net.Http;
-using System.Threading.Tasks;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.NetworkInformation;
 
-namespace ExternalIPFetcher
+namespace PrivateIPAddressFinder
 {
     class Program
     {
-        static async Task Main(string[] args)
+        static void Main(string[] args)
         {
-            try
+            Console.WriteLine("Listing all IPv4 addresses for active network interfaces:\n");
+            foreach (var ip in GetPrivateIPAddresses())
             {
-                string ip = await GetPublicIPAddressAsync();
-                Console.WriteLine("Your public IP is: " + ip);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Error: " + ex.Message);
+                Console.WriteLine(ip);
             }
         }
 
-        // Method to fetch the public IP address
-        public static async Task<string> GetPublicIPAddressAsync()
+        public static IPAddress[] GetPrivateIPAddresses()
         {
-            string url = "https://httpbin.org/ip";
+            // List to store the private IP addresses
+            var ipAddresses = new System.Collections.Generic.List<IPAddress>();
 
-            using (HttpClient client = new HttpClient())
+            // Get all network interfaces (excluding loopback)
+            foreach (var iface in NetworkInterface.GetAllNetworkInterfaces())
             {
-                HttpResponseMessage response = await client.GetAsync(url);
-                response.EnsureSuccessStatusCode();
-                string responseBody = await response.Content.ReadAsStringAsync();
-
-                // Assuming the response is in JSON format and has a field named 'origin'
-                // For example, the response from httpbin.org/ip looks like { "origin": "x.x.x.x" }
-                var ipAddress = System.Text.Json.JsonDocument.Parse(responseBody).RootElement.GetProperty("origin").GetString();
-
-                return ipAddress;
+                // Check if the network interface is operational
+                if (iface.OperationalStatus == OperationalStatus.Up)
+                {
+                    foreach (var ip in iface.GetIPProperties().UnicastAddresses)
+                    {
+                        // We're interested in IPv4 addresses only
+                        if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
+                        {
+                            ipAddresses.Add(ip.Address);
+                        }
+                    }
+                }
             }
+
+            return ipAddresses.ToArray();
         }
     }
 }
