@@ -1,44 +1,19 @@
-using System;
-using System.Net;
-using System.Net.Sockets;
-using System.Net.NetworkInformation;
+Input Values:
+- Current Certificate Balance: $100.32
+- Transaction Amount: $10,461.68 (Adjusted from an input of $10,562.00)
+- Total Available Amount: $10,562.59
+- New (Renewal) Cert Minimum Balance: $50.00
 
-namespace PrivateIPAddressFinder
-{
-    class Program
-    {
-        static void Main(string[] args)
-        {
-            Console.WriteLine("Listing all IPv4 addresses for active network interfaces:\n");
-            foreach (var ip in GetPrivateIPAddresses())
-            {
-                Console.WriteLine(ip);
-            }
-        }
+Checks for "Add To" Transaction Type:
 
-        public static IPAddress[] GetPrivateIPAddresses()
-        {
-            // List to store the private IP addresses
-            var ipAddresses = new System.Collections.Generic.List<IPAddress>();
+1. Check 1:
+   - Condition: Check if the sum of the Current Certificate Balance and the Transaction Amount exceeds the Total Available Amount.
+   - Calculation: 
+     ($100.32 + $10,461.68) > $10,562.59
+   - Result: This check fails because the sum ($10,562.00) does not exceed the total available amount ($10,562.59).
 
-            // Get all network interfaces (excluding loopback)
-            foreach (var iface in NetworkInterface.GetAllNetworkInterfaces())
-            {
-                // Check if the network interface is operational
-                if (iface.OperationalStatus == OperationalStatus.Up)
-                {
-                    foreach (var ip in iface.GetIPProperties().UnicastAddresses)
-                    {
-                        // We're interested in IPv4 addresses only
-                        if (ip.Address.AddressFamily == AddressFamily.InterNetwork)
-                        {
-                            ipAddresses.Add(ip.Address);
-                        }
-                    }
-                }
-            }
-
-            return ipAddresses.ToArray();
-        }
-    }
-}
+2. Check 2:
+   - Condition: Verify if the new balance after the transaction is below the New (Renewal) Cert Minimum Balance.
+   - Calculation: 
+     ($100.32 + $10,461.68) < $50.00
+   - Result: This check fails as the new balance ($10,562.00) is well above the minimum required balance ($50.00).
