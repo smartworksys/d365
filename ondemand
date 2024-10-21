@@ -1,19 +1,71 @@
-Input Values:
-- Current Certificate Balance: $100.32
-- Transaction Amount: $10,461.68 (Adjusted from an input of $10,562.00)
-- Total Available Amount: $10,562.59
-- New (Renewal) Cert Minimum Balance: $50.00
+using System;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.WebJobs;
+using Microsoft.Azure.WebJobs.Extensions.Http;
+using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
+using System.Net.Http.Headers;
 
-Checks for "Add To" Transaction Type:
+namespace TKISFunctionApp
+{
+    public static class TKISintegration
+    {
+        [FunctionName("TKISintegration")]
+        public static async Task<IActionResult> Run(
+            [HttpTrigger(AuthorizationLevel.Function, "get", "post", Route = null)] HttpRequest req,
+            ILogger log)
+        {
+            log.LogInformation("C# HTTP trigger function processed a request.");
 
-1. Check 1:
-   - Condition: Check if the sum of the Current Certificate Balance and the Transaction Amount exceeds the Total Available Amount.
-   - Calculation: 
-     ($100.32 + $10,461.68) > $10,562.59
-   - Result: This check fails because the sum ($10,562.00) does not exceed the total available amount ($10,562.59).
+            string policyNo = req.Query["policyNo"];
 
-2. Check 2:
-   - Condition: Verify if the new balance after the transaction is below the New (Renewal) Cert Minimum Balance.
-   - Calculation: 
-     ($100.32 + $10,461.68) < $50.00
-   - Result: This check fails as the new balance ($10,562.00) is well above the minimum required balance ($50.00).
+            var policy = new { policyNo = policyNo };
+            var policyList = new List<object> { policy };
+            string requestBody = JsonConvert.SerializeObject(policyList);
+            var content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+
+            using var client = new HttpClient();
+            string apiUrl = Environment.GetEnvironmentVariable("API_URL");
+            string clientSecretId = Environment.GetEnvironmentVariable("CLIENT_SECRET");
+
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", clientSecretId);
+
+            try
+            {
+                HttpResponseMessage response = await client.PostAsync(apiUrl, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    var responseJsonObj = JObject.Parse(json);
+                    string policyIndicator = (string)responseJsonObj["DATA"]["Illustration_System"];
+                    
+                    // Example: processing the response based on the policyIndicator
+
+                    return new OkObjectResult(new { INDICATOR = policyIndicator, DATA = responseJsonObj["DATA"] });
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                {
+                    log.LogWarning("Received 403 Forbidden from the API. Check API key and permissions.");
+                    return new StatusCodeResult(403);
+                }
+                else
+                {
+                    return new BadRequestObjectResult($"API request failed with the status code {response.StatusCode}");
+                }
+            }
+            catch (Exception e)
+            {
+                log.LogError($"An error occurred while sending JSON data to the API: {e.Message}");
+                return new BadRequestObjectResult("Unexpected Error!");
+            }
+        }
+    }
+}
