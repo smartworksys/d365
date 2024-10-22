@@ -1,15 +1,74 @@
-01 - Premature Withdrawal
-07 - Normal Withdrawal
-14 - Roth Qualified
-18 - Roth Premature
-28 - Roth Exception
-30 - Direct Transfer Out
-34 - Internal Out
-41 - Education Distribution (for "EDN" when isAfflAcctIRA is false)
-48 - Internal Out (for "EDN" when isAfflAcctIRA is true)
-52 - Rollover
-57 - Contribution
-80 - Direct Transfer
-84 - Internal In Transfer
-91 - Contribution (for "EDN" when isAfflAcctIRA is false)
-98 - Internal In Transfer (for "EDN" when isAfflAcctIRA is true)
+function manageRAOptionSet(executionContext, iraPlanSequenceNumber, tranType) {
+    var formContext = executionContext.getFormContext();
+
+    // Initialize an array to store the option set values
+    var RACodes = [];
+
+    var isAfflAcctIRA = false;
+    var isCertAcctIRA = false;
+
+    // Clear all existing option set values first
+    formContext.getControl("raCodesOptionSet").clearOptions();
+
+    // Check if iraPlanSequenceNumber matches IRA types
+    if (["IRA", "RTH", "SEP", "EDN"].includes(iraPlanSequenceNumber)) {
+        isCertAcctIRA = true;
+    }
+
+    // Assuming the affiliateAcctPlanType is another field you check for IRA status
+    var afflPlanType = formContext.getAttribute("affiliateAcctPlanType").getValue();
+    if (["IRA", "RTH", "SEP", "EDN"].includes(afflPlanType)) {
+        isAfflAcctIRA = true;
+    }
+
+    // Check transaction type and apply relevant logic for option set
+    if (tranType === "D") {
+        if (!isAfflAcctIRA && isCertAcctIRA) {
+            // Set the manual review flag (example: store in a hidden field or custom variable)
+            formContext.getAttribute("manualReviewBool").setValue(true);
+        }
+    }
+
+    // Handle for "C" transaction type
+    if (tranType === "C") {
+        if (["IRA", "RTH", "SEP"].includes(iraPlanSequenceNumber)) {
+            RACodes.push({ name: "84 - Internal In Transfer", value: 582860012 });
+            RACodes.push({ name: "57 - Contribution", value: 582860010 });
+            RACodes.push({ name: "52 - Rollover", value: 582860009 });
+            RACodes.push({ name: "80 - Direct Transfer", value: 582860011 });
+        } else if (iraPlanSequenceNumber === "EDN") {
+            if (isAfflAcctIRA) {
+                RACodes.push({ name: "98 - Internal In Transfer", value: 582860014 });
+            } else {
+                RACodes.push({ name: "91 - Contribution", value: 582860013 });
+            }
+        }
+    } else if (tranType === "D" || tranType === "L") {
+        if (["IRA", "SEP"].includes(iraPlanSequenceNumber)) {
+            RACodes.push({ name: "34 - Internal Out", value: 582860006 });
+            RACodes.push({ name: "01 - Premature Withdrawal", value: 582860000 });
+            RACodes.push({ name: "07 - Normal Withdrawal", value: 582860001 });
+            RACodes.push({ name: "30 - Direct Transfer Out", value: 582860005 });
+        } else if (iraPlanSequenceNumber === "EDN") {
+            if (isAfflAcctIRA) {
+                RACodes.push({ name: "48 - Internal Out", value: 582860008 });
+            } else {
+                RACodes.push({ name: "41 - Education Distribution", value: 582860007 });
+            }
+        } else if (iraPlanSequenceNumber === "RTH") {
+            RACodes.push({ name: "34 - Internal Out", value: 582860006 });
+            RACodes.push({ name: "14 - Roth Qualified", value: 582860002 });
+            RACodes.push({ name: "18 - Roth Premature", value: 582860003 });
+            RACodes.push({ name: "28 - Roth Exception", value: 582860004 });
+            RACodes.push({ name: "30 - Direct Transfer Out", value: 582860005 });
+        }
+    }
+
+    // Add new options dynamically based on the logic
+    for (var i = 0; i < RACodes.length; i++) {
+        formContext.getControl("raCodesOptionSet").addOption({
+            text: RACodes[i].name,
+            value: RACodes[i].value
+        });
+    }
+}
