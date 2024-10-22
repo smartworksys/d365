@@ -1,4 +1,4 @@
-function manageRAOptionSet(executionContext, iraPlanSequenceNumber, tranType) {
+function initializeRAOptions(executionContext, accountType, iraPlanSequenceNumber, tranType) {
     var formContext = executionContext.getFormContext();
 
     // Initialize an array to store the option set values
@@ -7,25 +7,31 @@ function manageRAOptionSet(executionContext, iraPlanSequenceNumber, tranType) {
     var isAfflAcctIRA = false;
     var isCertAcctIRA = false;
 
-    // Clear all existing option set values first
-    formContext.getControl("raCodesOptionSet").clearOptions();
+    // Clear all existing option set values first, and check if control exists
+    var raCodesControl = formContext.getControl("raCodesOptionSet");
+    if (raCodesControl) {
+        raCodesControl.clearOptions();
+    }
 
-    // Check if iraPlanSequenceNumber matches IRA types
-    if (["IRA", "RTH", "SEP", "EDN"].includes(iraPlanSequenceNumber)) {
+    // Check if accountType is IRA-related
+    if (accountType === "IR") {
         isCertAcctIRA = true;
     }
 
-    // Assuming the affiliateAcctPlanType is another field you check for IRA status
-    var afflPlanType = formContext.getAttribute("affiliateAcctPlanType").getValue();
-    if (["IRA", "RTH", "SEP", "EDN"].includes(afflPlanType)) {
+    // Check if affiliate account plan type is IRA-related
+    var afflPlanType = formContext.getAttribute("affiliateAcctPlanType")?.getValue();
+    if (afflPlanType === "IRA") {
         isAfflAcctIRA = true;
     }
 
-    // Check transaction type and apply relevant logic for option set
+    // Check transaction type and apply relevant logic for the option set
     if (tranType === "D") {
         if (!isAfflAcctIRA && isCertAcctIRA) {
-            // Set the manual review flag (example: store in a hidden field or custom variable)
-            formContext.getAttribute("manualReviewBool").setValue(true);
+            // Set the manual review flag, check if attribute exists first
+            var manualReviewAttr = formContext.getAttribute("manualReviewBool");
+            if (manualReviewAttr) {
+                manualReviewAttr.setValue(true);
+            }
         }
     }
 
@@ -66,9 +72,11 @@ function manageRAOptionSet(executionContext, iraPlanSequenceNumber, tranType) {
 
     // Add new options dynamically based on the logic
     for (var i = 0; i < RACodes.length; i++) {
-        formContext.getControl("raCodesOptionSet").addOption({
-            text: RACodes[i].name,
-            value: RACodes[i].value
-        });
+        if (raCodesControl) {
+            raCodesControl.addOption({
+                text: RACodes[i].name,
+                value: RACodes[i].value
+            });
+        }
     }
 }
