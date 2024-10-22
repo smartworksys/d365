@@ -1,1 +1,15 @@
-As discussed, we are currently facing a blockage due to an Azure IP networking issue. Prashanth has opened a ticket with Microsoft to address this matter. Our team, in collaboration with Prashanth and Microsoft, is actively troubleshooting to resolve the issue. As a result, the development environment is not ready for demonstrations at this time. We will keep you updated on the progress and notify you once the issue is resolved.
+84 - Internal In Transfer
+57 - Contribution
+52 - Rollover
+80 - Direct Transfer
+98 - Internal In Transfer (for "EDN" when isAfflAcctIRA is true)
+91 - Contribution (for "EDN" when isAfflAcctIRA is false)
+34 - Internal Out
+01 - Premature Withdrawal
+07 - Normal Withdrawal
+30 - Direct Transfer Out
+48 - Internal Out (for "EDN" when isAfflAcctIRA is true)
+41 - Education Distribution (for "EDN" when isAfflAcctIRA is false)
+14 - Roth Qualified
+18 - Roth Premature
+28 - Roth Exception
