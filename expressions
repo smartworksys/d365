@@ -1,2 +1,27 @@
 var fieldNamesToShow = ["field1", "field2", "field3"];
 showHideFields(formContext, fieldNamesToShow, true);
+
+
+/**
+ * Common method to remove specific option values from an Option Set field in a Dynamics 365 form.
+ * 
+ * @param {object} formContext - The form context object.
+ * @param {string} optionSetFieldName - The logical name of the Option Set field.
+ * @param {Array} valuesToRemove - An array of option values (integers) to remove.
+ */
+function removeOptionSetValues(formContext, optionSetFieldName, valuesToRemove) {
+    var optionSetControl = formContext.getControl(optionSetFieldName);
+    
+    if (optionSetControl) {
+        valuesToRemove.forEach(function(optionValue) {
+            optionSetControl.removeOption(optionValue);
+        });
+    } else {
+        console.error("Option Set field not found: " + optionSetFieldName);
+    }
+}
+
+
+var valuesToRemove = [582860000, 582860001, 582860002]; // Example option set values to remove
+removeOptionSetValues(formContext, "nf1pbm_racode", valuesToRemove);
+
