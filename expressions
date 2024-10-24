@@ -1,17 +1,2 @@
-/**
- * Common method to show or hide fields dynamically in a Dynamics 365 form.
- * 
- * @param {object} formContext - The form context object.
- * @param {Array} fieldNames - An array of field logical names to show or hide.
- * @param {boolean} isVisible - A boolean flag to show (true) or hide (false) the fields.
- */
-function showHideFields(formContext, fieldNames, isVisible) {
-    fieldNames.forEach(function(fieldName) {
-        var fieldControl = formContext.getControl(fieldName);
-        if (fieldControl) {
-            fieldControl.setVisible(isVisible);
-        } else {
-            console.error("Field not found: " + fieldName);
-        }
-    });
-}
+var fieldNamesToShow = ["field1", "field2", "field3"];
+showHideFields(formContext, fieldNamesToShow, true);
