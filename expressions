@@ -1,27 +1,41 @@
-var fieldNamesToShow = ["field1", "field2", "field3"];
-showHideFields(formContext, fieldNamesToShow, true);
+function filterApiData(responseData) {
+    // Define allowed combinations as concatenated strings
+    const allowedCombinations = ["BENPOD", "MINUGM", "PRIGSP", "SECDEC"];
 
+    // Filter responseData based on allowed combinations, trimming both fields
+    apiData = responseData.filter(item => {
+        const ownershipCode = item.memberAccountOwnershipCode ? item.memberAccountOwnershipCode.trim() : "";
+        const relationshipType = item.memberAccountRelationshipType ? item.memberAccountRelationshipType.trim() : "";
+        
+        // Concatenate the trimmed values and check if they are in allowed combinations
+        return allowedCombinations.includes(ownershipCode + relationshipType);
+    });
 
-/**
- * Common method to remove specific option values from an Option Set field in a Dynamics 365 form.
- * 
- * @param {object} formContext - The form context object.
- * @param {string} optionSetFieldName - The logical name of the Option Set field.
- * @param {Array} valuesToRemove - An array of option values (integers) to remove.
- */
-function removeOptionSetValues(formContext, optionSetFieldName, valuesToRemove) {
-    var optionSetControl = formContext.getControl(optionSetFieldName);
-    
-    if (optionSetControl) {
-        valuesToRemove.forEach(function(optionValue) {
-            optionSetControl.removeOption(optionValue);
-        });
-    } else {
-        console.error("Option Set field not found: " + optionSetFieldName);
+    console.log("Filtered apiData: ", apiData);
+}
+
+// Example usage in callPowerAutomateFlow
+async function callPowerAutomateFlow(executionContext, formMode) {
+    // ... other parts of the function
+
+    try {
+        const responseData = await response.json();
+        filterApiData(responseData); // Apply the filter to responseData
+
+        // Proceed with using the filtered apiData
+        // Example: Pass apiData to a web resource or handle it as needed
+    } catch (error) {
+        console.error("Error in callPowerAutomateFlow: ", error);
+    } finally {
+        Xrm.Utility.closeProgressIndicator();
     }
 }
 
 
-var valuesToRemove = [582860000, 582860001, 582860002]; // Example option set values to remove
-removeOptionSetValues(formContext, "nf1pbm_racode", valuesToRemove);
+The "Filter Member Accounts" feature ensures that only member accounts with specific ownership and relationship types are included for further processing. The accepted combinations for filtering are:
 
+Ownership = "BEN" with Relationship = "POD"
+Ownership = "MIN" with Relationship = "UGM"
+Ownership = "PRI" with Relationship = "GSP"
+Ownership = "SEC" with Relationship = "DEC"
+This filtering will ensure only relevant accounts are included in apiData. Any extra spaces in ownership or relationship types will be automatically removed to avoid data mismatches, ensuring accurate filtering. The system will then be ready for further steps without delay, even with standard data volumes. Additionally, this filtering happens automatically as soon as the data is received from the Power Automate flow, requiring no extra steps from the user and maintaining a streamlined process.
