@@ -1,41 +1,54 @@
-function filterApiData(responseData) {
-    // Define allowed combinations as concatenated strings
-    const allowedCombinations = ["BENPOD", "MINUGM", "PRIGSP", "SECDEC"];
+function populateAccountsDropdown(data, accountSubtype) {
+    const dvMemberAccounts = document.getElementById("dvmemberaccounts");
+    dvMemberAccounts.style.display = "flex";
 
-    // Filter responseData based on allowed combinations, trimming both fields
-    apiData = responseData.filter(item => {
+    const dropdown = document.getElementById("drpMemberAccounts");
+    dropdown.innerHTML = '';
+
+    const defaultOption = document.createElement("option");
+    defaultOption.text = "--Select--";
+    defaultOption.value = "";
+    dropdown.add(defaultOption);
+
+    // Define excluded combinations as concatenated strings
+    const excludedCombinations = ["BENPOD", "MINUGM", "PRIGSP", "SECDEC"];
+
+    // Filter data to exclude specific combinations, trimming both fields
+    const filteredAccountData = data.filter(item => {
         const ownershipCode = item.memberAccountOwnershipCode ? item.memberAccountOwnershipCode.trim() : "";
         const relationshipType = item.memberAccountRelationshipType ? item.memberAccountRelationshipType.trim() : "";
-        
-        // Concatenate the trimmed values and check if they are in allowed combinations
-        return allowedCombinations.includes(ownershipCode + relationshipType);
+
+        // Concatenate trimmed values and check they are NOT in excluded combinations
+        return !excludedCombinations.includes(ownershipCode + relationshipType);
     });
 
-    console.log("Filtered apiData: ", apiData);
-}
+    console.log("Filtered Account Data (Excluding Specific Combinations): ", filteredAccountData);
 
-// Example usage in callPowerAutomateFlow
-async function callPowerAutomateFlow(executionContext, formMode) {
-    // ... other parts of the function
+    // Populate dropdown with accounts based on filtered data and account subtype
+    filteredAccountData.forEach(function(item) {
+        let shouldAddOption = false;
 
-    try {
-        const responseData = await response.json();
-        filterApiData(responseData); // Apply the filter to responseData
+        if (accountSubtype === "ED" && item.subType === "IR" && item.iraPlanSequenceNumber === "EDN") {
+            shouldAddOption = true;
+        } 
+        else if (accountSubtype === "IR" && item.subType === "IR" &&
+                 ["IRA", "SEP", "RTH"].includes(item.iraPlanSequenceNumber)) {
+            shouldAddOption = true;
+        } 
+        else if (item.subType === accountSubtype) {
+            shouldAddOption = true;
+        }
 
-        // Proceed with using the filtered apiData
-        // Example: Pass apiData to a web resource or handle it as needed
-    } catch (error) {
-        console.error("Error in callPowerAutomateFlow: ", error);
-    } finally {
-        Xrm.Utility.closeProgressIndicator();
+        if (shouldAddOption) {
+            const option = document.createElement("option");
+            option.text = item.accountNumber;
+            option.value = item.accountNumber;
+            dropdown.add(option);
+        }
+    });
+
+    // If there are valid accounts, call to populate affiliate accounts
+    if (filteredAccountData.length > 0) {
+        populateAffiliateAccountsDropdown(data, '', accountSubtype);
     }
 }
-
-
-The "Filter Member Accounts" feature ensures that only member accounts with specific ownership and relationship types are included for further processing. The accepted combinations for filtering are:
-
-Ownership = "BEN" with Relationship = "POD"
-Ownership = "MIN" with Relationship = "UGM"
-Ownership = "PRI" with Relationship = "GSP"
-Ownership = "SEC" with Relationship = "DEC"
-This filtering will ensure only relevant accounts are included in apiData. Any extra spaces in ownership or relationship types will be automatically removed to avoid data mismatches, ensuring accurate filtering. The system will then be ready for further steps without delay, even with standard data volumes. Additionally, this filtering happens automatically as soon as the data is received from the Power Automate flow, requiring no extra steps from the user and maintaining a streamlined process.
