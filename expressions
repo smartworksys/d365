@@ -1,73 +1,27 @@
-// Define name-value pairs for states
-const stateNameValuePairs = {
-    "Alabama": "AL",
-    "Alaska": "AK",
-    "American Samoa": "AS",
-    "Arizona": "AZ",
-    "Arkansas": "AR",
-    "Armed Forces Europe": "AE",
-    "Armed Forces Pacific": "AP",
-    "Armed Forces the Americas": "AA",
-    "California": "CA",
-    "Colorado": "CO",
-    "Connecticut": "CT",
-    "Delaware": "DE",
-    "District of Columbia": "DC",
-    "Federated States of Micronesia": "FM",
-    "Florida": "FL",
-    "Georgia": "GA",
-    "Guam": "GU",
-    "Hawaii": "HI",
-    "Idaho": "ID",
-    "Illinois": "IL",
-    "Indiana": "IN",
-    "Iowa": "IA",
-    "Kansas": "KS",
-    "Kentucky": "KY",
-    "Louisiana": "LA",
-    "Maine": "ME",
-    "Marshall Islands": "MH",
-    "Maryland": "MD",
-    "Massachusetts": "MA",
-    "Michigan": "MI",
-    "Minnesota": "MN",
-    "Mississippi": "MS",
-    "Missouri": "MO",
-    "Montana": "MT",
-    "Nebraska": "NE",
-    "Nevada": "NV",
-    "New Hampshire": "NH",
-    "New Jersey": "NJ",
-    "New Mexico": "NM",
-    "New York": "NY",
-    "North Carolina": "NC",
-    "North Dakota": "ND",
-    "Northern Mariana Islands": "MP",
-    "Ohio": "OH",
-    "Oklahoma": "OK",
-    "Oregon": "OR",
-    "Pennsylvania": "PA",
-    "Puerto Rico": "PR",
-    "Rhode Island": "RI",
-    "South Carolina": "SC",
-    "South Dakota": "SD",
-    "Tennessee": "TN",
-    "Texas": "TX",
-    "Utah": "UT",
-    "Vermont": "VT",
-    "Virgin Islands": "VI",
-    "Virginia": "VA",
-    "Washington": "WA",
-    "Wisconsin": "WI",
-    "Wyoming": "WY"
-};
+Logic for initializeRAOptions:
+Set Up Initial State:
 
-// Function to get the value by passing the display name
-function getStateValue(displayName) {
-    return stateNameValuePairs[displayName] || "State not found";
-}
+Get form context and RA Codes control.
+Clear existing options in RA Codes control and set it to visible.
+Identify IRA-related Accounts:
 
-// Example usage
-console.log(getStateValue("California")); // Output: CA
-console.log(getStateValue("Texas")); // Output: TX
-console.log(getStateValue("Unknown State")); // Output: State not found
+Set isCertAcctIRA to true if accountType is "IR".
+Set isAfflAcctIRA to true if afflPlanType is "IRA".
+Set Manual Review Flag for Deposit Transactions (tranType = "D"):
+
+If tranType is "D" and isCertAcctIRA is true but isAfflAcctIRA is false:
+Set the manualReviewBool attribute to true.
+Determine Options for Renewal (tranType = "C"):
+
+For IRA Types (iraPlanSequenceNumber = "IRA", "RTH", or "SEP"):
+Add options: "Internal In Transfer", "Contribution", "Rollover", "Direct Transfer".
+For Education Type (iraPlanSequenceNumber = "EDN"):
+Add Internal In Transfer if isAfflAcctIRA is true, otherwise add Contribution.
+Determine Options for Withdrawal or Liquidation (tranType = "D" or "L"):
+
+For IRA or SEP Types (iraPlanSequenceNumber = "IRA" or "SEP"):
+Add options: "Internal Out", "Premature Withdrawal", "Normal Withdrawal", "Direct Transfer Out".
+For Education Type (iraPlanSequenceNumber = "EDN"):
+Add Internal Out if isAfflAcctIRA is true, otherwise add Education Distribution.
+For Roth IRA Type (iraPlanSequenceNumber = "RTH"):
+Add options: "Internal Out", "Roth Qualified", "Roth Premature", "Roth Exception", "Direct Transfer Out".
