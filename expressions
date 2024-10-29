@@ -1,27 +1,42 @@
-Logic for initializeRAOptions:
-Set Up Initial State:
+Manual Review Flag for Withdrawals
+Given the action is "Withdraw from Cert",
+When the account type is IRA-related and the affiliate account type is not IRA,
+Then the Manual Review flag should be set to true on the form.
+RA Code Options for "Add to Cert" Transactions
+Given the action is "Add to Cert",
 
-Get form context and RA Codes control.
-Clear existing options in RA Codes control and set it to visible.
-Identify IRA-related Accounts:
+When the IRA plan type is either "IRA," "RTH," or "SEP",
 
-Set isCertAcctIRA to true if accountType is "IR".
-Set isAfflAcctIRA to true if afflPlanType is "IRA".
-Set Manual Review Flag for Deposit Transactions (tranType = "D"):
+Then the following RA Code options should appear on the form:
 
-If tranType is "D" and isCertAcctIRA is true but isAfflAcctIRA is false:
-Set the manualReviewBool attribute to true.
-Determine Options for Renewal (tranType = "C"):
+"84 - Internal In Transfer"
+"57 - Contribution"
+"52 - Rollover"
+"80 - Direct Transfer"
+And, if the IRA plan type is Educational IRA (EDN):
 
-For IRA Types (iraPlanSequenceNumber = "IRA", "RTH", or "SEP"):
-Add options: "Internal In Transfer", "Contribution", "Rollover", "Direct Transfer".
-For Education Type (iraPlanSequenceNumber = "EDN"):
-Add Internal In Transfer if isAfflAcctIRA is true, otherwise add Contribution.
-Determine Options for Withdrawal or Liquidation (tranType = "D" or "L"):
+Show "98 - Internal In Transfer" if the affiliate account type is IRA.
+Show "91 - Contribution" if the affiliate account type is not IRA.
+RA Code Options for "Withdraw from Cert" or "Close" Transactions
+Given the action is "Withdraw from Cert" or "Close",
 
-For IRA or SEP Types (iraPlanSequenceNumber = "IRA" or "SEP"):
-Add options: "Internal Out", "Premature Withdrawal", "Normal Withdrawal", "Direct Transfer Out".
-For Education Type (iraPlanSequenceNumber = "EDN"):
-Add Internal Out if isAfflAcctIRA is true, otherwise add Education Distribution.
-For Roth IRA Type (iraPlanSequenceNumber = "RTH"):
-Add options: "Internal Out", "Roth Qualified", "Roth Premature", "Roth Exception", "Direct Transfer Out".
+When the IRA plan type is "IRA" or "SEP",
+
+Then the following RA Code options should appear on the form:
+
+"34 - Internal Out"
+"01 - Premature Withdrawal"
+"07 - Normal Withdrawal"
+"30 - Direct Transfer Out"
+And, if the IRA plan type is Educational IRA (EDN):
+
+Show "48 - Internal Out" if the affiliate account type is IRA.
+Show "41 - Education Distribution" if the affiliate account type is not IRA.
+And, if the IRA plan type is Roth IRA (RTH):
+
+The following RA Code options should appear on the form:
+"34 - Internal Out"
+"14 - Roth Qualified"
+"18 - Roth Premature"
+"28 - Roth Exception"
+"30 - Direct Transfer Out"
