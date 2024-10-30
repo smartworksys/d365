@@ -8,23 +8,36 @@
     {% if request.params['appid'] %}
         {% assign lq_current_applicationid = request.params['appid'] %}
         {% assign lq_current_app_record = entities.cms_incentive_application[lq_current_applicationid] %}
+       
+        {% if lq_current_app_record %}
+            {% assign lq_application_number = lq_current_app_record.cms_incentive_application_number %}
+            {% assign lq_ewr_programID = lq_current_app_record.cms_ewrprogram_id %}
 
-        {% assign lq_ewr_programID = lq_current_app_record.cms_ewrprogram_id %}
-        {% if lq_ewr_programID %}
-            {% assign lq_ewr_program_record = entities.cms_ewr_program[lq_ewr_programID.Id] %}
-            {% if lq_ewr_program_record %}
-                {% assign parentPartner = lq_ewr_program_record.cms_program_implementation_contractorid %}
-                {% assign lq_parent_ewr_program_GUID = lq_ewr_program_record.cms_parent_ewr_program_id.Id %}
+            {% if lq_ewr_programID %}
+                {% assign lq_ewr_program_record = entities.cms_ewr_program[lq_ewr_programID.Id] %}
+                {% if lq_ewr_program_record %}
+                    {% assign lq_parent_ewr_program_GUID = lq_ewr_program_record.cms_parent_ewr_program_id.Id | upcase %}
+                {% endif %}
             {% endif %}
-        {% endif %}
 
-        <h6>Your application for rebates has been received. Thank you!</h6>
-        <br>
-        <h6>For your reference, your application ID is: {{ lq_current_applicationid }}.</h6>
-        {% if lq_parent_ewr_program_GUID %}
-            <h6>For your reference, your EWR Program ID is: {{ lq_parent_ewr_program_GUID }}.</h6>
+            <h6>Your application for rebates has been received. Thank you!</h6>
+            <br>
+            <h6>For your reference, your application ID is: {{ lq_application_number }}.</h6>
+            {% if lq_parent_ewr_program_GUID %}
+                <h6>For your reference, your EWR Program ID is: {{ lq_parent_ewr_program_GUID }}.</h6>
+                {% if lq_parent_ewr_program_GUID == "CE85A493-3D61-EE11-BE6E-0022480B5F25" %}
+                    <h6>If you have questions about your application, please contact us via email at CEApplinceRebates@icf.com or call 866-234-0445.</h6>
+                {% elsif lq_parent_ewr_program_GUID == "4EB19081-2478-EE11-8179-000D3A314A31" %}
+                    <h6>If you have questions about your application, please contact us via email at INWIN@icf.com or call 866-234-0445.</h6>
+                {% else %}
+                    <h6>If you have questions about your application, please contact us via email at CEApplinceRebates@icf.com or call 866-234-0445.</h6>
+                {% endif %}
+            {% else %}
+                <h6>If you have questions about your application, please contact us via email at CEApplinceRebates@icf.com or call 866-234-0445.</h6>
+            {% endif %}
+        {% else %}
+            <h6>Your application for rebates has been received. Thank you!</h6>
         {% endif %}
-        <h6>If you have questions about your application, please contact us via email at CEApplinceRebates@icf.com or call 866-234-0445.</h6>
     {% else %}
         <h6>Your application for rebates has been received. Thank you!</h6>
     {% endif %}
