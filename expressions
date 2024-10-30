@@ -1,42 +1,31 @@
-Manual Review Flag for Withdrawals
-Given the action is "Withdraw from Cert",
-When the account type is IRA-related and the affiliate account type is not IRA,
-Then the Manual Review flag should be set to true on the form.
-RA Code Options for "Add to Cert" Transactions
-Given the action is "Add to Cert",
+{% if request.params['appNumber'] %}
+    {% assign lq_application_number = request.params['appNumber'] %}
+    <h6>Your application for rebates has been received. Thank you!</h6>
+    <br>
+    <h6>For your reference, your application ID is: {{ lq_application_number }}.</h6>
+    <h6>If you have questions about your application, please contact us via email at CEApplinceRebates@icf.com or call 866-234-0445.</h6>
+{% else %}
+    {% if request.params['appid'] %}
+        {% assign lq_current_applicationid = request.params['appid'] %}
+        {% assign lq_current_app_record = entities.cms_incentive_application[lq_current_applicationid] %}
 
-When the IRA plan type is either "IRA," "RTH," or "SEP",
+        {% assign lq_ewr_programID = lq_current_app_record.cms_ewrprogram_id %}
+        {% if lq_ewr_programID %}
+            {% assign lq_ewr_program_record = entities.cms_ewr_program[lq_ewr_programID.Id] %}
+            {% if lq_ewr_program_record %}
+                {% assign parentPartner = lq_ewr_program_record.cms_program_implementation_contractorid %}
+                {% assign lq_parent_ewr_program_GUID = lq_ewr_program_record.cms_parent_ewr_program_id.Id %}
+            {% endif %}
+        {% endif %}
 
-Then the following RA Code options should appear on the form:
-
-"84 - Internal In Transfer"
-"57 - Contribution"
-"52 - Rollover"
-"80 - Direct Transfer"
-And, if the IRA plan type is Educational IRA (EDN):
-
-Show "98 - Internal In Transfer" if the affiliate account type is IRA.
-Show "91 - Contribution" if the affiliate account type is not IRA.
-RA Code Options for "Withdraw from Cert" or "Close" Transactions
-Given the action is "Withdraw from Cert" or "Close",
-
-When the IRA plan type is "IRA" or "SEP",
-
-Then the following RA Code options should appear on the form:
-
-"34 - Internal Out"
-"01 - Premature Withdrawal"
-"07 - Normal Withdrawal"
-"30 - Direct Transfer Out"
-And, if the IRA plan type is Educational IRA (EDN):
-
-Show "48 - Internal Out" if the affiliate account type is IRA.
-Show "41 - Education Distribution" if the affiliate account type is not IRA.
-And, if the IRA plan type is Roth IRA (RTH):
-
-The following RA Code options should appear on the form:
-"34 - Internal Out"
-"14 - Roth Qualified"
-"18 - Roth Premature"
-"28 - Roth Exception"
-"30 - Direct Transfer Out"
+        <h6>Your application for rebates has been received. Thank you!</h6>
+        <br>
+        <h6>For your reference, your application ID is: {{ lq_current_applicationid }}.</h6>
+        {% if lq_parent_ewr_program_GUID %}
+            <h6>For your reference, your EWR Program ID is: {{ lq_parent_ewr_program_GUID }}.</h6>
+        {% endif %}
+        <h6>If you have questions about your application, please contact us via email at CEApplinceRebates@icf.com or call 866-234-0445.</h6>
+    {% else %}
+        <h6>Your application for rebates has been received. Thank you!</h6>
+    {% endif %}
+{% endif %}
