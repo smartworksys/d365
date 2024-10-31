@@ -1,3 +1,10 @@
-Given that an application is registered in Microsoft Entra Identity with the necessary permissions, a function app is configured with logic to issue custom claims, and the TokenIssuanceStart event is set up in the Azure portal,
-When a token is requested, triggering the custom function to evaluate and issue custom claims,
-Then the generated token includes the expected custom claims accurately, and the issuance process completes without errors.
+User Story: Add eApp Integration Documentation to Repository README
+As a developer,
+I want to add eApp integration documentation to the repository README file,
+So that other developers can easily understand and implement the eApp integration process.
+
+Acceptance Criterion:
+
+Given that the repository README file is updated with eApp integration documentation,
+When a developer accesses the README,
+Then they can follow a clear, step-by-step guide covering configuration, authentication, error handling, and examples of key API calls to implement eApp integration successfully.
