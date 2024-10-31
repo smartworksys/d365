@@ -7,4 +7,4 @@ Acceptance Criterion:
 
 Given that the repository README file is updated with eApp integration documentation,
 When a developer accesses the README,
-Then they can follow a clear, step-by-step guide covering configuration, authentication, error handling, and examples of key API calls to implement eApp integration successfully.
+Then they can follow a clear, step-by-step guide covering configuration, authentication, error handling, and examples of key API calls to implement eApp integration successfully, with any referenced documents included as accessible links for further details.
