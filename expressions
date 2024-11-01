@@ -1,10 +1,34 @@
-User Story: Add eApp Integration Documentation to Repository README
-As a developer,
-I want to add eApp integration documentation to the repository README file,
-So that other developers can easily understand and implement the eApp integration process.
-
-Acceptance Criterion:
-
-Given that the repository README file is updated with eApp integration documentation,
-When a developer accesses the README,
-Then they can follow a clear, step-by-step guide covering configuration, authentication, error handling, and examples of key API calls to implement eApp integration successfully, with any referenced documents included as accessible links for further details.
+premise_address
+premise_city
+premise_state
+premise_zip
+primary_name
+primary_address
+primary_city
+primary_state
+primary_zip
+contractor_company_name
+contractor_address
+contractor_city
+contractor_state
+contractor_zip
+distributor_invoice_number
+date_installed
+measure_code
+quantity
+product_name
+manufacturer
+ahri_ref_number
+furnace_model_number
+ac_hp_furnace_model_number
+furnace_serial_number
+split_system_coil_unit_model_number
+split_system_coil_unit_serial_number
+split_system_condenser_unit_model_number
+seer
+eer
+afue
+tons
+btu
+capacity
+btu_heat
