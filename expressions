@@ -1,34 +1,38 @@
-premise_address
-premise_city
-premise_state
-premise_zip
-primary_name
-primary_address
-primary_city
-primary_state
-primary_zip
-contractor_company_name
-contractor_address
-contractor_city
-contractor_state
-contractor_zip
-distributor_invoice_number
-date_installed
-measure_code
-quantity
-product_name
-manufacturer
-ahri_ref_number
-furnace_model_number
-ac_hp_furnace_model_number
-furnace_serial_number
-split_system_coil_unit_model_number
-split_system_coil_unit_serial_number
-split_system_condenser_unit_model_number
-seer
-eer
-afue
-tons
-btu
-capacity
-btu_heat
+{
+  "premise_address": "@{outputs('splitByComma')?[0]}",
+  "premise_city": "@{outputs('splitByComma')?[1]}",
+  "premise_state": "@{outputs('splitByComma')?[2]}",
+  "premise_zip": "@{outputs('splitByComma')?[3]}",
+  "primary_name": "@{outputs('splitByComma')?[4]}",
+  "primary_address": "@{outputs('splitByComma')?[5]}",
+  "primary_city": "@{outputs('splitByComma')?[6]}",
+  "primary_state": "@{outputs('splitByComma')?[7]}",
+  "primary_zip": "@{outputs('splitByComma')?[8]}",
+  "contractor_company_name": "@{outputs('splitByComma')?[9]}",
+  "contractor_address": "@{outputs('splitByComma')?[10]}",
+  "contractor_city": "@{outputs('splitByComma')?[11]}",
+  "contractor_state": "@{outputs('splitByComma')?[12]}",
+  "contractor_zip": "@{outputs('splitByComma')?[13]}",
+  "distributor_invoice_number": "@{outputs('splitByComma')?[14]}",
+  "date_installed": "@{outputs('splitByComma')?[15]}",
+  "measure_code": "@{outputs('splitByComma')?[16]}",
+  "quantity": "@{outputs('splitByComma')?[17]}",
+  "product_name": "@{outputs('splitByComma')?[18]}",
+  "manufacturer": "@{outputs('splitByComma')?[19]}",
+  "ahri_ref_number": "@{outputs('splitByComma')?[20]}",
+  "furnace_model_number": "@{outputs('splitByComma')?[21]}",
+  "ac_hp_furnace_model_number": "@{outputs('splitByComma')?[22]}",
+  "furnace_serial_number": "@{outputs('splitByComma')?[23]}",
+  "split_system_coil_unit_model_number": "@{outputs('splitByComma')?[24]}",
+  "split_system_coil_unit_serial_number": "@{outputs('splitByComma')?[25]}",
+  "split_system_condenser_unit_model_number": "@{outputs('splitByComma')?[26]}",
+  "serial_number": "@{outputs('splitByComma')?[27]}",
+  "seer": "@{outputs('splitByComma')?[28]}",
+  "eer": "@{outputs('splitByComma')?[29]}",
+  "afue": "@{outputs('splitByComma')?[30]}",
+  "tons": "@{outputs('splitByComma')?[31]}",
+  "btu": "@{outputs('splitByComma')?[32]}",
+  "capacity": "@{outputs('splitByComma')?[33]}",
+  "btu_heat_furnace": "@{outputs('splitByComma')?[34]}",
+  "btu_heat_boiler": "@{outputs('splitByComma')?[35]}"
+}
