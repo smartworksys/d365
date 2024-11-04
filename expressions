@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
@@ -28,11 +29,22 @@ namespace KOFC_FA_eApp_CustomClaims
         {
             _log.LogInformation("Starting Token Issuance Event Processing...");
 
+            // Retrieve user identity from headers
+            string userID = GetUserIdFromHeaders(req);
+            if (string.IsNullOrEmpty(userID))
+            {
+                _log.LogError("Unable to retrieve user ID from request headers.");
+                var errorResponse = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
+                await errorResponse.WriteStringAsync("User identity not found.");
+                return errorResponse;
+            }
+
+            _log.LogInformation($"User ID retrieved: {userID}");
+
             // Retrieve CRM connection details from environment variables
             string crmUrl = Environment.GetEnvironmentVariable("CRM_URL");
             string clientId = Environment.GetEnvironmentVariable("CRM_CLIENT_ID");
             string clientSecret = Environment.GetEnvironmentVariable("CRM_CLIENT_SECRET");
-            string userID = "susmitha.thokala@kofc.org";
 
             HttpResponseData response;
 
@@ -123,6 +135,19 @@ namespace KOFC_FA_eApp_CustomClaims
             _log.LogInformation("Custom claims added and response generated.");
 
             return response;
+        }
+
+        private string GetUserIdFromHeaders(HttpRequestData req)
+        {
+            if (req.Headers.TryGetValues("X-MS-CLIENT-PRINCIPAL", out var principalHeader))
+            {
+                var encodedPrincipal = principalHeader.ToString();
+                var decodedPrincipal = Encoding.UTF8.GetString(Convert.FromBase64String(encodedPrincipal));
+                dynamic principalData = JsonConvert.DeserializeObject(decodedPrincipal);
+
+                return principalData?.userId;
+            }
+            return null;
         }
     }
 
