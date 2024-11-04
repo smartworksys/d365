@@ -111,12 +111,12 @@ namespace KOFC_FA_eApp_CustomClaims
 
             // Prepare the custom claims response
             ResponseContent responseContent = new ResponseContent();
-            responseContent.data.actions[0].claims.CorrelationId = Guid.NewGuid().ToString();
-            responseContent.data.actions[0].claims.ApiVersion = "1.0.0";
-            responseContent.data.actions[0].claims.DateOfBirth = "01/01/2000";
-            responseContent.data.actions[0].claims.CustomRoles.Add("Writer");
-            responseContent.data.actions[0].claims.CustomRoles.Add("Editor");
-            responseContent.data.actions[0].claims.LoginID = windowsliveid;
+            responseContent.Data.Actions[0].Claims.CorrelationId = Guid.NewGuid().ToString();
+            responseContent.Data.Actions[0].Claims.ApiVersion = "1.0.0";
+            responseContent.Data.Actions[0].Claims.DateOfBirth = "01/01/2000";
+            responseContent.Data.Actions[0].Claims.CustomRoles.Add("Writer");
+            responseContent.Data.Actions[0].Claims.CustomRoles.Add("Editor");
+            responseContent.Data.Actions[0].Claims.LoginID = windowsliveid;
 
             response = req.CreateResponse(System.Net.HttpStatusCode.OK);
             await response.WriteAsJsonAsync(responseContent);
@@ -129,11 +129,11 @@ namespace KOFC_FA_eApp_CustomClaims
     public class ResponseContent
     {
         [JsonProperty("data")]
-        public Data data { get; set; }
+        public Data Data { get; set; }
 
         public ResponseContent()
         {
-            data = new Data();
+            Data = new Data();
         }
     }
 
