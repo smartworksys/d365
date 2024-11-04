@@ -1,38 +1,125 @@
+using System;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Logging;
+using Newtonsoft.Json;
+using Microsoft.PowerPlatform.Dataverse.Client;
+using Microsoft.Xrm.Sdk.Query;
+using Microsoft.Xrm.Sdk;
+
+namespace KOFC_FA_eApp_CustomClaims
 {
-  "Premise Address": "@{items('Apply_to_each_CSV_JSON_entry')['premise_address']}",
-  "Premise City": "@{items('Apply_to_each_CSV_JSON_entry')['premise_city']}",
-  "Premise State": "@{items('Apply_to_each_CSV_JSON_entry')['premise_state']}",
-  "Premise Zip": "@{items('Apply_to_each_CSV_JSON_entry')['premise_zip']}",
-  "Primary Name": "@{items('Apply_to_each_CSV_JSON_entry')['primary_name']}",
-  "Primary Address": "@{items('Apply_to_each_CSV_JSON_entry')['primary_address']}",
-  "Primary City": "@{items('Apply_to_each_CSV_JSON_entry')['primary_city']}",
-  "Primary State": "@{items('Apply_to_each_CSV_JSON_entry')['primary_state']}",
-  "Primary Zip": "@{items('Apply_to_each_CSV_JSON_entry')['primary_zip']}",
-  "Contractor Company Name": "@{items('Apply_to_each_CSV_JSON_entry')['contractor_company_name']}",
-  "Contractor Address": "@{items('Apply_to_each_CSV_JSON_entry')['contractor_address']}",
-  "Contractor City": "@{items('Apply_to_each_CSV_JSON_entry')['contractor_city']}",
-  "Contractor State": "@{items('Apply_to_each_CSV_JSON_entry')['contractor_state']}",
-  "Contractor Zip": "@{items('Apply_to_each_CSV_JSON_entry')['contractor_zip']}",
-  "Distributor Invoice Number": "@{items('Apply_to_each_CSV_JSON_entry')['distributor_invoice_number']}",
-  "Date Installed": "@{items('Apply_to_each_CSV_JSON_entry')['date_installed']}",
-  "Measure Code": "@{items('Apply_to_each_CSV_JSON_entry')['measure_code']}",
-  "Quantity": "@{items('Apply_to_each_CSV_JSON_entry')['quantity']}",
-  "Product Name": "@{items('Apply_to_each_CSV_JSON_entry')['product_name']}",
-  "Manufacturer": "@{items('Apply_to_each_CSV_JSON_entry')['manufacturer']}",
-  "AHRI Ref Number": "@{items('Apply_to_each_CSV_JSON_entry')['ahri_ref_number']}",
-  "Furnace Model Number": "@{items('Apply_to_each_CSV_JSON_entry')['furnace_model_number']}",
-  "AC/HP Furnace Model Number": "@{items('Apply_to_each_CSV_JSON_entry')['ac_hp_furnace_model_number']}",
-  "Furnace Serial Number": "@{items('Apply_to_each_CSV_JSON_entry')['furnace_serial_number']}",
-  "Split System Coil Unit Model Number": "@{items('Apply_to_each_CSV_JSON_entry')['split_system_coil_unit_model_number']}",
-  "Split System Coil Unit Serial Number": "@{items('Apply_to_each_CSV_JSON_entry')['split_system_coil_unit_serial_number']}",
-  "Split System Condenser Unit Model Number": "@{items('Apply_to_each_CSV_JSON_entry')['split_system_condenser_unit_model_number']}",
-  "Serial Number": "@{items('Apply_to_each_CSV_JSON_entry')['serial_number']}",
-  "SEER": "@{items('Apply_to_each_CSV_JSON_entry')['seer']}",
-  "EER": "@{items('Apply_to_each_CSV_JSON_entry')['eer']}",
-  "AFUE": "@{items('Apply_to_each_CSV_JSON_entry')['afue']}",
-  "Tons": "@{items('Apply_to_each_CSV_JSON_entry')['tons']}",
-  "BTU": "@{items('Apply_to_each_CSV_JSON_entry')['btu']}",
-  "Capacity": "@{items('Apply_to_each_CSV_JSON_entry')['capacity']}",
-  "BTU Heat Furnace": "@{items('Apply_to_each_CSV_JSON_entry')['btu_heat_furnace']}",
-  "BTU Heat Boiler": "@{items('Apply_to_each_CSV_JSON_entry')['btu_heat_boiler']}"
+    public class AuthEventTrigger
+    {
+        private readonly ILogger<AuthEventTrigger> _log;
+
+        public AuthEventTrigger(ILogger<AuthEventTrigger> log)
+        {
+            _log = log;
+        }
+
+        [Function("onTokenIssuanceStart")]
+        public async Task<HttpResponseData> Run(
+            [HttpTrigger(AuthorizationLevel.Function, "post", Route = "token-issuance")] HttpRequestData req,
+            FunctionContext executionContext)
+        {
+            _log.LogInformation("Starting Token Issuance Event Processing...");
+
+            string crmUrl = Environment.GetEnvironmentVariable("CRM_URL");
+            string clientId = Environment.GetEnvironmentVariable("CRM_CLIENT_ID");
+            string clientSecret = Environment.GetEnvironmentVariable("CRM_CLIENT_SECRET");
+            string userID = "susmitha.thokala@kofc.org";
+
+            if (string.IsNullOrEmpty(crmUrl) || string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+            {
+                _log.LogError("Missing CRM connection details in environment variables.");
+                var response = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
+                await response.WriteStringAsync("Missing CRM connection details.");
+                return response;
+            }
+
+            var conn = $@"AuthType=ClientSecret;
+                          Url={crmUrl};
+                          ClientId={clientId};
+                          ClientSecret={clientSecret}";
+
+            // Create a ServiceClient
+            var serviceClient = new ServiceClient(conn);
+
+            if (!serviceClient.IsReady)
+            {
+                _log.LogError("CRM Connection failed.");
+                var response = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+                await response.WriteStringAsync("Failed to establish CRM connection.");
+                return response;
+            }
+
+            _log.LogInformation("CRM Connection successful");
+
+            string userFetchXML = @"
+                <fetch top='50'>
+                    <entity name='systemuser'>
+                        <attribute name='kofc_agentid' />
+                        <attribute name='kofc_user_ldap_id' />
+                        <attribute name='windowsliveid' />
+                        <attribute name='kofc_insurancerole' />
+                        <filter>
+                            <condition attribute='windowsliveid' operator='eq' value='{0}' />
+                        </filter>
+                    </entity>
+                </fetch>";
+
+            string updatedUserFetchXML = String.Format(userFetchXML, userID);
+            var userFetchExpression = new FetchExpression(updatedUserFetchXML);
+            EntityCollection userResult = serviceClient.RetrieveMultiple(userFetchExpression);
+
+            if (userResult == null || userResult.Entities.Count == 0)
+            {
+                _log.LogWarning("No user found with the specified windowsliveid.");
+                var response = req.CreateResponse(System.Net.HttpStatusCode.NotFound);
+                await response.WriteStringAsync("User not found in CRM.");
+                return response;
+            }
+
+            Entity userEntity = userResult.Entities[0];
+            _log.LogInformation("User entity retrieved.");
+
+            string windowsliveid = userEntity.GetAttributeValue<string>("windowsliveid");
+            if (string.IsNullOrEmpty(windowsliveid))
+            {
+                _log.LogWarning("windowsliveid is missing for the user.");
+                var response = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
+                await response.WriteStringAsync("User's windowsliveid is missing.");
+                return response;
+            }
+
+            int? insuranceRoleValue = userEntity.GetAttributeValue<OptionSetValue>("kofc_insurancerole")?.Value;
+            if (insuranceRoleValue.HasValue)
+            {
+                _log.LogInformation("kofc_insurancerole ID: " + insuranceRoleValue.Value.ToString());
+            }
+            else
+            {
+                _log.LogInformation("kofc_insurancerole is not set for this user.");
+            }
+
+            // Assuming custom claims addition - Example JSON for demonstration
+            var responseData = new
+            {
+                dateOfBirth = "01/01/2000",
+                customRoles = new[] { "Writer", "Editor" },
+                apiVersion = "1.0.0",
+                loginID = windowsliveid,
+                correlationId = Guid.NewGuid().ToString() // Replace with actual correlation if needed
+            };
+
+            var response = req.CreateResponse(System.Net.HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(responseData);
+            _log.LogInformation("Custom claims added and response generated.");
+
+            return response;
+        }
+    }
 }
