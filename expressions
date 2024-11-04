@@ -1,6 +1,6 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
@@ -8,6 +8,7 @@ using Newtonsoft.Json;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk.Query;
 using Microsoft.Xrm.Sdk;
+using System.Collections.Generic;
 
 namespace KOFC_FA_eApp_CustomClaims
 {
@@ -27,37 +28,40 @@ namespace KOFC_FA_eApp_CustomClaims
         {
             _log.LogInformation("Starting Token Issuance Event Processing...");
 
+            // Retrieve CRM connection details from environment variables
             string crmUrl = Environment.GetEnvironmentVariable("CRM_URL");
             string clientId = Environment.GetEnvironmentVariable("CRM_CLIENT_ID");
             string clientSecret = Environment.GetEnvironmentVariable("CRM_CLIENT_SECRET");
             string userID = "susmitha.thokala@kofc.org";
 
+            HttpResponseData response;
+
             if (string.IsNullOrEmpty(crmUrl) || string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
             {
                 _log.LogError("Missing CRM connection details in environment variables.");
-                var response = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
+                response = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
                 await response.WriteStringAsync("Missing CRM connection details.");
                 return response;
             }
 
+            // Establish connection to CRM
             var conn = $@"AuthType=ClientSecret;
                           Url={crmUrl};
                           ClientId={clientId};
                           ClientSecret={clientSecret}";
-
-            // Create a ServiceClient
             var serviceClient = new ServiceClient(conn);
 
             if (!serviceClient.IsReady)
             {
                 _log.LogError("CRM Connection failed.");
-                var response = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
+                response = req.CreateResponse(System.Net.HttpStatusCode.InternalServerError);
                 await response.WriteStringAsync("Failed to establish CRM connection.");
                 return response;
             }
 
             _log.LogInformation("CRM Connection successful");
 
+            // Fetch user details from CRM using FetchXML
             string userFetchXML = @"
                 <fetch top='50'>
                     <entity name='systemuser'>
@@ -78,7 +82,7 @@ namespace KOFC_FA_eApp_CustomClaims
             if (userResult == null || userResult.Entities.Count == 0)
             {
                 _log.LogWarning("No user found with the specified windowsliveid.");
-                var response = req.CreateResponse(System.Net.HttpStatusCode.NotFound);
+                response = req.CreateResponse(System.Net.HttpStatusCode.NotFound);
                 await response.WriteStringAsync("User not found in CRM.");
                 return response;
             }
@@ -90,7 +94,7 @@ namespace KOFC_FA_eApp_CustomClaims
             if (string.IsNullOrEmpty(windowsliveid))
             {
                 _log.LogWarning("windowsliveid is missing for the user.");
-                var response = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
+                response = req.CreateResponse(System.Net.HttpStatusCode.BadRequest);
                 await response.WriteStringAsync("User's windowsliveid is missing.");
                 return response;
             }
@@ -105,21 +109,80 @@ namespace KOFC_FA_eApp_CustomClaims
                 _log.LogInformation("kofc_insurancerole is not set for this user.");
             }
 
-            // Assuming custom claims addition - Example JSON for demonstration
-            var responseData = new
-            {
-                dateOfBirth = "01/01/2000",
-                customRoles = new[] { "Writer", "Editor" },
-                apiVersion = "1.0.0",
-                loginID = windowsliveid,
-                correlationId = Guid.NewGuid().ToString() // Replace with actual correlation if needed
-            };
+            // Prepare the custom claims response
+            ResponseContent responseContent = new ResponseContent();
+            responseContent.data.actions[0].claims.CorrelationId = Guid.NewGuid().ToString();
+            responseContent.data.actions[0].claims.ApiVersion = "1.0.0";
+            responseContent.data.actions[0].claims.DateOfBirth = "01/01/2000";
+            responseContent.data.actions[0].claims.CustomRoles.Add("Writer");
+            responseContent.data.actions[0].claims.CustomRoles.Add("Editor");
+            responseContent.data.actions[0].claims.LoginID = windowsliveid;
 
-            var response = req.CreateResponse(System.Net.HttpStatusCode.OK);
-            await response.WriteAsJsonAsync(responseData);
+            response = req.CreateResponse(System.Net.HttpStatusCode.OK);
+            await response.WriteAsJsonAsync(responseContent);
             _log.LogInformation("Custom claims added and response generated.");
 
             return response;
+        }
+    }
+
+    public class ResponseContent
+    {
+        [JsonProperty("data")]
+        public Data data { get; set; }
+
+        public ResponseContent()
+        {
+            data = new Data();
+        }
+    }
+
+    public class Data
+    {
+        [JsonProperty("@odata.type")]
+        public string ODataType { get; set; }
+
+        public List<Action> Actions { get; set; }
+
+        public Data()
+        {
+            ODataType = "microsoft.graph.onTokenIssuanceStartResponseData";
+            Actions = new List<Action> { new Action() };
+        }
+    }
+
+    public class Action
+    {
+        [JsonProperty("@odata.type")]
+        public string ODataType { get; set; }
+
+        public Claims Claims { get; set; }
+
+        public Action()
+        {
+            ODataType = "microsoft.graph.tokenIssuanceStart.provideClaimsForToken";
+            Claims = new Claims();
+        }
+    }
+
+    public class Claims
+    {
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string CorrelationId { get; set; }
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string DateOfBirth { get; set; }
+
+        public string ApiVersion { get; set; }
+
+        public List<string> CustomRoles { get; set; }
+
+        [JsonProperty(NullValueHandling = NullValueHandling.Ignore)]
+        public string LoginID { get; set; }
+
+        public Claims()
+        {
+            CustomRoles = new List<string>();
         }
     }
 }
