@@ -1,4 +1,72 @@
-AzureDiagnostics
-| where ResourceType == "WORKFLOW" 
-| where OperationName == "Microsoft.Logic/workflows/workflowRuntime"
-| where RuntimeId == "<Your_Runtime_Id>"
+concat('account eq ''', replace(variables('AccountName'), '''', ''''''), '''')
+
+concat('account eq ''', replace(triggerOutputs()?['body/AccountName'], '''', ''''''), '''')
+
+function setOptionSetValue(executionContext) {
+    var formContext = executionContext.getFormContext();
+
+    // Replace 'fieldName' with the actual field logical name of your Option Set
+    var fieldName = "your_option_set_field_name";
+
+    // Assume this is your dynamic parameter that determines the selection
+    var parameterValue = "NV"; // This value should be dynamically set
+
+    // Mapping of labels to their corresponding values
+    var optionSetMapping = {
+        "07A": 582860000,
+        "EDN": 582860001,
+        "IR": 582860002,
+        "IRA": 582860003,
+        "NV": 582860004,
+        "OS": 582860005,
+        "RTH": 582860006,
+        "SEP": 582860007,
+        "SH": 582860008,
+        "SK": 582860009
+    };
+
+    // Get the corresponding value from the mapping
+    var optionSetValue = optionSetMapping[parameterValue];
+
+    // Check if the parameter value is valid and exists in the mapping
+    if (optionSetValue !== undefined) {
+        // Set the Option Set field to the value based on the parameter
+        formContext.getAttribute(fieldName).setValue(optionSetValue);
+    } else {
+        console.warn("Invalid parameter value provided: " + parameterValue);
+    }
+}
+
+
+function setOptionSetValue(executionContext) {
+    var formContext = executionContext.getFormContext();
+
+    // Replace 'fieldName' with the actual field logical name of your Option Set
+    var fieldName = "your_option_set_field_name";
+
+    // Assume this is your dynamic parameter that determines the selection
+    var parameterValue = "SC"; // This value should be dynamically set
+
+    // Mapping of labels to their corresponding values
+    var optionSetMapping = {
+        "01H": 582860000,
+        "CERT": 582860001,
+        "EDN": 582860002,
+        "IR": 582860003,
+        "IRA": 582860004,
+        "RTH": 582860005,
+        "SC": 582860006,
+        "SEP": 582860007
+    };
+
+    // Get the corresponding value from the mapping
+    var optionSetValue = optionSetMapping[parameterValue];
+
+    // Check if the parameter value is valid and exists in the mapping
+    if (optionSetValue !== undefined) {
+        // Set the Option Set field to the value based on the parameter
+        formContext.getAttribute(fieldName).setValue(optionSetValue);
+    } else {
+        console.warn("Invalid parameter value provided: " + parameterValue);
+    }
+}
