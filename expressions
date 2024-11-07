@@ -1,3 +1,6 @@
+if(or(equals(item()?['YourCSVColumnName'], null), equals(item()?['YourCSVColumnName'], '')), 0, item()?['YourCSVColumnName'])
+
+
 concat('account eq ''', replace(variables('AccountName'), '''', ''''''), '''')
 
 concat('account eq ''', replace(triggerOutputs()?['body/AccountName'], '''', ''''''), '''')
