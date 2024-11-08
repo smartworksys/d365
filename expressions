@@ -1,3 +1,6 @@
+const filteredData = apiData.filter(item => item.maturityDate !== null && item.maturityDate !== "0000000");
+
+
 if(or(equals(item()?['YourCSVColumnName'], null), equals(item()?['YourCSVColumnName'], '')), 0, item()?['YourCSVColumnName'])
 
 
