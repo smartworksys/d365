@@ -22,7 +22,6 @@
                         <td>
                             <div style="margin-top:15px">
                                 <label for="recommendationTable">Select Recommendations:</label>
-                                <!-- Make the table scrollable by setting max-height and overflow-y -->
                                 <div style="max-height: 300px; overflow-y: auto;">
                                     <table id="recommendationTable" class="table table-bordered" style="margin-top:10px; width:100%;">
                                         <thead>
@@ -47,30 +46,20 @@
                                                             <link-entity name="cms_measurecategory" from="cms_measurecategoryid" to="cms_recommendation_category_id" link-type="inner">
                                                                 <attribute name="cms_name" />
                                                             </link-entity>
-                                                            <link-entity name="cms_ewr_recommendation_cms_ewr_program" from="cms_ewr_recommendationid" to="cms_ewr_recommendationid" intersect="true">
-                                                                <link-entity name="cms_ewr_program" from="cms_ewr_programid" to="cms_ewr_programid" alias="s">
-                                                                    <attribute name="cms_ewr_programid" />
-                                                                    <filter>
-                                                                        <condition attribute="cms_ewr_programid" operator="eq" value="{{ewrParentProgramID}}" />
-                                                                    </filter>
-                                                                </link-entity>
-                                                            </link-entity>
                                                         </entity>
                                                     </fetch>
                                                 {% endfetchxml %}
 
                                                 {% for recommendationsIntersect in recommendations_query.results.entities %}
                                                     <tr class="recommendation-row">
-                                                        <td>
+                                                        <td style="width:10%;">
                                                             <input type="checkbox" name="selectedRecommendations"
                                                                    value="{{recommendationsIntersect.cms_ewr_recommendationid}}"
-                                                                   data-category-name="{{recommendationsIntersect.cat.cms_name}}"
-                                                                   data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}"
-                                                                   data-recommendation-description="{{recommendationsIntersect.cms_recommendation_description}}">
+                                                                   data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}">
                                                         </td>
-                                                        <td class="category">{{recommendationsIntersect.cat.cms_name}}</td>
-                                                        <td class="recommendation-title">{{recommendationsIntersect.cms_recommendation_title}}</td>
-                                                        <td class="recommendation-description">{{recommendationsIntersect.cms_recommendation_description}}</td>
+                                                        <td class="category" style="width:20%;">{{recommendationsIntersect.cat.cms_name}}</td>
+                                                        <td class="recommendation-title" style="width:30%;">{{recommendationsIntersect.cms_recommendation_title}}</td>
+                                                        <td class="recommendation-description" style="width:30%;">{{recommendationsIntersect.cms_recommendation_description}}</td>
                                                     </tr>
                                                 {% endfor %}
                                             {% endif %}
@@ -82,26 +71,18 @@
                     </tr>
                     <tr>
                         <td>
-                            <p id="descriptionText" style="margin-top:15px"></p>
+                            <label for="selectedRecommendationsList">Selected Recommendations:</label>
+                            <select id="selectedRecommendationsList" class="form-control" multiple style="height: 150px;">
+                                <!-- List box populated dynamically -->
+                            </select>
                         </td>
                     </tr>
-                    <tr>
-                        <td>
-                            <div style="margin-top:25px">
-                                <label for="quantityRecommended" id="quantityRecommendedLabel">Quantity Recommended:</label>
-                                <input type="text" id="txtQtyRecommended" class="form-control" value="1">
-                            </div>
-                        </td>
-                    </tr>
-                    <!-- Hide the dropdown by setting its style to display:none -->
+                    <!-- Hidden multi-select dropdown for form submission -->
                     <tr style="display:none;">
                         <td>
-                            <div style="margin-top:15px">
-                                <label for="recommendationDropdown">Selected Recommendations:</label>
-                                <select id="recommendationDropdown" class="form-control" multiple>
-                                    <!-- Dropdown dynamically updated based on selection -->
-                                </select>
-                            </div>
+                            <select id="recommendationDropdown" class="form-control" multiple>
+                                <!-- Dropdown dynamically updated based on selection -->
+                            </select>
                         </td>
                     </tr>
                 </table>
@@ -135,24 +116,51 @@
         rows.forEach(row => row.style.display = "");
     });
 
-    // Save selected recommendations and populate the hidden multi-select dropdown
-    document.getElementById("btn_saveRecommendation").addEventListener("click", function() {
-        const selectedCheckboxes = document.querySelectorAll('input[name="selectedRecommendations"]:checked');
-        const dropdown = document.getElementById("recommendationDropdown");
-        dropdown.innerHTML = ""; // Clear existing options
+    // Update list box and dropdown based on checkbox selection
+    document.querySelectorAll('input[name="selectedRecommendations"]').forEach(checkbox => {
+        checkbox.addEventListener("change", function() {
+            const listBox = document.getElementById("selectedRecommendationsList");
+            const dropdown = document.getElementById("recommendationDropdown");
+            const recommendationId = this.value;
+            const recommendationTitle = this.getAttribute("data-recommendation-title");
 
-        selectedCheckboxes.forEach(checkbox => {
-            const recommendationId = checkbox.value;
-            const recommendationTitle = checkbox.getAttribute("data-recommendation-title");
+            if (this.checked) {
+                // Add to list box if checked
+                const option = document.createElement("option");
+                option.value = recommendationId;
+                option.textContent = recommendationTitle;
+                option.setAttribute("data-id", recommendationId);
+                listBox.appendChild(option);
 
-            // Add each selected recommendation as an option in the dropdown
-            const option = document.createElement("option");
-            option.value = recommendationId;
-            option.textContent = recommendationTitle;
-            option.selected = true; // Mark option as selected
-            dropdown.appendChild(option);
+                // Add to hidden dropdown for form submission
+                const dropdownOption = document.createElement("option");
+                dropdownOption.value = recommendationId;
+                dropdownOption.textContent = recommendationTitle;
+                dropdownOption.selected = true;
+                dropdownOption.setAttribute("data-id", recommendationId);
+                dropdown.appendChild(dropdownOption);
+            } else {
+                // Remove from list box if unchecked
+                const optionToRemove = listBox.querySelector(`option[data-id="${recommendationId}"]`);
+                if (optionToRemove) {
+                    listBox.removeChild(optionToRemove);
+                }
+
+                // Remove from dropdown
+                const dropdownOptionToRemove = dropdown.querySelector(`option[data-id="${recommendationId}"]`);
+                if (dropdownOptionToRemove) {
+                    dropdown.removeChild(dropdownOptionToRemove);
+                }
+            }
         });
+    });
 
-        console.log("Recommendations selected and updated in dropdown.");
+    // Save selected recommendations
+    document.getElementById("btn_saveRecommendation").addEventListener("click", function() {
+        const selectedOptions = Array.from(document.getElementById("recommendationDropdown").options)
+            .filter(option => option.selected)
+            .map(option => ({ id: option.value, title: option.textContent }));
+        
+        console.log("Selected Recommendations for form submission:", selectedOptions);
     });
 </script>
