@@ -42,7 +42,7 @@
                                                             <attribute name="cms_recommendation_title" />
                                                             <attribute name="cms_recommendation_description" />
                                                             <attribute name="cms_related_measure_id" />
-                                                            <link-entity name="cms_measurecategory" from="cms_measurecategoryid" to="cms_measurecategoryid" alias="cat">
+                                                            <link-entity name="cms_measurecategory" from="cms_measurecategoryid" to="cms_recommendation_category_id" alias="cat" link-type="inner" relationship="cms_rel_recommendation_category">
                                                                 <attribute name="cms_name" /> <!-- Category name attribute -->
                                                                 <filter>
                                                                     <condition attribute="cms_measurecategoryid" operator="eq" value="{{ewrParentProgramID}}" />
