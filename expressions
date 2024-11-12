@@ -42,8 +42,11 @@
                                                             <attribute name="cms_recommendation_title" />
                                                             <attribute name="cms_recommendation_description" />
                                                             <attribute name="cms_related_measure_id" />
-                                                            <link-entity name="cms_recommendation_category" from="cms_recommendation_category_id" to="cms_recommendation_category_id" alias="cat">
-                                                                <attribute name="cms_category_name" /> <!-- Category name attribute -->
+                                                            <link-entity name="cms_measurecategory" from="cms_measurecategoryid" to="cms_measurecategoryid" alias="cat">
+                                                                <attribute name="cms_name" /> <!-- Category name attribute -->
+                                                                <filter>
+                                                                    <condition attribute="cms_measurecategoryid" operator="eq" value="{{ewrParentProgramID}}" />
+                                                                </filter>
                                                             </link-entity>
                                                             <link-entity name="cms_ewr_recommendation_cms_ewr_program" from="cms_ewr_recommendationid" to="cms_ewr_recommendationid" intersect="true">
                                                                 <link-entity name="cms_ewr_program" from="cms_ewr_programid" to="cms_ewr_programid" alias="s">
@@ -60,12 +63,12 @@
                                                 {% for recommendationsIntersect in recommendations_query.results.entities %}
                                                     <tr class="recommendation-row">
                                                         <td>
-                                                            <input type="radio" name="selectedRecommendation" 
+                                                            <input type="radio" name="selectedRecommendation"
                                                                    value="{{recommendationsIntersect.cms_ewr_recommendationid}}"
-                                                                   data-category-name="{{recommendationsIntersect.cat.cms_category_name}}"
+                                                                   data-category-name="{{recommendationsIntersect.cat.cms_name}}"
                                                                    data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}">
                                                         </td>
-                                                        <td class="category">{{recommendationsIntersect.cat.cms_category_name}}</td>
+                                                        <td class="category">{{recommendationsIntersect.cat.cms_name}}</td>
                                                         <td class="recommendation-title">{{recommendationsIntersect.cms_recommendation_title}}</td>
                                                     </tr>
                                                 {% endfor %}
@@ -97,10 +100,10 @@
                                 <select id="recommendationDropdown" class="form-control">
                                     <!-- Dropdown dynamically updated based on selection -->
                                     {% for recommendationsIntersect in recommendations_query.results.entities %}
-                                        <option value="{{recommendationsIntersect.cms_ewr_recommendationid}}" 
+                                        <option value="{{recommendationsIntersect.cms_ewr_recommendationid}}"
                                                 data-related-measure-guid="{{recommendationsIntersect.cms_related_measure_id.Id}}"  
                                                 data-description="{{recommendationsIntersect.cms_recommendation_description}}">
-                                            {{recommendationsIntersect.cat.cms_category_name}} - {{recommendationsIntersect.cms_recommendation_title}}
+                                            {{recommendationsIntersect.cms_recommendation_title}}
                                         </option>
                                     {% endfor %}
                                 </select>
@@ -147,12 +150,12 @@
             const recommendationTitle = selectedRadio.getAttribute("data-recommendation-title");
 
             const dropdown = document.getElementById("recommendationDropdown");
-            dropdown.innerHTML = `<option value="${recommendationId}">${categoryName} - ${recommendationTitle}</option>`;
+            dropdown.innerHTML = `<option value="${recommendationId}">${recommendationTitle}</option>`;
             dropdown.value = recommendationId;
 
-            alert("Recommendation selected and updated.");
+            console.log("Recommendation selected and updated.");
         } else {
-            alert("Please select a recommendation.");
+            console.log("Please select a recommendation.");
         }
     });
 </script>
