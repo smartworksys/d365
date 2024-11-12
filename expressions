@@ -1,1 +1,19 @@
 @or(equals(item()?['accountStatus'], 'AC'), equals(item()?['accountStatus'], 'DC'), equals(item()?['accountStatus'], 'BC'))
+
+function validateMinValue(executionContext) {
+    var formContext = executionContext.getFormContext();
+    var fieldName = "your_field_name"; // Replace with the schema name of your field
+    
+    var fieldValue = formContext.getAttribute(fieldName).getValue();
+
+    // Check if the field value is less than or equal to 0
+    if (fieldValue !== null && fieldValue <= 0) {
+        // Set the field to null and display an error message
+        formContext.getAttribute(fieldName).setValue(null);
+        formContext.ui.setFormNotification("Value must be greater than 0.", "ERROR", "minValueError");
+    } else {
+        // Clear any existing notification if the value is valid
+        formContext.ui.clearFormNotification("minValueError");
+    }
+}
+
