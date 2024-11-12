@@ -1,52 +1,158 @@
-var autoCompleteControl;
+<div id="recommendationsInputModal" role="dialog" class="modal fade modal-form modal-form-insert in" data-backdrop="static">
+    <div class="modal-lg modal-dialog modal-accnt" style="max-width: 850px !important;">
+        <!-- Modal content-->
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title">Recommendations</h4>
+                <button type="button" data-dismiss="modal" class="close">×</button>
+            </div>
 
-function setupAutoComplete(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var textBoxControl = formContext.getControl("new_textboxfieldname"); // Replace with your field name
-    autoCompleteControl = textBoxControl;
+            <div class="modal-body">
+                <table style="width:100%">
+                    <tr>
+                        <td>
+                            <label for="filterInput" id="filterInputLabel">Filter List by: </label>
+                            <input type="text" placeholder="search term" id="filterInput" class="form-control" value="" style="width:500px; display:inline-block;">
+                            &nbsp;
+                            <button type="button" id="clearFilterBtn" class="btn action">Clear</button>
+                            <button type="button" id="doFilterBtn" class="btn btn-primary action">Filter</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div style="margin-top:15px">
+                                <label for="recommendationTable">Select Recommendation:</label>
+                                <div style="max-height: 300px; overflow-y: auto;">
+                                    <table id="recommendationTable" class="table table-bordered" style="margin-top:10px; width:100%;">
+                                        <thead>
+                                            <tr>
+                                                <th>Select</th>
+                                                <th>Category</th>
+                                                <th>Recommendation Title</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% if lq_parent_ewr_program_GUID %}
+                                                {% assign ewrParentProgramID = lq_parent_ewr_program_GUID %}
+                                                {% fetchxml recommendations_query %}
+                                                    <fetch>
+                                                        <entity name="cms_ewr_recommendation">
+                                                            <attribute name="cms_ewr_recommendationid" />
+                                                            <attribute name="cms_recommendation_title" />
+                                                            <attribute name="cms_recommendation_description" />
+                                                            <attribute name="cms_related_measure_id" />
+                                                            <attribute name="cms_recommendation_category_id" />
+                                                            <link-entity name="cms_measurecategory" from="cms_measurecategoryid" to="cms_recommendation_category_id" link-type="inner">
+                                                                <attribute name="cms_name" />
+                                                            </link-entity>
+                                                        </entity>
+                                                    </fetch>
+                                                {% endfetchxml %}
 
-    // Use addOnKeyPress for user input interaction
-    textBoxControl.addOnKeyPress(showAllStaticValues);
-    formContext.getAttribute("new_textboxfieldname").addOnChange(clearAutoComplete); // Handle when value changes
-}
+                                                {% for recommendationsIntersect in recommendations_query.results.entities %}
+                                                    <tr class="recommendation-row">
+                                                        <td style="width:10%;">
+                                                            <input type="radio" name="selectedRecommendation"
+                                                                   value="{{recommendationsIntersect.cms_ewr_recommendationid}}"
+                                                                   data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}"
+                                                                   data-recommendation-description="{{recommendationsIntersect.cms_recommendation_description}}">
+                                                        </td>
+                                                        <td class="category" style="width:20%;">{{recommendationsIntersect.cat.cms_name}}</td>
+                                                        <td class="recommendation-title" style="width:30%;">{{recommendationsIntersect.cms_recommendation_title}}</td>
+                                                    </tr>
+                                                {% endfor %}
+                                            {% endif %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <label for="descriptionText">Description:</label>
+                            <textarea id="descriptionText" class="form-control" rows="3" readonly></textarea>
+                        </td>
+                    </tr>
+                    <!-- Hidden dropdown for form submission -->
+                    <tr style="display:none;">
+                        <td>
+                            <select id="recommendationDropdown" class="form-control" multiple>
+                                <!-- Dropdown dynamically updated based on selection -->
+                            </select>
+                        </td>
+                    </tr>
+                </table>
+            </div>
 
-function showAllStaticValues(executionContext) {
-    var staticValues = [
-        "Apple",
-        "Banana",
-        "Cherry",
-        "Date",
-        "Elderberry",
-        "Fig",
-        "Grape",
-        "Honeydew"
-    ];
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="btn_saveRecommendation">Save Recommendation</button>
+            </div>
+        </div>
+    </div>
+</div>
 
-    updateAutoComplete(staticValues);
-}
+<script>
+    // JavaScript to handle filtering
+    document.getElementById("doFilterBtn").addEventListener("click", function() {
+        const filterValue = document.getElementById("filterInput").value.toLowerCase();
+        const rows = document.querySelectorAll("#recommendationTable .recommendation-row");
 
-function updateAutoComplete(values) {
-    var resultSet = {
-        results: [],
-        commands: {
-            id: "sp_commands",
-            label: "Search more...",
-            action: function () {
-                // Define what happens when user clicks "Search more..."
-            }
-        }
-    };
-
-    values.forEach(function(value) {
-        resultSet.results.push({
-            id: value,
-            fields: [value]
+        rows.forEach(row => {
+            const category = row.querySelector(".category").textContent.toLowerCase();
+            const title = row.querySelector(".recommendation-title").textContent.toLowerCase();
+            row.style.display = (category.includes(filterValue) || title.includes(filterValue)) ? "" : "none";
         });
     });
 
-    autoCompleteControl.showAutoComplete(resultSet);
-}
+    // Clear Filter
+    document.getElementById("clearFilterBtn").addEventListener("click", function() {
+        document.getElementById("filterInput").value = "";
+        const rows = document.querySelectorAll("#recommendationTable .recommendation-row");
+        rows.forEach(row => row.style.display = "");
+    });
 
-function clearAutoComplete() {
-    autoCompleteControl.hideAutoComplete();
-}
+    // Function to update the description textbox and hidden dropdown based on radio button selection
+    function updateSelection() {
+        const selectedRadio = document.querySelector('input[name="selectedRecommendation"]:checked');
+        const descriptionBox = document.getElementById("descriptionText");
+        const dropdown = document.getElementById("recommendationDropdown");
+
+        // Clear previous description and dropdown option
+        descriptionBox.value = "";
+        dropdown.innerHTML = "";
+
+        if (selectedRadio) {
+            const recommendationId = selectedRadio.value;
+            const recommendationTitle = selectedRadio.getAttribute("data-recommendation-title");
+            const recommendationDescription = selectedRadio.getAttribute("data-recommendation-description");
+
+            // Update description textbox
+            descriptionBox.value = recommendationDescription;
+
+            // Add selected recommendation to hidden dropdown for form submission
+            const dropdownOption = document.createElement("option");
+            dropdownOption.value = recommendationId;
+            dropdownOption.textContent = recommendationTitle;
+            dropdownOption.selected = true;
+            dropdown.appendChild(dropdownOption);
+        }
+    }
+
+    // Add change event listener to radio buttons after they are rendered
+    document.addEventListener("DOMContentLoaded", function() {
+        document.querySelectorAll('input[name="selectedRecommendation"]').forEach(radio => {
+            radio.addEventListener("change", updateSelection);
+        });
+    });
+
+    // Save selected recommendation
+    document.getElementById("btn_saveRecommendation").addEventListener("click", function() {
+        const selectedOptions = Array.from(document.getElementById("recommendationDropdown").options)
+            .filter(option => option.selected)
+            .map(option => ({ id: option.value, title: option.textContent }));
+        
+        console.log("Selected Recommendation for form submission:", selectedOptions);
+    });
+</script>
