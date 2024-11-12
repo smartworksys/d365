@@ -22,54 +22,57 @@
                         <td>
                             <div style="margin-top:15px">
                                 <label for="recommendationTable">Select Recommendation:</label>
-                                <table id="recommendationTable" class="table table-bordered" style="margin-top:10px; width:100%;">
-                                    <thead>
-                                        <tr>
-                                            <th>Select</th>
-                                            <th>Category</th>
-                                            <th>Recommendation Title</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {% if lq_parent_ewr_program_GUID %}
-                                            {% assign ewrParentProgramID = lq_parent_ewr_program_GUID %}
-                                            {% fetchxml recommendations_query %}
-                                                <fetch>
-                                                    <entity name="cms_ewr_recommendation">
-                                                        <attribute name="cms_ewr_recommendationid" />
-                                                        <attribute name="cms_recommendation_title" />
-                                                        <attribute name="cms_recommendation_description" />
-                                                        <attribute name="cms_related_measure_id" />
-                                                        <link-entity name="cms_recommendation_category" from="cms_recommendation_category_id" to="cms_recommendation_category_id" alias="cat">
-                                                            <attribute name="cms_category_name" /> <!-- Category name attribute -->
-                                                        </link-entity>
-                                                        <link-entity name="cms_ewr_recommendation_cms_ewr_program" from="cms_ewr_recommendationid" to="cms_ewr_recommendationid" intersect="true">
-                                                            <link-entity name="cms_ewr_program" from="cms_ewr_programid" to="cms_ewr_programid" alias="s">
-                                                                <attribute name="cms_ewr_programid" />
-                                                                <filter>
-                                                                    <condition attribute="cms_ewr_programid" operator="eq" value="{{ewrParentProgramID}}" />
-                                                                </filter>
+                                <!-- Make the table scrollable by setting max-height and overflow-y -->
+                                <div style="max-height: 300px; overflow-y: auto;">
+                                    <table id="recommendationTable" class="table table-bordered" style="margin-top:10px; width:100%;">
+                                        <thead>
+                                            <tr>
+                                                <th>Select</th>
+                                                <th>Category</th>
+                                                <th>Recommendation Title</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% if lq_parent_ewr_program_GUID %}
+                                                {% assign ewrParentProgramID = lq_parent_ewr_program_GUID %}
+                                                {% fetchxml recommendations_query %}
+                                                    <fetch>
+                                                        <entity name="cms_ewr_recommendation">
+                                                            <attribute name="cms_ewr_recommendationid" />
+                                                            <attribute name="cms_recommendation_title" />
+                                                            <attribute name="cms_recommendation_description" />
+                                                            <attribute name="cms_related_measure_id" />
+                                                            <link-entity name="cms_recommendation_category" from="cms_recommendation_category_id" to="cms_recommendation_category_id" alias="cat">
+                                                                <attribute name="cms_category_name" /> <!-- Category name attribute -->
                                                             </link-entity>
-                                                        </link-entity>
-                                                    </entity>
-                                                </fetch>
-                                            {% endfetchxml %}
+                                                            <link-entity name="cms_ewr_recommendation_cms_ewr_program" from="cms_ewr_recommendationid" to="cms_ewr_recommendationid" intersect="true">
+                                                                <link-entity name="cms_ewr_program" from="cms_ewr_programid" to="cms_ewr_programid" alias="s">
+                                                                    <attribute name="cms_ewr_programid" />
+                                                                    <filter>
+                                                                        <condition attribute="cms_ewr_programid" operator="eq" value="{{ewrParentProgramID}}" />
+                                                                    </filter>
+                                                                </link-entity>
+                                                            </link-entity>
+                                                        </entity>
+                                                    </fetch>
+                                                {% endfetchxml %}
 
-                                            {% for recommendationsIntersect in recommendations_query.results.entities %}
-                                                <tr class="recommendation-row">
-                                                    <td>
-                                                        <input type="radio" name="selectedRecommendation" 
-                                                               value="{{recommendationsIntersect.cms_ewr_recommendationid}}"
-                                                               data-category-name="{{recommendationsIntersect.cat.cms_category_name}}"
-                                                               data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}">
-                                                    </td>
-                                                    <td class="category">{{recommendationsIntersect.cat.cms_category_name}}</td>
-                                                    <td class="recommendation-title">{{recommendationsIntersect.cms_recommendation_title}}</td>
-                                                </tr>
-                                            {% endfor %}
-                                        {% endif %}
-                                    </tbody>
-                                </table>
+                                                {% for recommendationsIntersect in recommendations_query.results.entities %}
+                                                    <tr class="recommendation-row">
+                                                        <td>
+                                                            <input type="radio" name="selectedRecommendation" 
+                                                                   value="{{recommendationsIntersect.cms_ewr_recommendationid}}"
+                                                                   data-category-name="{{recommendationsIntersect.cat.cms_category_name}}"
+                                                                   data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}">
+                                                        </td>
+                                                        <td class="category">{{recommendationsIntersect.cat.cms_category_name}}</td>
+                                                        <td class="recommendation-title">{{recommendationsIntersect.cms_recommendation_title}}</td>
+                                                    </tr>
+                                                {% endfor %}
+                                            {% endif %}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
                         </td>
                     </tr>
@@ -86,7 +89,8 @@
                             </div>
                         </td>
                     </tr>
-                    <tr>
+                    <!-- Hide the dropdown by setting its style to display:none -->
+                    <tr style="display:none;">
                         <td>
                             <div style="margin-top:15px">
                                 <label for="recommendationDropdown">Selected Recommendation:</label>
@@ -146,7 +150,7 @@
             dropdown.innerHTML = `<option value="${recommendationId}">${categoryName} - ${recommendationTitle}</option>`;
             dropdown.value = recommendationId;
 
-            alert("Recommendation selected and updated in dropdown.");
+            alert("Recommendation selected and updated.");
         } else {
             alert("Please select a recommendation.");
         }
