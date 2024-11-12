@@ -1,19 +1,154 @@
-@or(equals(item()?['accountStatus'], 'AC'), equals(item()?['accountStatus'], 'DC'), equals(item()?['accountStatus'], 'BC'))
+<div id="recommendationsInputModal" role="dialog" class="modal fade modal-form modal-form-insert in" data-backdrop="static">
+    <div class="modal-lg modal-dialog modal-accnt" style="max-width: 850px !important;">
+        <!-- Modal content-->
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title">Recommendations</h4>
+                <button type="button" data-dismiss="modal" class="close">×</button>
+            </div>
 
-function validateMinValue(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var fieldName = "your_field_name"; // Replace with the schema name of your field
-    
-    var fieldValue = formContext.getAttribute(fieldName).getValue();
+            <div class="modal-body">
+                <table style="width:100%">
+                    <tr>
+                        <td>
+                            <label for="filterInput" id="filterInputLabel">Filter List by: </label>
+                            <input type="text" placeholder="search term" id="filterInput" class="form-control" value="" style="width:500px; display:inline-block;">
+                            &nbsp;
+                            <button type="button" id="clearFilterBtn" class="btn action">Clear</button>
+                            <button type="button" id="doFilterBtn" class="btn btn-primary action">Filter</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div style="margin-top:15px">
+                                <label for="recommendationTable">Select Recommendation:</label>
+                                <table id="recommendationTable" class="table table-bordered" style="margin-top:10px; width:100%;">
+                                    <thead>
+                                        <tr>
+                                            <th>Select</th>
+                                            <th>Category</th>
+                                            <th>Recommendation Title</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% if lq_parent_ewr_program_GUID %}
+                                            {% assign ewrParentProgramID = lq_parent_ewr_program_GUID %}
+                                            {% fetchxml recommendations_query %}
+                                                <fetch>
+                                                    <entity name="cms_ewr_recommendation">
+                                                        <attribute name="cms_ewr_recommendationid" />
+                                                        <attribute name="cms_recommendation_title" />
+                                                        <attribute name="cms_recommendation_description" />
+                                                        <attribute name="cms_related_measure_id" />
+                                                        <link-entity name="cms_recommendation_category" from="cms_recommendation_category_id" to="cms_recommendation_category_id" alias="cat">
+                                                            <attribute name="cms_category_name" /> <!-- Category name attribute -->
+                                                        </link-entity>
+                                                        <link-entity name="cms_ewr_recommendation_cms_ewr_program" from="cms_ewr_recommendationid" to="cms_ewr_recommendationid" intersect="true">
+                                                            <link-entity name="cms_ewr_program" from="cms_ewr_programid" to="cms_ewr_programid" alias="s">
+                                                                <attribute name="cms_ewr_programid" />
+                                                                <filter>
+                                                                    <condition attribute="cms_ewr_programid" operator="eq" value="{{ewrParentProgramID}}" />
+                                                                </filter>
+                                                            </link-entity>
+                                                        </link-entity>
+                                                    </entity>
+                                                </fetch>
+                                            {% endfetchxml %}
 
-    // Check if the field value is less than or equal to 0
-    if (fieldValue !== null && fieldValue <= 0) {
-        // Set the field to null and display an error message
-        formContext.getAttribute(fieldName).setValue(null);
-        formContext.ui.setFormNotification("Value must be greater than 0.", "ERROR", "minValueError");
-    } else {
-        // Clear any existing notification if the value is valid
-        formContext.ui.clearFormNotification("minValueError");
-    }
-}
+                                            {% for recommendationsIntersect in recommendations_query.results.entities %}
+                                                <tr class="recommendation-row">
+                                                    <td>
+                                                        <input type="radio" name="selectedRecommendation" 
+                                                               value="{{recommendationsIntersect.cms_ewr_recommendationid}}"
+                                                               data-category-name="{{recommendationsIntersect.cat.cms_category_name}}"
+                                                               data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}">
+                                                    </td>
+                                                    <td class="category">{{recommendationsIntersect.cat.cms_category_name}}</td>
+                                                    <td class="recommendation-title">{{recommendationsIntersect.cms_recommendation_title}}</td>
+                                                </tr>
+                                            {% endfor %}
+                                        {% endif %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <p id="descriptionText" style="margin-top:15px"></p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div style="margin-top:25px">
+                                <label for="quantityRecommended" id="quantityRecommendedLabel">Quantity Recommended:</label>
+                                <input type="text" id="txtQtyRecommended" class="form-control" value="1">
+                            </div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>
+                            <div style="margin-top:15px">
+                                <label for="recommendationDropdown">Selected Recommendation:</label>
+                                <select id="recommendationDropdown" class="form-control">
+                                    <!-- Dropdown dynamically updated based on selection -->
+                                    {% for recommendationsIntersect in recommendations_query.results.entities %}
+                                        <option value="{{recommendationsIntersect.cms_ewr_recommendationid}}" 
+                                                data-related-measure-guid="{{recommendationsIntersect.cms_related_measure_id.Id}}"  
+                                                data-description="{{recommendationsIntersect.cms_recommendation_description}}">
+                                            {{recommendationsIntersect.cat.cms_category_name}} - {{recommendationsIntersect.cms_recommendation_title}}
+                                        </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
 
+            <div class="modal-footer">
+                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="btn_saveRecommendation">Save Recommendation</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // JavaScript to handle filtering
+    document.getElementById("doFilterBtn").addEventListener("click", function() {
+        const filterValue = document.getElementById("filterInput").value.toLowerCase();
+        const rows = document.querySelectorAll("#recommendationTable .recommendation-row");
+
+        rows.forEach(row => {
+            const category = row.querySelector(".category").textContent.toLowerCase();
+            const title = row.querySelector(".recommendation-title").textContent.toLowerCase();
+            row.style.display = (category.includes(filterValue) || title.includes(filterValue)) ? "" : "none";
+        });
+    });
+
+    // Clear Filter
+    document.getElementById("clearFilterBtn").addEventListener("click", function() {
+        document.getElementById("filterInput").value = "";
+        const rows = document.querySelectorAll("#recommendationTable .recommendation-row");
+        rows.forEach(row => row.style.display = "");
+    });
+
+    // Set selected recommendation in the dropdown
+    document.getElementById("btn_saveRecommendation").addEventListener("click", function() {
+        const selectedRadio = document.querySelector('input[name="selectedRecommendation"]:checked');
+        if (selectedRadio) {
+            const recommendationId = selectedRadio.value;
+            const categoryName = selectedRadio.getAttribute("data-category-name");
+            const recommendationTitle = selectedRadio.getAttribute("data-recommendation-title");
+
+            const dropdown = document.getElementById("recommendationDropdown");
+            dropdown.innerHTML = `<option value="${recommendationId}">${categoryName} - ${recommendationTitle}</option>`;
+            dropdown.value = recommendationId;
+
+            alert("Recommendation selected and updated in dropdown.");
+        } else {
+            alert("Please select a recommendation.");
+        }
+    });
+</script>
