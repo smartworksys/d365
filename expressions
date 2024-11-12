@@ -30,6 +30,7 @@
                                                 <th>Select</th>
                                                 <th>Category</th>
                                                 <th>Recommendation Title</th>
+                                                <th>Description</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -42,11 +43,9 @@
                                                             <attribute name="cms_recommendation_title" />
                                                             <attribute name="cms_recommendation_description" />
                                                             <attribute name="cms_related_measure_id" />
-                                                            <link-entity name="cms_measurecategory" from="cms_measurecategoryid" to="cms_recommendation_category_id" alias="cat" link-type="inner" relationship="cms_rel_recommendation_category">
-                                                                <attribute name="cms_name" /> <!-- Category name attribute -->
-                                                                <filter>
-                                                                    <condition attribute="cms_measurecategoryid" operator="eq" value="{{ewrParentProgramID}}" />
-                                                                </filter>
+                                                            <attribute name="cms_recommendation_category_id" />
+                                                            <link-entity name="cms_measurecategory" from="cms_measurecategoryid" to="cms_recommendation_category_id" link-type="inner">
+                                                                <attribute name="cms_name" />
                                                             </link-entity>
                                                             <link-entity name="cms_ewr_recommendation_cms_ewr_program" from="cms_ewr_recommendationid" to="cms_ewr_recommendationid" intersect="true">
                                                                 <link-entity name="cms_ewr_program" from="cms_ewr_programid" to="cms_ewr_programid" alias="s">
@@ -66,10 +65,12 @@
                                                             <input type="checkbox" name="selectedRecommendations"
                                                                    value="{{recommendationsIntersect.cms_ewr_recommendationid}}"
                                                                    data-category-name="{{recommendationsIntersect.cat.cms_name}}"
-                                                                   data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}">
+                                                                   data-recommendation-title="{{recommendationsIntersect.cms_recommendation_title}}"
+                                                                   data-recommendation-description="{{recommendationsIntersect.cms_recommendation_description}}">
                                                         </td>
                                                         <td class="category">{{recommendationsIntersect.cat.cms_name}}</td>
                                                         <td class="recommendation-title">{{recommendationsIntersect.cms_recommendation_title}}</td>
+                                                        <td class="recommendation-description">{{recommendationsIntersect.cms_recommendation_description}}</td>
                                                     </tr>
                                                 {% endfor %}
                                             {% endif %}
@@ -92,8 +93,8 @@
                             </div>
                         </td>
                     </tr>
-                    <!-- Multi-select dropdown -->
-                    <tr>
+                    <!-- Hide the dropdown by setting its style to display:none -->
+                    <tr style="display:none;">
                         <td>
                             <div style="margin-top:15px">
                                 <label for="recommendationDropdown">Selected Recommendations:</label>
@@ -134,7 +135,7 @@
         rows.forEach(row => row.style.display = "");
     });
 
-    // Set selected recommendations in the multi-select dropdown
+    // Save selected recommendations and populate the hidden multi-select dropdown
     document.getElementById("btn_saveRecommendation").addEventListener("click", function() {
         const selectedCheckboxes = document.querySelectorAll('input[name="selectedRecommendations"]:checked');
         const dropdown = document.getElementById("recommendationDropdown");
