@@ -9,9 +9,9 @@
 
             <div class="modal-body">
                 <table style="width:100%">
+                    <!-- Row for Category Filter -->
                     <tr>
                         <td>
-                            <!-- Filter Row: Flexbox for Alignment -->
                             <div style="display: flex; align-items: center; gap: 10px;">
                                 <label for="categoryFilter" id="categoryFilterLabel">Filter by Category:</label>
                                 <select id="categoryFilter" class="form-control" style="width: 200px;">
@@ -21,11 +21,15 @@
                                         <option value="{{ category | downcase }}">{{ category }}</option>
                                     {% endfor %}
                                 </select>
-                                
+                            </div>
+                        </td>
+                    </tr>
+                    <!-- Row for Text Filter and Buttons -->
+                    <tr>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 10px;">
                                 <label for="filterInput" id="filterInputLabel">Filter by Text:</label>
                                 <input type="text" placeholder="search term" id="filterInput" class="form-control" style="width: 300px;">
-                                
-                                <!-- Filter and Clear Buttons -->
                                 <button type="button" id="doFilterBtn" class="btn btn-primary">Filter</button>
                                 <button type="button" id="clearFilterBtn" class="btn btn-secondary">Clear</button>
                             </div>
@@ -193,4 +197,3 @@
         console.log("Selected Recommendation for form submission:", selectedOptions);
     });
 </script>
-
