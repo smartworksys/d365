@@ -6,6 +6,7 @@
     <attribute name="telephone1" />
     <link-entity name="account" from="accountid" to="parentcustomerid" link-type="inner" alias="account">
       <attribute name="name" />
+      <order attribute="name" descending="false" />
     </link-entity>
   </entity>
 </fetch>
