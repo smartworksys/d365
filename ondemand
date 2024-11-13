@@ -34,9 +34,13 @@
                                 <label for="categoryFilter" id="categoryFilterLabel">Filter by Category:</label>
                                 <select id="categoryFilter" class="form-control" style="width: 200px;">
                                     <option value="all">All Categories</option>
-                                    {% assign unique_categories = recommendations_query.results.entities | map: "cat.cms_name" | uniq %}
-                                    {% for category in unique_categories %}
-                                        <option value="{{ category | downcase }}">{{ category }}</option>
+                                    {% assign unique_categories = "" %}
+                                    {% for recommendation in recommendations_query.results.entities %}
+                                        {% assign category_name = recommendation['cat.cms_name'] %}
+                                        {% unless unique_categories contains category_name %}
+                                            <option value="{{ category_name | downcase }}">{{ category_name }}</option>
+                                            {% assign unique_categories = unique_categories | append: category_name | append: "," %}
+                                        {% endunless %}
                                     {% endfor %}
                                 </select>
                             </div>
