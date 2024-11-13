@@ -69,9 +69,9 @@
                         </td>
                     </tr>
                     <tr>
-                        <td>
+                        <td style="padding-top: 15px;">
                             <label for="descriptionText">Description:</label>
-                            <textarea id="descriptionText" class="form-control" rows="3" readonly></textarea>
+                            <textarea id="descriptionText" class="form-control" rows="3" readonly style="width: 100%; margin-top: 5px;"></textarea>
                         </td>
                     </tr>
                     <!-- Hidden dropdown for form submission -->
