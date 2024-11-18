@@ -1,3 +1,44 @@
-Based on my understanding, we typically do not use the HTTP action in Power Automate to POST to another flow within the same environment. Instead, we rely on the child flow functionality, which is both simpler and aligns with best practices.
+.recommendation-row.selected {
+    background-color: #d3f3d3; /* Light green highlight */
+}
 
-Are you encountering any specific challenges when using the child flow approach? If so, I’d be happy to help troubleshoot or explore alternate solutions.
+
+function updateSelection() {
+    const selectedRadio = document.querySelector('input[name="selectedRecommendation"]:checked');
+    const descriptionBox = document.getElementById("descriptionText");
+    const dropdown = document.getElementById("recommendationDropdown");
+
+    // Ensure description box is visible
+    descriptionBox.style.display = "block";
+
+    // Clear previous description and dropdown option
+    descriptionBox.value = "";
+    dropdown.innerHTML = "";
+
+    // Remove 'selected' class from all rows
+    document.querySelectorAll(".recommendation-row").forEach(row => {
+        row.classList.remove("selected");
+    });
+
+    if (selectedRadio) {
+        const recommendationId = selectedRadio.value;
+        const recommendationTitle = selectedRadio.getAttribute("data-recommendation-title");
+        const recommendationDescription = selectedRadio.getAttribute("data-recommendation-description");
+
+        // Update description textbox
+        descriptionBox.value = recommendationDescription;
+
+        // Add selected recommendation to hidden dropdown for form submission
+        const dropdownOption = document.createElement("option");
+        dropdownOption.value = recommendationId;
+        dropdownOption.textContent = recommendationTitle;
+        dropdownOption.selected = true;
+        dropdown.appendChild(dropdownOption);
+
+        // Highlight the selected row
+        const selectedRow = selectedRadio.closest(".recommendation-row");
+        if (selectedRow) {
+            selectedRow.classList.add("selected");
+        }
+    }
+}
