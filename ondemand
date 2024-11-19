@@ -1,44 +1,55 @@
-.recommendation-row.selected {
-    background-color: #d3f3d3; /* Light green highlight */
-}
+Logic App Overview
+The Logic App created for outbound write-back functionality consists of two workflows:
 
+Ping Pathfinder
+Push to Pathfinder
+Workflow Details
+1. Ping Pathfinder
+Purpose: Verifies Pathfinder's status (up or down) and writes the result to Azure Blob Storage.
+Execution: Scheduled to run every minute (near real-time).
+Process:
+Sends an XML payload via HTTPS to Pathfinder.
+Writes the status (up/down) to a file in Azure Blob Storage.
+Content Length must be calculated and included in the XML payload.
+Additional Details:
+The workflow name is DEVELOPMENT.
+Requires environment variables:
+WEBSITE_LOAD_CERTIFICATE
+WEBSITE_LOAD_ROOT_CERTIFICATE
+HTTPS is configured using a certificate installed on the Logic App.
+Critical Note: The username and password in the payload are currently hard-coded. These should be replaced with secure retrieval from Azure Key Vault.
+2. Push to Pathfinder
+Purpose: Sends messages from Azure Service Bus to Pathfinder.
+Execution: Runs asynchronously.
+Status: Currently only a PoC (Proof of Concept) built by David. Full implementation is pending.
+Process:
+Reads messages from Azure Service Bus.
+Sends messages to Pathfinder after verifying availability.
+Azure Resource Setup
+Logic App Name: KOFC-PF-PING-DEV-LAPP
+Managed Identity:
+Configured for the Logic App to provide secure access to:
+Azure Service Bus
+Application Insights
+Managed Identity also allows secure retrieval of secrets from Azure Key Vault.
+HTTPS Configuration:
+A certificate is installed against the Logic App to enable HTTPS.
+This certificate is required for Pathfinder to communicate securely over HTTPS.
+Bala/Prashanth are documenting the certificate configuration.
+Workflow Coordination
+The workflows are designed to operate asynchronously:
+Ping Pathfinder determines if Pathfinder is up or down and updates a file in Azure Blob Storage.
+Push to Pathfinder depends on the status from the Ping workflow (the file in Blob Storage).
+Action Items
+Resource Access Transfer:
 
-function updateSelection() {
-    const selectedRadio = document.querySelector('input[name="selectedRecommendation"]:checked');
-    const descriptionBox = document.getElementById("descriptionText");
-    const dropdown = document.getElementById("recommendationDropdown");
+Transfer Azure resource ownership and access permissions from Will to the designated developer.
+Push Workflow Completion:
 
-    // Ensure description box is visible
-    descriptionBox.style.display = "block";
+Complete the implementation of the Push to Pathfinder workflow based on the PoC created by David.
+Credential Security:
 
-    // Clear previous description and dropdown option
-    descriptionBox.value = "";
-    dropdown.innerHTML = "";
+Replace hard-coded credentials in the Logic App payload with secure retrieval from Azure Key Vault.
+Certificate Documentation:
 
-    // Remove 'selected' class from all rows
-    document.querySelectorAll(".recommendation-row").forEach(row => {
-        row.classList.remove("selected");
-    });
-
-    if (selectedRadio) {
-        const recommendationId = selectedRadio.value;
-        const recommendationTitle = selectedRadio.getAttribute("data-recommendation-title");
-        const recommendationDescription = selectedRadio.getAttribute("data-recommendation-description");
-
-        // Update description textbox
-        descriptionBox.value = recommendationDescription;
-
-        // Add selected recommendation to hidden dropdown for form submission
-        const dropdownOption = document.createElement("option");
-        dropdownOption.value = recommendationId;
-        dropdownOption.textContent = recommendationTitle;
-        dropdownOption.selected = true;
-        dropdown.appendChild(dropdownOption);
-
-        // Highlight the selected row
-        const selectedRow = selectedRadio.closest(".recommendation-row");
-        if (selectedRow) {
-            selectedRow.classList.add("selected");
-        }
-    }
-}
+Finalize and document the certificate configuration required for HTTPS (Bala/Prashanth).
