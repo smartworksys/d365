@@ -1,17 +1,1 @@
-Hi [Recipient's Name],
-
-I hope this email finds you well.
-
-We have a formal code review process within the development team, but it hasn’t been documented yet. As part of our effort to improve and streamline our workflows, I’d like to outline the current process for your reference:
-
-Branch Creation: The developer creates a feature branch from the develop branch.
-Development: The developer completes the necessary development based on the user story.
-Pull Request: Once the development is complete, the developer creates a pull request and reviews it with the team.
-Approval and Merge: After the pull request is approved, it’s merged into the develop branch.
-Release Preparation: The develop branch is then merged into the main branch in preparation for release to higher environments.
-This process ensures thorough internal reviews are conducted after the completion of each user story, maintaining the quality and reliability of our codebase.
-
-Please let me know if you have any feedback or suggestions for improvement.
-
-Best regards,
-[Your Name]
+The development team has already started using this process. Since Will is leaving, he has not been involved in this workflow, and no transition is needed regarding this process.
