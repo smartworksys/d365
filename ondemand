@@ -1,55 +1,17 @@
-Logic App Overview
-The Logic App created for outbound write-back functionality consists of two workflows:
+Hi [Recipient's Name],
 
-Ping Pathfinder
-Push to Pathfinder
-Workflow Details
-1. Ping Pathfinder
-Purpose: Verifies Pathfinder's status (up or down) and writes the result to Azure Blob Storage.
-Execution: Scheduled to run every minute (near real-time).
-Process:
-Sends an XML payload via HTTPS to Pathfinder.
-Writes the status (up/down) to a file in Azure Blob Storage.
-Content Length must be calculated and included in the XML payload.
-Additional Details:
-The workflow name is DEVELOPMENT.
-Requires environment variables:
-WEBSITE_LOAD_CERTIFICATE
-WEBSITE_LOAD_ROOT_CERTIFICATE
-HTTPS is configured using a certificate installed on the Logic App.
-Critical Note: The username and password in the payload are currently hard-coded. These should be replaced with secure retrieval from Azure Key Vault.
-2. Push to Pathfinder
-Purpose: Sends messages from Azure Service Bus to Pathfinder.
-Execution: Runs asynchronously.
-Status: Currently only a PoC (Proof of Concept) built by David. Full implementation is pending.
-Process:
-Reads messages from Azure Service Bus.
-Sends messages to Pathfinder after verifying availability.
-Azure Resource Setup
-Logic App Name: KOFC-PF-PING-DEV-LAPP
-Managed Identity:
-Configured for the Logic App to provide secure access to:
-Azure Service Bus
-Application Insights
-Managed Identity also allows secure retrieval of secrets from Azure Key Vault.
-HTTPS Configuration:
-A certificate is installed against the Logic App to enable HTTPS.
-This certificate is required for Pathfinder to communicate securely over HTTPS.
-Bala/Prashanth are documenting the certificate configuration.
-Workflow Coordination
-The workflows are designed to operate asynchronously:
-Ping Pathfinder determines if Pathfinder is up or down and updates a file in Azure Blob Storage.
-Push to Pathfinder depends on the status from the Ping workflow (the file in Blob Storage).
-Action Items
-Resource Access Transfer:
+I hope this email finds you well.
 
-Transfer Azure resource ownership and access permissions from Will to the designated developer.
-Push Workflow Completion:
+We have a formal code review process within the development team, but it hasn’t been documented yet. As part of our effort to improve and streamline our workflows, I’d like to outline the current process for your reference:
 
-Complete the implementation of the Push to Pathfinder workflow based on the PoC created by David.
-Credential Security:
+Branch Creation: The developer creates a feature branch from the develop branch.
+Development: The developer completes the necessary development based on the user story.
+Pull Request: Once the development is complete, the developer creates a pull request and reviews it with the team.
+Approval and Merge: After the pull request is approved, it’s merged into the develop branch.
+Release Preparation: The develop branch is then merged into the main branch in preparation for release to higher environments.
+This process ensures thorough internal reviews are conducted after the completion of each user story, maintaining the quality and reliability of our codebase.
 
-Replace hard-coded credentials in the Logic App payload with secure retrieval from Azure Key Vault.
-Certificate Documentation:
+Please let me know if you have any feedback or suggestions for improvement.
 
-Finalize and document the certificate configuration required for HTTPS (Bala/Prashanth).
+Best regards,
+[Your Name]
