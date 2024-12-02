@@ -1,98 +1,59 @@
-async function enableSectionOnLookupChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var certificateAccountNumber = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER).getValue();
-    var accNum = formContext.getAttribute("nf1pbm_accessnumberint").getValue();
-
-    // Initialize maturity options regardless of the form type
-    initializeMaturityOptions(executionContext);
-
+function onAnotherFinInstitutionChange(executionContext) {
     try {
-        // Show or hide sections based on form type (create mode)
-        if (formContext.ui.getFormType() === 1) { // 1 is the form type for "create"
-            showHideSection(formContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE, "pb_maturity_Instruction", "maturity_instruction_details");
-            showHideSection(formContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE, "pb_maturity_Instruction", "pb_maturity_Instruction_notes");
-            
-            // Fetch and log maturity instructions
-            const instructions = await getMaturityInstructions(executionContext, accNum, "{" + accounttype + "}", certificateAccountNumber);
-            console.log("Maturity Instructions:", instructions);
-        }
-
-        // Process each item in apiData
-        apiData.forEach(async (item) => {
-            if (item.accountNumber === certificateAccountNumber) {
-                updateFormFieldsBasedOnItem(formContext, item);
-            }
-        });
-
-        // Perform actions that are not dependent on the form type
-        formContext.getAttribute("nf1pbm_affiliateaccountnumber").fireOnChange();
-        showHideRACode(executionContext);
-        onAnotherFinInstitutionChange(executionContext);
-        // onUSPostalChange(executionContext); // Uncomment if needed
-
-    } catch (error) {
-        console.error("Error during section enablement on lookup change:", error);
-    } finally {
-        if (formContext.ui.getFormType() !== 1) {
-            Xrm.Utility.closeProgressIndicator();
-        }
-    }
-}
-
-async function updateFormFieldsBasedOnItem(formContext, item) {
-    try {
-        formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_DATE).setValue(null);
-
-        if (item.maturityDate) {
-            console.log("Maturity Date:", item.maturityDate);
-            let mdate = new Date(item.maturityDate);
-            formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_DATE).setValue(mdate);
-        }
-
-        CONSTANTS.ACCOUNT_DETAILS.ACCOUNT_TYPE = item.subType || '';
-        CONSTANTS.ACCOUNT_DETAILS.AFFILIATE_ACCOUNT_TYPE = item.accountType || '';
-        CONSTANTS.ACCOUNT_DETAILS.PLAN_SEQUENCE_NO = item.iraPlanSequenceNumber || '';
-
-        formContext.getAttribute("nf1pbm_certificatebalance").setValue(item.availableBalance ? parseFloat(item.availableBalance) : 0);
+        var formContext = executionContext.getFormContext();
+        var byCheckoptionSetValue = formContext.getAttribute("nf1pbm_bycheck").getValue();
         
-        let accountTypeLookupValue = getLookupFieldValue(formContext, CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE);
-        accounttype = accountTypeLookupValue.id;
-
-        filterProductsBasedOnAccountType(formContext, accountTypeLookupValue, item);
-
-        if (item.productCode) {
-            console.log("Existing Product Code:", item.productCode);
-            setProductLookupDefaultValue(formContext, item.productCode, "nf1pbm_certificaterenewaltype");
-            formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CURRENT_RENEWAL_TYPE_CODE).setValue(item.productCode);
+        try {
+            if (byCheckoptionSetValue) {
+                formContext.getAttribute("nf1pbm_anotherfininstitution").setValue(false);
+            }
+        } catch (innerError) {
+            console.error("Error setting 'nf1pbm_anotherfininstitution': ", innerError);
         }
 
-        await callPowerAutomateCertificateDetails(executionContext, item.accountNumber);
-        updateContactInfo(formContext, CONTACT_DATA);
+        try {
+            var val = getSelectedOptionSetValue(executionContext);
+            console.log("Selected Value: " + val);
+
+            if (val) {
+                showHideTabs(formContext, "pb_maturity_Instruction", "maturity_Instruction_Another_Fin", true);
+                formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).setValue(true);
+                onManualReviewChange(executionContext);
+            } else {
+                showHideTabs(formContext, "pb_maturity_Instruction", "maturity_Instruction_Another_Fin", false);
+            }
+        } catch (innerError) {
+            console.error("Error processing maturity instruction logic: ", innerError);
+        }
+
+        try {
+            var fields = [
+                "nf1pbm_bankname",
+                "nf1pbm_otheraddressline1",
+                "nf1pbm_othercity",
+                "nf1pbm_otherstate",
+                "nf1pbm_otherzip"
+            ];
+
+            fields.forEach(function (field) {
+                try {
+                    if (val) {
+                        formContext.getAttribute(field).setRequiredLevel("required");
+                    } else {
+                        formContext.getAttribute(field).setRequiredLevel("none");
+                    }
+                } catch (fieldError) {
+                    console.error(`Error setting required level for field '${field}': `, fieldError);
+                }
+            });
+        } catch (innerError) {
+            console.error("Error setting field required levels: ", innerError);
+        }
+
+        // Uncomment if necessary
+        // formContext.getAttribute("nf1pbm_uspostal").fireOnChange();
+
     } catch (error) {
-        console.error("Error updating form fields based on API data item:", error);
-    }
-}
-
-function updateContactInfo(formContext, contactData) {
-    var formattedAddress = `${contactData.addressLine1 ? contactData.addressLine1 + "\n" : ""}${contactData.city ? contactData.city + ", \n" : ""}${contactData.state ? contactData.state + " " : ""}${contactData.postalCode ? contactData.postalCode : ""}`;
-    formContext.getAttribute("nf1pbm_addressofrecord").setValue(formattedAddress);
-}
-
-function filterProductsBasedOnAccountType(formContext, accountTypeLookupValue, item) {
-    let today = new Date().toISOString().split('T')[0];
-    let accountType = accountTypeLookupValue.id;
-
-    switch(accountType) {
-        case "619BDE1C-DD50-EF11-A317-000D3A1007BB":
-            filterProducts(formContext, "451130003", "nf1pbm_certificaterenewaltype");
-            break;
-        case "08AC6D30-DD50-EF11-A317-000D3A1007BB":
-            filterProducts(formContext, "451130000", "nf1pbm_certificaterenewaltype", item.iraPlanSequenceNumber);
-            break;
-        case "7F5A6823-DD50-EF11-A317-000D3A1007BB":
-            filterProducts(formContext, "451130004", "nf1pbm_certificaterenewaltype");
-            break;
-        default:
-            console.log("No specific filter set for account type:", accountType);
+        console.error("Error in onAnotherFinInstitutionChange: ", error);
     }
 }
