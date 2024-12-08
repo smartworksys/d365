@@ -1,1 +1,18 @@
+function onContributionYearChange(executionContext) {
+    try {
+        var formContext = executionContext.getFormContext();
+        var selectedContYear = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CONTRIBUTION_YEAR).getValue();
+
+        if (selectedContYear === CONSTANTS.OPTION_SET_VALUES.BOTH) {
+            // Set the value and disable the field separately
+            var manualReviewAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW);
+            manualReviewAttr.setValue(true);
+            formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).setDisabled(true);
+        } else {
+            formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).setDisabled(false);
+        }
+    } catch (error) {
+        console.error("Error updating form fields based on contribution year:", error);
+    }
+}
 
