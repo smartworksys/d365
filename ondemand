@@ -1,18 +1,2 @@
-function onContributionYearChange(executionContext) {
-    try {
-        var formContext = executionContext.getFormContext();
-        var selectedContYear = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CONTRIBUTION_YEAR).getValue();
-
-        if (selectedContYear === CONSTANTS.OPTION_SET_VALUES.BOTH) {
-            // Set the value and disable the field separately
-            var manualReviewAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW);
-            manualReviewAttr.setValue(true);
-            formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).setDisabled(true);
-        } else {
-            formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW).setDisabled(false);
-        }
-    } catch (error) {
-        console.error("Error updating form fields based on contribution year:", error);
-    }
-}
+My brother is in critical condition, and the doctors have planned a surgery early next week. My sister-in-law is donating her liver for the transplantation. My family needs me during this critical time, so I have booked my tickets for tomorrow. I will be out of the office (OOO) for two weeks and working from India for one week. Depending on the recovery, I may travel back sooner.
 
