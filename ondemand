@@ -1,9 +1,39 @@
-Dear [Recipient],
+// Function to convert a date string to a JavaScript Date object in UTC
+function convertToDateUTC(strDt) {
+    var dt = strDt.split('-');
+    var day = parseInt(dt[0], 10);
+    var month = dt[1].toLowerCase(); // Convert month to lower case
+    var year = parseInt(dt[2], 10);
 
-I am currently out of the office due to a family emergency and will be unavailable until [return date]. During this time, I will have limited access to email and may not be able to respond promptly.
+    // Month conversion map
+    var monthMap = {
+        jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+        jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+    };
 
-For urgent matters, please contact [alternative contact person] at [their email/phone number].
+    if (month in monthMap) {
+        month = monthMap[month]; // Convert month string to month number
+    } else {
+        console.error("Invalid month");
+        return null; // Return null if month is invalid
+    }
 
-Thank you for your understanding, and I will get back to you as soon as possible upon my return.
+    return new Date(Date.UTC(year, month, day)); // Construct and return the UTC date
+}
 
-Best regards,
+// Main function to set the date field in Dynamics 365
+function getdatetime(executionContext) {
+    var formContext = executionContext.getFormContext(); // Get form context
+    var strDt = "18-Aug-2015"; // Example date value
+
+    // Convert the string date to a Date object using the separate function
+    var dateData = convertToDateUTC(strDt);
+
+    if (dateData) {
+        // Set the date in the Dynamics 365 field
+        formContext.getAttribute("aaa_definedDate").setValue(dateData);
+        formContext.getAttribute("aaa_definedDate").setSubmitMode("always");
+    } else {
+        console.log("Failed to convert date");
+    }
+}
