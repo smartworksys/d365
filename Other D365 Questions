@@ -1,97 +1,95 @@
-Here is a comprehensive response to your miscellaneous interview questions related to Microsoft Dynamics 365:
 
 On Creation of Entity, How Many Tables will Be created At Back End?
-
 Typically, three tables are created: the base table, the extension base table, and the metadata table.
+
 Difference between Share and Assign?
-
 "Share" provides additional users access to a record without changing the owner. "Assign" transfers ownership of a record to another user or team.
+
 Can system admin read the Field Level Security?
-
 Yes, a System Administrator can read and modify Field Level Security settings.
+
 Team vs Access Team?
-
 Owner Teams have roles and can own records. Access Teams do not own records and are used for sharing access without ownership rights.
+
 Why CRM use Webservice only to interact with the external applications?
-
 Web services provide a standardized way of interacting over a network, supporting structured data and ensuring compatibility across different technologies and platforms.
+
 What information IPlugin interface store and what is the significance of the same?
-
 The IPlugin interface stores the context and the execution pipeline details of a plugin, allowing developers to write code that reacts to specific events within CRM.
+
 What are different modes available in order to register a plugin?
-
 Synchronous and Asynchronous are the two modes for plugin registration.
+
 What is the significance of 'Act on Behalf of Another User Privilege' in Dynamics 365?
-
 It allows a user to perform actions as if they were another user, typically used in workflows or when integrating with other systems.
+
 Suppose I am having Delete Privilege of User Access Level on Account Entity...
-
 You would inherit your manager's organizational level privileges for that action.
+
 Suppose I don't have Read Privilege on Account Entity...
-
 Yes, if you are acting on behalf of your manager, you can read the records as per their organizational level privileges.
+
 How to get Page data/fields values using JavaScript in Dynamics 365 as Xrm.Page has been deprecated?
-
 Use formContext instead of Xrm.Page to access data and manipulate forms.
+
 How CRM manage concurrent requests inside plugins?
-
 CRM handles concurrent executions by isolating each plugin execution in its own execution pipeline.
+
 What role a User must have to create and activate a real-time workflow?
-
 System Administrator or System Customizer roles are typically required.
+
 Does Real-time Workflow revert the changes if any error occurs during performing any operation?
-
 Yes, if configured to do so, a real-time workflow can revert changes when an error occurs.
+
 What are the stages on which Real Time Workflow works?
-
 Before and after the main operation (pre-operation, post-operation).
+
 What is the difference between entity.Id and entity.PrimaryEntityId in the plugin?
-
 entity.Id is the GUID of the current record. entity.PrimaryEntityId is used in the context of related entities.
+
 When to use Target as an Entity and Target as an EntityReference?
-
 Use Entity when dealing with the full record and EntityReference for references to other records.
+
 What are the Limitations of Multi Select Fields in D365?
-
 They cannot be used in all types of reports, workflows may not support them fully, and they can complicate data migrations.
+
 Can add up to 150 values available in Multi Select Fields?
-
 Yes, multi-select option sets can have up to 150 values.
+
 Is it possible to trigger a javascript on change of rollup and calculated field?
-
 No, not directly, as these fields are calculated asynchronously.
+
 Is it possible to trigger a Plugin on change of rollup and calculated field?
-
 No, plugins cannot directly respond to changes in rollup or calculated fields as these changes occur server-side.
+
 Is it possible to trigger a workflow on change of rollup and calculated field?
-
 No, workflows cannot be triggered directly by changes to rollup or calculated fields.
+
 If you use Column Set(true) and perform service.Update(obj), will it update all column?
-
 Yes, using ColumnSet(true) updates all columns of the entity in the operation.
+
 Which one is faster - Query Expression, Fetch XML, LINQ?
-
 Performance can vary, but generally, FetchXML can be faster for complex queries due to its direct SQL-like nature.
+
 Best Practices - Maximum number of fields on an entity?
-
 It's best to limit to essential fields only, typically not exceeding 100-150 fields for performance and maintainability.
+
 Difference between Primary Field and Primary Key in CRM Form?
-
 Primary Field is the main descriptive field (like name), and Primary Key is the unique identifier (GUID).
+
 How many custom primary keys you can create in CRM?
-
 You can only have one primary key per entity in Dynamics 365.
+
 Filtered View?
-
 Filtered Views are SQL views that respect the CRM security model, providing a secure way to access database information for reporting.
+
 Role of Technical Lead?
-
 To guide the development team, ensure technical standards are met, oversee project progress, and solve technical challenges.
+
 BRD vs FRD vs FDD vs TDD?
-
 BRD (Business Requirement Document), FRD (Functional Requirement Document), FDD (Feature Driven Development), TDD (Test Driven Development) each serve different phases in project development, from requirements gathering to testing strategies.
-What is your biggest weakness?
 
+What is your biggest weakness?
 A personal question, typically answered by identifying a professional area for improvement and steps taken to address it.
 Agile or Waterfall which one is better?
 
