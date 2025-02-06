@@ -3,27 +3,35 @@ The Dynamics 365 Sales lifecycle represents the journey from initial contact wit
 1. Lead Generation
 Purpose: To gather potential customers (leads) who may have an interest in the products or services offered.
 Activities: This can include marketing campaigns, networking, referrals, web inquiries, etc.
+
 2. Lead Qualification
 Purpose: To assess whether the leads are likely to become customers.
 Activities: This involves contacting leads, assessing their needs, budget, and purchase readiness. Unqualified leads are filtered out.
+
 3. Opportunity Management
 Purpose: To manage and nurture qualified leads into sales opportunities.
 Activities: Developing relationships, understanding detailed customer requirements, and configuring the product or service to meet these needs.
+
 4. Proposal/Quote Generation
 Purpose: To provide the prospective customer with an offer that includes pricing, terms, and conditions.
 Activities: Creating and sending tailored proposals or quotes based on the opportunities developed and negotiations held.
+
 5. Negotiation
 Purpose: To finalize the terms of the sale.
 Activities: Discussions regarding terms, prices, delivery, and other contract specifics.
+
 6. Closing
 Purpose: To finalize the sales agreement and begin the process of fulfillment.
 Activities: Signing contracts, placing orders, and possibly initial payments.
+
 7. Implementation/Delivery
 Purpose: To fulfill the contractual obligations such as delivering the product or service.
 Activities: Product shipping, service implementation, setup, and ensuring customer satisfaction with the delivered product/service.
+
 8. Post-Sale Service and Support
 Purpose: To provide ongoing support and nurture the relationship for future sales.
 Activities: Customer support, service calls, product updates, and follow-ups to encourage repeat business and customer loyalty.
+
 9. Feedback and Improvement
 Purpose: To gather feedback and improve future sales processes and product offerings.
 Activities: Customer feedback collection, analysis, and incorporation of insights into future product development and sales strategies.
