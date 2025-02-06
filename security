@@ -1,0 +1,27 @@
+When preparing for an interview focused on the Dynamics 365 security model, it's important to understand the fundamental components that secure data and ensure that users have appropriate access levels. Here are several key interview questions that might be asked about the Dynamics 365 security model, along with explanations that will help you articulate comprehensive answers:
+
+1. What are the main components of the Dynamics 365 security model?
+Business Units: These are used to define the organizational structure and can be hierarchical. Each user belongs to one business unit.
+Security Roles: Roles define permissions to perform certain actions, such as read, write, delete, etc., on entities. Roles can be assigned to users or teams.
+Field Security Profiles: These profiles are used to restrict access to specific fields within an entity for an additional layer of security.
+Teams: There are two types of teams: Owner Teams and Access Teams. Owner Teams own records and have roles, whereas Access Teams are used to share records.
+2. How do Business Units affect data access in Dynamics 365?
+Business Units provide a way to segment data within the organization. They help ensure that users only have access to appropriate records based on their business unit. Security roles can be configured to limit access to records owned by the user's business unit, the parent/child business units, or across the organization.
+3. Can you explain the difference between an Owner Team and an Access Team?
+Owner Team: Owns records and can be assigned security roles. Members inherit the team's permissions on those records.
+Access Team: Does not own records but is used to share access to records dynamically without the need for predefined security roles.
+4. What is the purpose of Security Roles in Dynamics 365?
+Security Roles define what actions a user can perform on specific entities within the system. These roles are essential for controlling access at a granular level, ensuring that users only have the necessary permissions to perform their job functions.
+5. How does Field Level Security work in Dynamics 365?
+Field Level Security allows administrators to control access to specific fields, even if a user has access to the entity. Field security profiles are applied to users or teams to make fields readable, writable, or invisible.
+6. What is the impact of hierarchical security in Dynamics 365?
+Hierarchical security is designed to reflect more complex organizational structures where access rights need to consider reporting lines or data access needs that span across business units. It allows higher-level users, such as managers, to access records owned by subordinate users within the hierarchy.
+7. How do you apply security roles to users in Dynamics 365?
+Security roles are assigned directly to users or to teams that users are members of. Each user can have multiple roles, and their effective permissions are the sum of their individual and team roles.
+8. What happens if a user has conflicting permissions from multiple security roles?
+Dynamics 365 operates on a cumulative permission model, where the highest level of privilege among the assigned security roles takes precedence. There is no "deny" per se; if any role grants access, the user will have that access.
+9. How would you configure security to allow a user to view all records in the system but edit only their own records?
+Assign the user a security role that grants 'Read' access at the 'Organization' level and 'Write' access at the 'User' level. This configuration allows the user to view all records across the organization but restricts editing to only those records they own.
+10. What strategies can you use to manage complex security requirements in Dynamics 365?
+Utilize a combination of Business Units, Security Roles, Teams, and Field Security Profiles to address complex scenarios. Additionally, leveraging custom entities and relationships can help model more nuanced access structures that align with specific business processes.
+These questions cover various aspects of the Dynamics 365 security model and are designed to showcase your understanding of how to implement and manage security within a Dynamics environment effectively.
