@@ -1,190 +1,87 @@
-<div id="recommendationsInputModal" role="dialog" class="modal fade modal-form modal-form-insert in" data-backdrop="static">
-    <div class="modal-lg modal-dialog modal-accnt" style="max-width: 850px !important;">
-        <!-- Modal content-->
-        <div class="modal-content">
-            <div class="modal-header">
-                <h4 class="modal-title">Recommendations</h4>
-                <button type="button" data-dismiss="modal" class="close">×</button>
-            </div>
+function initializeRAOptions(executionContext) {
+    const formContext = executionContext.getFormContext();
+    const accountDetails = CONSTANTS.ACCOUNT_DETAILS;
+    const attributeNames = CONSTANTS.ATTRIBUTE_NAMES;
+    const optionSetValues = CONSTANTS.OPTION_SET_VALUES;
 
-            <div class="modal-body">
-                <table style="width:100%">
-                    <tr>
-                        <td>
-                            <label for="categoryFilter" id="categoryFilterLabel">Filter by Category:</label>
-                            <select id="categoryFilter" class="form-control" style="width: 200px; display: inline-block;">
-                                <option value="all">All Categories</option>
-                                {% assign categories = recommendations_query.results.entities | map: "cat.cms_name" | uniq %}
-                                {% for category in categories %}
-                                    <option value="{{ category | downcase }}">{{ category }}</option>
-                                {% endfor %}
-                            </select>
-                            &nbsp;
-                            <label for="filterInput" id="filterInputLabel">Filter List by Text:</label>
-                            <input type="text" placeholder="search term" id="filterInput" class="form-control" value="" style="width:300px; display:inline-block;">
-                            &nbsp;
-                            <button type="button" id="clearFilterBtn" class="btn action">Clear</button>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td>
-                            <div style="margin-top:15px">
-                                <label for="recommendationTable">Select Recommendation:</label>
-                                <div style="max-height: 300px; overflow-y: auto;">
-                                    <table id="recommendationTable" class="table table-bordered" style="margin-top:10px; width:100%; table-layout: fixed;">
-                                        <thead style="position: sticky; top: 0; background-color: #f9f9f9; z-index: 1;">
-                                            <tr>
-                                                <th style="width: 10%;">Select</th>
-                                                <th style="width: 20%;">Category</th>
-                                                <th style="width: 30%;">Recommendation Title</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% if lq_parent_ewr_program_GUID %}
-                                                {% assign ewrParentProgramID = lq_parent_ewr_program_GUID %}
-                                                {% fetchxml recommendations_query %}
-                                                    <fetch>
-                                                        <entity name="cms_ewr_recommendation">
-                                                            <attribute name="cms_ewr_recommendationid" />
-                                                            <attribute name="cms_recommendation_title" />
-                                                            <attribute name="cms_recommendation_description" />
-                                                            <attribute name="cms_related_measure_id" />
-                                                            <attribute name="cms_recommendation_category_id" />
-                                                            <link-entity name="cms_measurecategory" from="cms_measurecategoryid" to="cms_recommendation_category_id" link-type="inner" alias="cat">
-                                                                <attribute name="cms_name" />
-                                                            </link-entity>
-                                                        </entity>
-                                                    </fetch>
-                                                {% endfetchxml %}
-
-                                                {% for recommendationsIntersect in recommendations_query.results.entities %}
-                                                    <tr class="recommendation-row" data-category="{{ recommendationsIntersect.cat.cms_name | downcase }}">
-                                                        <td>
-                                                            <input type="radio" name="selectedRecommendation"
-                                                                   value="{{ recommendationsIntersect.cms_ewr_recommendationid }}"
-                                                                   data-recommendation-title="{{ recommendationsIntersect.cms_recommendation_title }}"
-                                                                   data-recommendation-description="{{ recommendationsIntersect.cms_recommendation_description }}">
-                                                        </td>
-                                                        <td class="category">{{ recommendationsIntersect.cat.cms_name }}</td>
-                                                        <td class="recommendation-title">{{ recommendationsIntersect.cms_recommendation_title }}</td>
-                                                    </tr>
-                                                {% endfor %}
-                                            {% endif %}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr>
-                        <td style="padding-top: 15px;">
-                            <label for="descriptionText">Description:</label>
-                            <textarea id="descriptionText" class="form-control" rows="3" readonly style="width: 100%; margin-top: 5px; display: block;"></textarea>
-                        </td>
-                    </tr>
-                    <!-- Hidden dropdown for form submission -->
-                    <tr style="display:none;">
-                        <td>
-                            <select id="recommendationDropdown" class="form-control" multiple>
-                                <!-- Dropdown dynamically updated based on selection -->
-                            </select>
-                        </td>
-                    </tr>
-                </table>
-            </div>
-
-            <div class="modal-footer">
-                <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" id="btn_saveRecommendation">Save Recommendation</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script>
-    // JavaScript to handle filtering by text and category
-    function applyFilters() {
-        const textFilterValue = document.getElementById("filterInput").value.toLowerCase();
-        const categoryFilterValue = document.getElementById("categoryFilter").value;
-
-        const rows = document.querySelectorAll("#recommendationTable .recommendation-row");
-
-        rows.forEach(row => {
-            const category = row.getAttribute("data-category");
-            const title = row.querySelector(".recommendation-title").textContent.toLowerCase();
-            
-            const matchesTextFilter = title.includes(textFilterValue);
-            const matchesCategoryFilter = categoryFilterValue === "all" || category === categoryFilterValue;
-
-            row.style.display = matchesTextFilter && matchesCategoryFilter ? "" : "none";
-        });
+    const selectedMaturityOption = formContext.getAttribute(attributeNames.MATURITY_OPTIONS).getValue();
+    const raCodesControl = formContext.getControl(attributeNames.RA_CODE);
+    
+    const isAfflAcctIRA = accountDetails.AFFILIATE_ACCOUNT_TYPE === "IRA";
+    const isCertAcctIRA = accountDetails.ACCOUNT_TYPE === "IR";
+    
+    // Clear and set visibility of RA codes dropdown
+    if (raCodesControl) {
+        raCodesControl.clearOptions();
+        raCodesControl.setVisible(isCertAcctIRA);
     }
 
-    // Apply filters when category changes
-    document.getElementById("categoryFilter").addEventListener("change", applyFilters);
+    // Set RA code requirement based on specific balance check
+    if (selectedMaturityOption === optionSetValues.SPECIFIC_BALANCE) {
+        const specificBalCheck = accountDetails.SPECIFIC_BAL_CHECK;
+        const newOption = specificBalCheck === "Add" ? optionSetValues.ADD_TO_CERT : optionSetValues.WITHDRAW_FROM_CERT;
+        formContext.getAttribute(attributeNames.RA_CODE).setRequiredLevel(specificBalCheck === "Withdraw" ? "required" : "none");
+        formContext.getAttribute(attributeNames.MATURITY_OPTIONS).setValue(newOption);
+    }
 
-    // Apply filters when text filter button is clicked
-    document.getElementById("doFilterBtn").addEventListener("click", applyFilters);
+    // Handle manual review for Amount Withdraw
+    if (selectedMaturityOption === optionSetValues.WITHDRAW_FROM_CERT && !isAfflAcctIRA && isCertAcctIRA) {
+        formContext.getAttribute(attributeNames.MANUAL_REVIEW)?.setValue(true);
+    }
 
-    // Clear filters
-    document.getElementById("clearFilterBtn").addEventListener("click", function() {
-        document.getElementById("filterInput").value = "";
-        document.getElementById("categoryFilter").value = "all";
-        applyFilters();
+    // Prepare and add RA codes
+    addRACodes(isAfflAcctIRA, isCertAcctIRA, accountDetails.PLAN_SEQUENCE_NO, selectedMaturityOption, raCodesControl);
+}
+
+function addRACodes(isAfflAcctIRA, isCertAcctIRA, planSequenceNumber, selectedMaturityOption, raCodesControl) {
+    const RACodes = getRACodes(isAfflAcctIRA, isCertAcctIRA, planSequenceNumber, selectedMaturityOption);
+    RACodes.forEach(code => {
+        raCodesControl?.addOption({
+            text: code.name,
+            value: code.value
+        });
     });
+}
 
-    // Function to update the description textbox and hidden dropdown based on radio button selection
-    function updateSelection() {
-        const selectedRadio = document.querySelector('input[name="selectedRecommendation"]:checked');
-        const descriptionBox = document.getElementById("descriptionText");
-        const dropdown = document.getElementById("recommendationDropdown");
+function getRACodes(isAfflAcctIRA, isCertAcctIRA, planSequenceNumber, selectedMaturityOption) {
+    const optionSetValues = CONSTANTS.OPTION_SET_VALUES;
+    const IRA_PLAN_TYPES = ["IRA", "RTH", "SEP"];
+    const RTH_PLAN_TYPE = "RTH";
+    const EDN_PLAN_TYPE = "EDN";
+    const result = [];
 
-        // Ensure description box is visible
-        descriptionBox.style.display = "block";
-
-        // Clear previous description and dropdown option
-        descriptionBox.value = "";
-        dropdown.innerHTML = "";
-
-        if (selectedRadio) {
-            const recommendationId = selectedRadio.value;
-            const recommendationTitle = selectedRadio.getAttribute("data-recommendation-title");
-            const recommendationDescription = selectedRadio.getAttribute("data-recommendation-description");
-
-            // Update description textbox
-            descriptionBox.value = recommendationDescription;
-
-            // Add selected recommendation to hidden dropdown for form submission
-            const dropdownOption = document.createElement("option");
-            dropdownOption.value = recommendationId;
-            dropdownOption.textContent = recommendationTitle;
-            dropdownOption.selected = true;
-            dropdown.appendChild(dropdownOption);
+    if (selectedMaturityOption === optionSetValues.ADD_TO_CERT || selectedMaturityOption === optionSetValues.WITHDRAW_FROM_CERT) {
+        if (IRA_PLAN_TYPES.includes(planSequenceNumber)) {
+            if (selectedMaturityOption === optionSetValues.ADD_TO_CERT) {
+                result.push({ name: "84 - Internal In Transfer", value: 582860012 },
+                            { name: "57 - Contribution", value: 582860010 },
+                            { name: "52 - Rollover", value: 582860009 },
+                            { name: "80 - Direct Transfer", value: 582860011 });
+            } else {
+                result.push({ name: "34 - Internal Out", value: 582860006 },
+                            { name: "01 - Premature Withdrawal", value: 582860000 },
+                            { name: "07 - Normal Withdrawal", value: 582860001 },
+                            { name: "30 - Direct Transfer Out", value: 582860005 });
+            }
+        }
+        if (planSequenceNumber === EDN_PLAN_TYPE) {
+            if (isAfflAcctIRA) {
+                result.push(selectedMaturityOption === optionSetValues.ADD_TO_CERT ?
+                            { name: "98 - Internal In Transfer", value: 582860014 } :
+                            { name: "48 - Internal Out", value: 582860008 });
+            } else {
+                result.push({ name: selectedMaturityOption === optionSetValues.ADD_TO_CERT ? "91 - Contribution" : "41 - Education Distribution", value: selectedMaturityOption === optionSetValues.ADD_TO_CERT ? 582860013 : 582860007 });
+            }
+        } else if (planSequenceNumber === RTH_PLAN_TYPE) {
+            result.push(...[
+                { name: "34 - Internal Out", value: 582860006 },
+                { name: "14 - Roth Qualified", value: 582860002 },
+                { name: "18 - Roth Premature", value: 582860003 },
+                { name: "28 - Roth Exception", value: 582860004 },
+                { name: "30 - Direct Transfer Out", value: 582860005 }
+            ]);
         }
     }
 
-    // Add change event listener to radio buttons after they are rendered
-    document.addEventListener("DOMContentLoaded", function() {
-        document.querySelectorAll('input[name="selectedRecommendation"]').forEach(radio => {
-            radio.addEventListener("change", updateSelection);
-        });
-    });
-
-    // Save selected recommendation
-    document.getElementById("btn_saveRecommendation").addEventListener("click", function() {
-        const selectedRadio = document.querySelector('input[name="selectedRecommendation"]:checked');
-
-        // Check if any radio button is selected
-        if (!selectedRadio) {
-            alert("Please select a recommendation before saving.");
-            return; // Do nothing if no selection
-        }
-
-        // Retrieve selected recommendation data
-        const selectedOptions = Array.from(document.getElementById("recommendationDropdown").options)
-            .filter(option => option.selected)
-            .map(option => ({ id: option.value, title: option.textContent }));
-
-        console.log("Selected Recommendation for form submission:", selectedOptions);
-    });
-</script>
+    return result;
+}
