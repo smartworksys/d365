@@ -1,87 +1,23 @@
-function initializeRAOptions(executionContext) {
-    const formContext = executionContext.getFormContext();
-    const accountDetails = CONSTANTS.ACCOUNT_DETAILS;
-    const attributeNames = CONSTANTS.ATTRIBUTE_NAMES;
-    const optionSetValues = CONSTANTS.OPTION_SET_VALUES;
-
-    const selectedMaturityOption = formContext.getAttribute(attributeNames.MATURITY_OPTIONS).getValue();
-    const raCodesControl = formContext.getControl(attributeNames.RA_CODE);
-    
-    const isAfflAcctIRA = accountDetails.AFFILIATE_ACCOUNT_TYPE === "IRA";
-    const isCertAcctIRA = accountDetails.ACCOUNT_TYPE === "IR";
-    
-    // Clear and set visibility of RA codes dropdown
-    if (raCodesControl) {
-        raCodesControl.clearOptions();
-        raCodesControl.setVisible(isCertAcctIRA);
-    }
-
-    // Set RA code requirement based on specific balance check
-    if (selectedMaturityOption === optionSetValues.SPECIFIC_BALANCE) {
-        const specificBalCheck = accountDetails.SPECIFIC_BAL_CHECK;
-        const newOption = specificBalCheck === "Add" ? optionSetValues.ADD_TO_CERT : optionSetValues.WITHDRAW_FROM_CERT;
-        formContext.getAttribute(attributeNames.RA_CODE).setRequiredLevel(specificBalCheck === "Withdraw" ? "required" : "none");
-        formContext.getAttribute(attributeNames.MATURITY_OPTIONS).setValue(newOption);
-    }
-
-    // Handle manual review for Amount Withdraw
-    if (selectedMaturityOption === optionSetValues.WITHDRAW_FROM_CERT && !isAfflAcctIRA && isCertAcctIRA) {
-        formContext.getAttribute(attributeNames.MANUAL_REVIEW)?.setValue(true);
-    }
-
-    // Prepare and add RA codes
-    addRACodes(isAfflAcctIRA, isCertAcctIRA, accountDetails.PLAN_SEQUENCE_NO, selectedMaturityOption, raCodesControl);
-}
-
-function addRACodes(isAfflAcctIRA, isCertAcctIRA, planSequenceNumber, selectedMaturityOption, raCodesControl) {
-    const RACodes = getRACodes(isAfflAcctIRA, isCertAcctIRA, planSequenceNumber, selectedMaturityOption);
-    RACodes.forEach(code => {
-        raCodesControl?.addOption({
-            text: code.name,
-            value: code.value
-        });
-    });
-}
-
-function getRACodes(isAfflAcctIRA, isCertAcctIRA, planSequenceNumber, selectedMaturityOption) {
-    const optionSetValues = CONSTANTS.OPTION_SET_VALUES;
-    const IRA_PLAN_TYPES = ["IRA", "RTH", "SEP"];
-    const RTH_PLAN_TYPE = "RTH";
-    const EDN_PLAN_TYPE = "EDN";
-    const result = [];
-
-    if (selectedMaturityOption === optionSetValues.ADD_TO_CERT || selectedMaturityOption === optionSetValues.WITHDRAW_FROM_CERT) {
-        if (IRA_PLAN_TYPES.includes(planSequenceNumber)) {
-            if (selectedMaturityOption === optionSetValues.ADD_TO_CERT) {
-                result.push({ name: "84 - Internal In Transfer", value: 582860012 },
-                            { name: "57 - Contribution", value: 582860010 },
-                            { name: "52 - Rollover", value: 582860009 },
-                            { name: "80 - Direct Transfer", value: 582860011 });
-            } else {
-                result.push({ name: "34 - Internal Out", value: 582860006 },
-                            { name: "01 - Premature Withdrawal", value: 582860000 },
-                            { name: "07 - Normal Withdrawal", value: 582860001 },
-                            { name: "30 - Direct Transfer Out", value: 582860005 });
-            }
-        }
-        if (planSequenceNumber === EDN_PLAN_TYPE) {
-            if (isAfflAcctIRA) {
-                result.push(selectedMaturityOption === optionSetValues.ADD_TO_CERT ?
-                            { name: "98 - Internal In Transfer", value: 582860014 } :
-                            { name: "48 - Internal Out", value: 582860008 });
-            } else {
-                result.push({ name: selectedMaturityOption === optionSetValues.ADD_TO_CERT ? "91 - Contribution" : "41 - Education Distribution", value: selectedMaturityOption === optionSetValues.ADD_TO_CERT ? 582860013 : 582860007 });
-            }
-        } else if (planSequenceNumber === RTH_PLAN_TYPE) {
-            result.push(...[
-                { name: "34 - Internal Out", value: 582860006 },
-                { name: "14 - Roth Qualified", value: 582860002 },
-                { name: "18 - Roth Premature", value: 582860003 },
-                { name: "28 - Roth Exception", value: 582860004 },
-                { name: "30 - Direct Transfer Out", value: 582860005 }
-            ]);
-        }
-    }
-
-    return result;
-}
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="callFlowResponse">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Messages">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="Message" maxOccurs="unbounded">
+                <xs:complexType>
+                  <xs:sequence>
+                    <xs:element name="Severity" type="xs:string"/>
+                    <xs:element name="Content" type="xs:string"/>
+                  </xs:sequence>
+                </xs:complexType>
+              </xs:element>
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="Page" type="xs:string"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
