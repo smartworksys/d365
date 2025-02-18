@@ -1,23 +1,25 @@
-<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-  <xs:element name="callFlowResponse">
-    <xs:complexType>
-      <xs:sequence>
-        <xs:element name="Messages">
-          <xs:complexType>
-            <xs:sequence>
-              <xs:element name="Message" maxOccurs="unbounded">
-                <xs:complexType>
-                  <xs:sequence>
-                    <xs:element name="Severity" type="xs:string"/>
-                    <xs:element name="Content" type="xs:string"/>
-                  </xs:sequence>
-                </xs:complexType>
-              </xs:element>
-            </xs:sequence>
-          </xs:complexType>
-        </xs:element>
-        <xs:element name="Page" type="xs:string"/>
-      </xs:sequence>
-    </xs:complexType>
-  </xs:element>
-</xs:schema>
+"Update_a_row": {
+    "type": "ApiConnection",
+    "inputs": {
+        "host": {
+            "connection": {
+                "referenceName": "con-crm-ing"
+            }
+        },
+        "method": "patch",
+        "body": {
+            "kofc_awdinstance": "@{variables('AWD')}"
+        },
+        "headers": {
+            "prefer": "return=representation,odata.include-annotations=*",
+            "accept": "application/json;odata.metadata=full",
+            "organization": "@{parameters('CRMendpointUrl')}"
+        },
+        "path": "/api/data/v9.1/kofc_policyrequests(@{encodeURIComponent(triggerBody()?['kofc_policyrequestid'])})"
+    },
+    "runAfter": {
+        "For_each": [
+            "SUCCEEDED"
+        ]
+    }
+}
