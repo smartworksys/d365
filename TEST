@@ -1,25 +1,38 @@
 import csv
 
 def is_long_number(s, threshold=11):
+    # Check if the string contains only digits and meets the length threshold.
     return s.isdigit() and len(s) >= threshold
 
 input_file = 'input.csv'
 output_file = 'output.csv'
+target_column_name = 'electric_account_number'
 
-target_column_index = 1  # Change this to the index of the column you want to update (0-indexed)
-
+# Read all rows from the CSV file.
 with open(input_file, newline='') as csvfile_in:
     reader = csv.reader(csvfile_in)
     rows = list(reader)
 
+# Find the index for the target column in the header row.
+if rows:
+    header = rows[0]
+    try:
+        target_index = header.index(target_column_name)
+    except ValueError:
+        raise ValueError(f"Column '{target_column_name}' not found in CSV header.")
+else:
+    raise ValueError("The CSV file is empty.")
+
+# Process the rows (skipping the header) for the specific column.
+for row in rows[1:]:
+    # Ensure the row has enough columns.
+    if len(row) > target_index:
+        cell = row[target_index]
+        if is_long_number(cell):
+            # Wrap the long number so that Excel/SharePoint treats it as text.
+            row[target_index] = f'="{cell}"'
+
+# Write the modified rows to the output CSV file.
 with open(output_file, 'w', newline='') as csvfile_out:
     writer = csv.writer(csvfile_out)
-    for row in rows:
-        # Check if the row has the target column.
-        if len(row) > target_column_index:
-            cell = row[target_column_index]
-            if is_long_number(cell):
-                # Wrap the long number to force Excel/SharePoint to treat it as text.
-                row[target_column_index] = f'="{cell}"'
-        writer.writerow(row)
-
+    writer.writerows(rows)
