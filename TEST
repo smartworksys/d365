@@ -1,1 +1,25 @@
+import csv
+
+def is_long_number(s, threshold=11):
+    return s.isdigit() and len(s) >= threshold
+
+input_file = 'input.csv'
+output_file = 'output.csv'
+
+target_column_index = 1  # Change this to the index of the column you want to update (0-indexed)
+
+with open(input_file, newline='') as csvfile_in:
+    reader = csv.reader(csvfile_in)
+    rows = list(reader)
+
+with open(output_file, 'w', newline='') as csvfile_out:
+    writer = csv.writer(csvfile_out)
+    for row in rows:
+        # Check if the row has the target column.
+        if len(row) > target_column_index:
+            cell = row[target_column_index]
+            if is_long_number(cell):
+                # Wrap the long number to force Excel/SharePoint to treat it as text.
+                row[target_column_index] = f'="{cell}"'
+        writer.writerow(row)
 
