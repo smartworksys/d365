@@ -1,17 +1,78 @@
-import pandas as pd
+## Configure Environment
 
-def convert_to_text_and_save(input_file, output_file):
-    # Read the CSV file. Assume no specific data types to begin with.
-    df = pd.read_csv(input_file)
-    
-    # Convert all columns to string type
-    for column in df.columns:
-        df[column] = df[column].astype(str)
-    
-    # Write the DataFrame with all text fields to a new CSV file
-    df.to_csv(output_file, index=False)
+1. **Set the environment parameter**  
+   *(e.g., test, uat, or prod).*
 
-# Example usage
-input_file = 'IQ_Schedule_20250218.csv'
-output_file = 'converted_text.csv'
-convert_to_text_and_save(input_file, output_file)
+2. **Ensure your Azure Key Vault holds the necessary secrets**  
+   Make sure the secrets (e.g., API credentials, endpoints) are stored and accessible.
+
+## Set Deployment Flags
+
+- **Adjust** `deploy_app_connections` and `deploy_logicapp_workflows` as needed.
+
+## Run the Pipeline
+
+1. **Trigger the Azure DevOps pipeline**  
+   Run it manually or integrate it with your CI/CD process.
+
+2. **Monitor Deployment**  
+   Check the Azure Portal and pipeline logs for status and any issues.
+
+---
+
+## Testing and Troubleshooting
+
+### Testing
+
+- Modify or create an incident record in Dynamics CRM to trigger the Logic App.  
+- Verify successful runs and outputs in the Logic App run history within the Azure Portal.
+
+### Troubleshooting
+
+- **Inspect Logic App logs** and run history for errors.  
+- **Ensure** that API connections and Key Vault configurations are correct.  
+- **Review** Azure DevOps pipeline logs for any deployment issues.
+
+---
+
+## Release History
+
+### Version 1.0.0 – Initial Release
+- **Release Date:** YYYY-MM-DD
+- **Features:**
+  - Initial implementation of the Logic App workflow.
+  - Integration with Dynamics CRM for processing policy requests.
+  - AWD API calls for instance creation and record updates.
+  - Automated deployment pipeline using Azure DevOps.
+- **Notes:**  
+  This version provides the essential functionalities including data retrieval, processing, and record updates.
+
+### Version 1.0.1 – Bug Fix Release
+- **Release Date:** YYYY-MM-DD
+- **Fixes:**
+  - Corrected issues with API credential retrieval from Azure Key Vault.
+  - Resolved intermittent failures in AWD API calls.
+  - Improved error logging to facilitate better troubleshooting.
+- **Notes:**  
+  Focused on enhancing the stability and reliability of the workflow.
+
+### Version 1.1.0 – Enhancement Release
+- **Release Date:** YYYY-MM-DD
+- **Enhancements:**
+  - Added support for additional policy request types.
+  - Enhanced validation and error handling during CRM record updates.
+  - Optimized data processing for improved performance.
+- **Notes:**  
+  This release expands the workflow capabilities and optimizes overall performance.
+
+---
+
+## Additional Notes
+
+This document serves as a comprehensive guide to understanding and deploying the Azure Logic App workflow. Further customization may be needed based on project-specific requirements.
+
+---
+
+## License
+
+[Specify your license here]
