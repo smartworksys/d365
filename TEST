@@ -1,3 +1,75 @@
+# Azure Logic App Workflow & Deployment Process
+
+## Table of Contents
+- [Introduction](#introduction)
+- [Project Architecture](#project-architecture)
+- [Workflow Overview](#workflow-overview)
+- [Deployment Pipeline](#deployment-pipeline)
+- [Prerequisites](#prerequisites)
+- [Setup and Execution](#setup-and-execution)
+- [Testing and Troubleshooting](#testing-and-troubleshooting)
+- [Release History](#release-history)
+- [Additional Notes](#additional-notes)
+- [License](#license)
+
+## Introduction
+This repository contains an Azure Logic App workflow that integrates with Dynamics CRM to process policy requests and update AWD records. An Azure DevOps pipeline automates the deployment of both the Logic App connections and the workflow.
+
+## Project Architecture
+- **Trigger:** Activated via a webhook when an incident record is modified (filtered by `kofc_policyrequestssaved`).
+- **Data Retrieval:** Uses FetchXML queries to obtain case and policy request details from Dynamics CRM.
+- **Processing:** Leverages Select, Compose, and Foreach actions to transform and filter data by request type.
+- **API Integration:** Sends HTTP requests with XML payloads to AWD APIs and parses JSON responses for AWD instance IDs.
+- **Record Update:** Updates CRM records with the returned AWD instance IDs using PATCH operations.
+- **Security:** API credentials and endpoints are securely managed via Azure Key Vault.
+
+## Workflow Overview
+- **Data Fetching:**  
+  Retrieves incident details (e.g., case and ticket numbers) and policy requests for various request types.
+- **Data Processing:**  
+  Combines, filters, and prepares data for external API calls.
+- **AWD API Calls:**  
+  Creates instances via AWD APIs and extracts the AWD instance ID from responses.
+- **CRM Record Updates:**  
+  Uses the AWD instance IDs to update CRM records.
+
+## Deployment Pipeline
+The Azure DevOps pipeline consists of these stages:
+
+1. **Deploy CRM Connections:**  
+   - Retrieves secrets from Azure Key Vault.
+   - Deploys connection resources via an ARM template.
+
+2. **Build Artifacts:**  
+   - Copies Logic App workflow files.
+   - Archives files into a zip package and publishes them as artifacts.
+
+3. **Deploy Logic App Workflows:**  
+   - Downloads artifacts.
+   - Deploys the workflow using an Azure Function App task configured for Logic Apps.
+
+**Key Pipeline Parameters:**
+- `environment`: Sets the deployment environment (e.g., test, uat, prod).
+- `deploy_app_connections`: Boolean flag to deploy Logic App connection resources.
+- `deploy_logicapp_workflows`: Boolean flag to deploy the Logic App workflow.
+
+**Environment Variables:**
+- Managed in separate YAML files (e.g., `pipeline-vars-test.yml`).
+- API credentials and URLs are securely retrieved from Azure Key Vault.
+
+## Prerequisites
+- Active Azure subscription with proper permissions.
+- Configured Azure Key Vault with required secrets (API credentials, endpoints).
+- Correct Dynamics CRM API connection settings.
+- Access to the ARM templates and Logic App workflow files.
+
+## Setup and Execution
+
+1. **Clone the Repository:**
+   ```bash
+   git clone <repository-url>
+
+
 ## Configure Environment
 
 1. **Set the environment parameter**  
