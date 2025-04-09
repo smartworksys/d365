@@ -1,1 +1,199 @@
+# CRM → Ingenium Integration Logic App Workflow
+
+## Table of Contents
+1. [Introduction](#introduction)
+2. [High‑Level Architecture](#high-level-architecture)
+3. [Prerequisites](#prerequisites)
+4. [Configuration](#configuration)
+   * [Key Vault Secrets](#key-vault-secrets)
+   * [Logic App Parameters](#logic-app-parameters)
+   * [Runtime Variables](#runtime-variables)
+5. [Trigger](#trigger)
+6. [Pathfinder Health‑Check](#pathfinder-health-check)
+7. [Message Processing Pipeline](#message-processing-pipeline)
+   * [Queue Polling](#queue-polling)
+   * [Routing via Switch](#routing-via-switch)
+   * [Address Update](#address-update)
+   * [Address Create](#address-create)
+   * [Contact Create](#contact-create)
+   * [Contact Update](#contact-update)
+   * [Contact Telephone Update](#contact-telephone-update)
+8. [External API Endpoints](#external-api-endpoints)
+9. [Error Handling & Retry Policy](#error-handling--retry-policy)
+10. [Deployment](#deployment)
+11. [Testing](#testing)
+12. [Monitoring & Alerting](#monitoring--alerting)
+13. [Change Log](#change-log)
+
+---
+
+## Introduction
+This stateful Azure Logic App orchestrates data synchronisation between **Microsoft Dynamics CRM** and **Ingenium**. It consumes event messages from an Azure Service Bus queue, transforms them into SOAP requests, and calls Ingenium web services to **create** or **update** client and address records. A built‑in health check guarantees that Ingenium ("Pathfinder") is online before any business transactions are attempted.
+
+---
+
+## High‑Level Architecture
+```
+┌────────────┐     Recurrence (2 min)      ┌───────────────┐
+│ Logic App  │ ─────────────────────────▶ │ Pathfinder    │
+│ (Workflow) │                             │ Ping Service  │
+└─────┬──────┘                             └──────┬────────┘
+      │ if healthy                           if LSIR‑RETURN‑CD = "00"
+      ▼
+┌──────────────────────┐  dequeue batch  ┌──────────────────────┐
+│ Azure Service Bus    │ ───────────────▶ │ Switch ( message    │
+│ Queue (con_crm_SB_*) │                 │ label routing )     │
+└──────────────────────┘                 └─────────┬────────────┘
+                                                (cases)
+                        ┌─────────────────────────────────────────────────────────────┐
+                        │  updateAddress | createAddress | createContact | …          │
+                        │  Build SOAP ► Call HTTP ► Parse XML ► Handle Response      │
+                        └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Prerequisites
+* **Azure Subscription** with rights to deploy Logic Apps, Key Vault, and Service Bus resources.
+* **Ingenium SOAP endpoints** reachable from the Logic App’s outbound IP addresses.
+* **Key Vault secrets** containing Pathfinder credentials (see below).
+* A **Service Bus queue** pre‑populated with CRM event messages (JSON envelopes).
+
+---
+
+## Configuration
+### Key Vault Secrets
+| Secret Name | Purpose |
+|-------------|---------|
+| `mir-user-id` | Ingenium (Pathfinder) user id |
+| `mir-user-pswd-text` | Password for the above account |
+
+Both secrets are retrieved at runtime using a Key Vault connection named `con-ing-key-vault`.
+
+### Logic App Parameters
+| Parameter | Description |
+|-----------|-------------|
+| `con_crm_SB_Queue` | Name of the Service Bus queue that stores CRM integration messages |
+
+### Runtime Variables
+| Variable | Type | Description |
+|----------|------|-------------|
+| `pathfinderBodyLength` | integer | Calculated length of the Pathfinder ping SOAP body |
+| `AddressAPILength` | integer | Length of the address SOAP payload (create / update) |
+| `Contact API length` | integer | Length of the contact SOAP payload (create / update / telephone) |
+| `theBody` | string | Raw XML response from Pathfinder ping |
+| `isValid` | boolean | `true` when Pathfinder ping returns `<LSIR-RETURN-CD>00</LSIR-RETURN-CD>` |
+
+---
+
+## Trigger
+* **Type**: `Recurrence`
+* **Schedule**: Every **2 minutes** (Eastern Standard Time)
+* **Purpose**: Drive continuous polling of the Service Bus queue while ensuring the workflow is stateless between iterations.
+
+---
+
+## Pathfinder Health Check
+1. Build SOAP envelope (`Ping_Pathfinder-Body`).
+2. POST to `https://kocvmwpfndr03d.supreme.com/KofCWebserviceINT/services/KofCWebservice`.
+3. If HTTP 200 and `<LSIR-RETURN-CD>00</LSIR-RETURN-CD>` ⇒ `isValid = true`.
+4. When `isValid = false` the workflow terminates early with **Cancelled** status to avoid processing messages while Ingenium is down.
+
+---
+
+## Message Processing Pipeline
+### Queue Polling
+* Action **Get_messages_from_a_queue** fetches a batch of messages from the queue specified by `con_crm_SB_Queue`.
+* Each message is processed inside a **For each** loop.
+
+### Routing via Switch
+* The message’s `label` property determines which case branch executes:
+  * `updateAddress`
+  * `createAddress`
+  * `createContact`
+  * `updateContact`
+  * `updateContactTelephone`
+* Unknown labels fall through to the **default** branch (no‑op).
+
+---
+
+### Address Update
+1. **Parse JSON** to validate schema.
+2. **Compose** option‑set mappings (CRM → Ingenium codes).
+3. **Compose** SOAP request body.
+4. **HTTP POST** to Ingenium Address Update service (retry ×5, 20 s interval).
+5. **Parse XML → JSON** and evaluate `LSIR-RETURN-CD` / `ING-RETURN-CD`.
+6. **Queue outcome**:
+   * Success → `completeQueueMessageV2`.
+   * Business error → `abandonQueueMessageV2`.
+   * System error → `deadLetterQueueMessageV2`.
+
+### Address Create
+_Similar to Address Update but targets `CRMAddressCreate` process._
+
+### Contact Create / Update / Telephone Update
+* Each branch follows the same pattern: parse payload, map option sets, build SOAP, call Ingenium, evaluate return codes, and complete/abandon/dead‑letter the queue message accordingly.
+
+---
+
+## External API Endpoints
+| Operation | ProcessClassID | Endpoint |
+|-----------|----------------|----------|
+| Pathfinder Ping | `IngStatusCheck` | `/KofCWebservice` |
+| Address Create | `CRMAddressCreate` | `/KofCWebservice` |
+| Address Update | `CRMAddressUpdate` | `/KofCWebservice` |
+| Client Create | `CRMClientCreate` | `/KofCWebservice` |
+| Client Update | `CRMClientUpdate` | `/KofCWebservice` |
+| Client Telephone Update | `CRMClientTelephoneUpdate` | `/KofCWebservice` |
+
+_All calls share the same base URL but differ in SOAP body and expected response._
+
+---
+
+## Error Handling & Retry Policy
+* **HTTP actions** include a fixed retry policy (5 retries, 20 s) to mitigate transient network issues.
+* Ingenium business return codes are inspected:
+  * `LSIR-RETURN-CD = "00"` and `ING-RETURN-CD ∉ {03,04,05}` ⇒ **success**.
+  * Otherwise the message is **abandoned** (for re‑processing) or **dead‑lettered** (permanent failure) depending on severity.
+* The Logic App terminates with **Succeeded** status after handling each message batch, ensuring stateful checkpoints.
+
+---
+
+## Deployment
+1. **Clone** or import the workflow definition (`workflow.json`) into your Logic Apps resource.
+2. **Configure connections**:
+   * `con-ing-key-vault` – Key Vault connector authorised to read the secrets above.
+   * `con-sp-serviceBus` – Service Bus connector with Manage permissions on the target queue.
+3. **Set parameters** (`con_crm_SB_Queue`, recurrence start time, etc.).
+4. **Save** and **Run** the Logic App. Use the Overview blade to verify successful executions.
+
+> **Tip**: For repeatable deployments, wrap the definition in an ARM/Bicep template or deploy through an Azure DevOps pipeline.
+
+---
+
+## Testing
+* Inject sample messages into the Service Bus queue using **Service Bus Explorer**.
+* Force‑run the Logic App and observe run history.
+* Validate that Ingenium receives the correct SOAP requests and that queue messages transition to **Completed**.
+
+---
+
+## Monitoring & Alerting
+* Enable **Diagnostics Logs** to route run‑time metrics to Log Analytics.
+* Create Azure Monitor **alerts** for:
+  * Run failures.
+  * Excessive dead‑letter or abandoned messages.
+  * Pathfinder health check failures.
+
+---
+
+## Change Log
+| Date | Version | Notes |
+|------|---------|-------|
+| 2025‑03‑13 | 1.0 | Initial implementation (recurrence trigger every 2 min) |
+
+---
+
+© 2025 Knights of Columbus – Internal Use Only
+
 
