@@ -1,22 +1,20 @@
-function disableIframeControls(executionContext) {
+function disableSpecificControlInIframe(executionContext) {
     var formContext = executionContext.getFormContext();
 
-    // Get the iframe control (replace 'IFRAME_customhtml' with your iframe's name)
-    var iframeControl = formContext.getControl("IFRAME_customhtml");
+    var iframeControl = formContext.getControl("IFRAME_customhtml"); // Replace with your iframe name
 
     if (!iframeControl) return;
 
-    // Wait for iframe to fully load before accessing DOM
     var iframe = iframeControl.getObject();
 
     iframe.onload = function () {
         var iframeDocument = iframe.contentWindow.document;
 
-        // Disable all inputs, selects, and buttons inside the iframe
-        var elements = iframeDocument.querySelectorAll("input, select, button, textarea");
+        // Get the element by ID
+        var input = iframeDocument.getElementById("mySpecialInput");
 
-        elements.forEach(function (el) {
-            el.disabled = true;
-        });
+        if (input) {
+            input.disabled = true;
+        }
     };
 }
