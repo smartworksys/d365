@@ -1,1 +1,73 @@
+function onAffiliateAccountNumberChange(executionContext) {
+    var formContext = executionContext.getFormContext();
+
+    // 1) pull ALL your form values up front
+    var affiliateAccountNumber = formContext
+      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER)
+      .getValue();
+    var certAccountNumber = formContext
+      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER)
+      .getValue();
+    var accNumber = formContext
+      .getAttribute("nf1pbm_accessnumberint")
+      .getValue();
+
+    // 2) make sure you actually grab your account type!
+    var accountType = formContext
+      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE)
+      .getValue();
+
+    // 3) call your promise-returning function
+    getMaturityInstructions(
+      executionContext,
+      accNumber,
+      accountType,            // pass it cleanly—no extra braces
+      certAccountNumber,
+      affiliateAccountNumber
+    )
+    .then(function(instructions) {
+        console.log("Maturity Instructions:", instructions);
+
+        // 4) now do the rest of your logic inside here:
+        if (affiliateAccountNumber && affiliateAccountNumber !== "--Select--") {
+            apiaccountsData.forEach(function(item) {
+                if (affiliateAccountNumber === item.accountNumber) {
+                    var affiliateBalance = parseFloat(item.availableBalance);
+                    formContext
+                      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
+                      .setValue(affiliateBalance);
+
+                    CONSTANTS.ACCOUNT_DETAILS.AFFILIATE_ACCOUNT_TYPE = item.accountType;
+
+                    // make sure your helper name here matches exactly
+                    if (item.subType === "IR" || item.subType === "EDN") {
+                        setAffiliateAccountTypeOptionSetValue(
+                          formContext,
+                          item.iraPlanSequenceNumber
+                        );
+                    } else {
+                        setAffiliateAccountTypeOptionSetValue(
+                          formContext,
+                          item.subType
+                        );
+                    }
+                }
+            });
+        } else {
+            formContext
+              .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
+              .setValue(null);
+        }
+
+        // 5) finally, fire off your dependent routines
+        amountChange(executionContext);
+        initializeRAOptions(executionContext);
+        initializeMaturityOptions(executionContext);
+        enableDisableAmount(executionContext);
+
+    })
+    .catch(function(err) {
+        console.error("Error fetching maturity instructions:", err);
+    });
+}
 
