@@ -1,63 +1,27 @@
-async function getMaturityInstructions(executionContext, accessNumber, accountTypeId, accountNumber, affiliateAccountNumber) {
-    const formContext = executionContext.getFormContext();
-    const fetchXml = `
-      <fetch version="1.0" output-format="xml-platform" mapping="logical">
-        <entity name="${CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS}">
-          <attribute name="nf1pbm_maturityinstructionsid" />
-          <attribute name="nf1pbm_name" />                          <!-- fetch the title -->
-          <filter type="and">
-            <condition attribute="nf1pbm_accessnumberint" operator="eq" value="${accessNumber}" />
-            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE}" operator="eq" value="${accountTypeId}" />
-            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER}" operator="eq" value="${accountNumber}" />
-            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER}" operator="eq" value="${affiliateAccountNumber}" />
-            <condition attribute="nf1pbm_instructionstatus" operator="not-in">
-              <value>582860001</value>
-              <value>582860000</value>
-              <value>582860003</value>
-            </condition>
-          </filter>
-        </entity>
-      </fetch>`;
+action: {
+  actionLabel: `View ${recordTitle}`,
+  eventHandler: function () {
+    // 1) suppress unsaved-changes dialog
+    formContext.data.entity.attributes.get().forEach(attr => attr.setSubmitMode("never"));
 
-    const response = await Xrm.WebApi.retrieveMultipleRecords(
-      CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
-      `?fetchXml=${encodeURIComponent(fetchXml)}`
-    );
+    // 2) clear the banner
+    Xrm.App.clearGlobalNotification(duplicateNotifId)
+      .then(() => console.log("Cleared duplicate warning"))
+      .catch(err => console.error(err));
 
-    if (response.entities.length > 0) {
-        const record       = response.entities[0];
-        const recordId     = record.nf1pbm_maturityinstructionsid;
-        const recordTitle  = record.nf1pbm_name;                   
+    // 3) hide Save buttons via your ribbon-flag
+    formContext.getAttribute("new_hideSaveButtons").setValue(true);
+    formContext.getAttribute("new_hideSaveButtons").fireOnChange();
+    formContext.ui.refreshRibbon();
 
-        makeFormReadOnly(executionContext);
-
-        let duplicateNotifId;
-        Xrm.App.addGlobalNotification({                       // :contentReference[oaicite:0]{index=0}
-            type:            2,
-            level:           2,
-            message:         formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, recordTitle),
-            showCloseButton: true,
-            action: {
-                actionLabel: `View ${recordTitle}`,
-                eventHandler: function () {
-                    formContext.data.entity.attributes.get().forEach(attr => attr.setSubmitMode("never"));
-                    Xrm.Navigation.openForm({               // :contentReference[oaicite:1]{index=1}
-                        entityName: CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
-                        entityId:   recordId
-                    }).then(function () {
-                        Xrm.App.clearGlobalNotification(duplicateNotifId);  // :contentReference[oaicite:2]{index=2}
-                        window.location.reload();
-                    });
-                }
-            }
-        }).then(function (notifId) {
-            duplicateNotifId = notifId;
-        }).catch(function (err) {
-            console.error("Notification error:", err);
-        });
-
-        return [];
-    }
-
-    return response.entities;
+    // 4) navigate to the existing record
+    Xrm.Navigation.openForm({
+      entityName: CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
+      entityId:   recordGuid
+    }).then(function () {
+      window.location.reload();
+    }).catch(function (err) {
+      console.error("openForm error", err);
+    });
+  }
 }
