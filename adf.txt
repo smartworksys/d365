@@ -1,39 +1,38 @@
 if (result.entities.length > 0) {
-    const existingId = result.entities[0].nf1pbm_maturityinstructionid;
-    const message = formatString(
-      CONSTANTS.MESSAGES.DUPLICATE_RECORD,
-      existingId
-    );
+    // 1) Grab the right GUID
+    const record    = result.entities[0];
+    const recordId  = record.nf1pbm_maturityinstructionsid;
 
-    // 1) define the “View” action
+    // 2) Build your View action
     const viewAction = {
-      actionLabel: "View",                                // button text
+      actionLabel: "View",
       eventHandler: function () {
-        // 2) open the existing record in the main form
-        Xrm.Navigation.openForm({
+        const options = {
           entityName: CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
-          entityId: existingId
-        });
+          entityId:   recordId
+        };
+        Xrm.Navigation.openForm(options)
+          .then(function () {
+            console.log("Form opened for ID:", recordId);
+          })
+          .catch(function (err) {
+            console.error("openForm failed:", err);
+          });
       }
     };
 
-    // 3) build and show the global notification
-    const notification = {
-      type: 2,                   // app‐level notification bar :contentReference[oaicite:0]{index=0}
-      level: 2,                  // error severity :contentReference[oaicite:1]{index=1}
-      message: message,
+    // 3) Show the global notification
+    Xrm.App.addGlobalNotification({
+      type:            2,              // app-level banner :contentReference[oaicite:0]{index=0}
+      level:           2,              // error severity :contentReference[oaicite:1]{index=1}
+      message:         formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, recordId),
       showCloseButton: true,
-      action: viewAction
-    };
-    Xrm.App.addGlobalNotification(notification).then(
-      function (notifId) {
-        console.log("Notification displayed (ID): " + notifId);
-      },
-      function (err) {
-        console.error("Failed to show notification:", err);
-      }
+      action:          viewAction
+    }).then(
+      function (notifId) { console.log("Notification ID:", notifId); },
+      function (err)     { console.error("Notification error:", err); }
     );
 
     makeFormReadOnly(executionContext);
-    return [];
+    return []; // stop further processing
 }
