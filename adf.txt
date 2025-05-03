@@ -1,40 +1,28 @@
 if (result.entities.length > 0) {
-    const record = result.entities[0];
-    const recordId = record.nf1pbm_maturityinstructionsid;
-
-    const viewAction = {
+    const record      = result.entities[0];
+    const recordId    = record.nf1pbm_maturityinstructionsid;
+    const viewAction  = {
         actionLabel: "View",
         eventHandler: function () {
-            Xrm.Utility.getEntityFormUrl(
-                CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
-                recordId
-            )
-            .then(function (url) {
-                window.open(url, "_blank");
-            })
-            .catch(function (err) {
-                console.error(err);
-            });
+            Xrm.Navigation.openForm({
+                entityName: CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
+                entityId:   recordId
+            }).then(
+                function () { console.log("Opened record", recordId); },
+                function (err) { console.error("openForm error", err); }
+            );
         }
     };
-
     Xrm.App.addGlobalNotification({
-        type: 2,
-        level: 2,
-        message: formatString(
-            CONSTANTS.MESSAGES.DUPLICATE_RECORD,
-            recordId
-        ),
+        type:            2,
+        level:           2,
+        message:         formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, recordId),
         showCloseButton: true,
-        action: viewAction
-    })
-    .then(function (notifId) {
-        console.log(notifId);
-    })
-    .catch(function (err) {
-        console.error(err);
-    });
-
+        action:          viewAction
+    }).then(
+        function (notifId) { console.log("Notification ID:", notifId); },
+        function (err)     { console.error("Notification error:", err); }
+    );
     makeFormReadOnly(executionContext);
     return [];
 }
