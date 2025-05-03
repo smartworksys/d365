@@ -1,43 +1,36 @@
-// declare this outside so both promises can close over it
 let duplicateNotifId;
+const formContext = executionContext.getFormContext();
 
 if (result.entities.length > 0) {
-    const record   = result.entities[0];
-    const recordId = record.nf1pbm_maturityinstructionsid;
+    const record      = result.entities[0];
+    const recordGuid  = record.nf1pbm_maturityinstructionsid;
+    const recordTitle = record.nf1pbm_maturityinstructionid;
 
-    // schedule the notification and capture its ID
     Xrm.App.addGlobalNotification({
         type:            2,
         level:           2,
-        message:         formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, recordId),
+        message:         formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, recordTitle),
         showCloseButton: true,
         action: {
-            actionLabel: "View",
+            actionLabel: `View ${recordTitle}`,
             eventHandler: function () {
+                formContext.data.entity.attributes.get().forEach(attr => attr.setSubmitMode("never"));
                 Xrm.Navigation.openForm({
                     entityName: CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
-                    entityId:   recordId
-                }).then(
-                    function () {
-                        // remove the banner
-                        Xrm.App.clearGlobalNotification(duplicateNotifId);
-                        // reload the page so nothing persists
-                        window.location.reload();
-                    },
-                    function (err) {
-                        console.error("openForm error", err);
-                    }
-                );
+                    entityId:   recordGuid
+                }).then(function () {
+                    Xrm.App.clearGlobalNotification(duplicateNotifId);
+                    window.location.reload();
+                }).catch(function (err) {
+                    console.error(err);
+                });
             }
         }
-    }).then(
-        function (notifId) {
-            duplicateNotifId = notifId;
-        },
-        function (err) {
-            console.error("Failed to show notification", err);
-        }
-    );
+    }).then(function (notifId) {
+        duplicateNotifId = notifId;
+    }).catch(function (err) {
+        console.error(err);
+    });
 
     makeFormReadOnly(executionContext);
     return [];
