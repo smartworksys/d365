@@ -1,7 +1,5 @@
 function onAffiliateAccountNumberChange(executionContext) {
     var formContext = executionContext.getFormContext();
-
-    // 1) pull ALL your form values up front
     var affiliateAccountNumber = formContext
       .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER)
       .getValue();
@@ -11,63 +9,58 @@ function onAffiliateAccountNumberChange(executionContext) {
     var accNumber = formContext
       .getAttribute("nf1pbm_accessnumberint")
       .getValue();
-
-    // 2) make sure you actually grab your account type!
     var accountType = formContext
       .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE)
       .getValue();
 
-    // 3) call your promise-returning function
-    getMaturityInstructions(
-      executionContext,
-      accNumber,
-      accountType,            // pass it cleanly—no extra braces
-      certAccountNumber,
-      affiliateAccountNumber
-    )
-    .then(function(instructions) {
+    // IIFE so we can use await inside
+    (async function() {
+      try {
+        const instructions = await getMaturityInstructions(
+          executionContext,
+          accNumber,
+          accountType,
+          certAccountNumber,
+          affiliateAccountNumber
+        );
         console.log("Maturity Instructions:", instructions);
 
-        // 4) now do the rest of your logic inside here:
         if (affiliateAccountNumber && affiliateAccountNumber !== "--Select--") {
-            apiaccountsData.forEach(function(item) {
-                if (affiliateAccountNumber === item.accountNumber) {
-                    var affiliateBalance = parseFloat(item.availableBalance);
-                    formContext
-                      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
-                      .setValue(affiliateBalance);
-
-                    CONSTANTS.ACCOUNT_DETAILS.AFFILIATE_ACCOUNT_TYPE = item.accountType;
-
-                    // make sure your helper name here matches exactly
-                    if (item.subType === "IR" || item.subType === "EDN") {
-                        setAffiliateAccountTypeOptionSetValue(
-                          formContext,
-                          item.iraPlanSequenceNumber
-                        );
-                    } else {
-                        setAffiliateAccountTypeOptionSetValue(
-                          formContext,
-                          item.subType
-                        );
-                    }
-                }
-            });
+          apiaccountsData.forEach(function(item) {
+            if (affiliateAccountNumber === item.accountNumber) {
+              var affiliateBalance = parseFloat(item.availableBalance);
+              formContext
+                .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
+                .setValue(affiliateBalance);
+              CONSTANTS.ACCOUNT_DETAILS.AFFILIATE_ACCOUNT_TYPE = item.accountType;
+              // fix typo in helper name
+              if (item.subType === "IR" || item.subType === "EDN") {
+                setAffiliateAccountTypeOptionSetValue(
+                  formContext,
+                  item.iraPlanSequenceNumber
+                );
+              } else {
+                setAffiliateAccountTypeOptionSetValue(
+                  formContext,
+                  item.subType
+                );
+              }
+            }
+          });
         } else {
-            formContext
-              .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
-              .setValue(null);
+          formContext
+            .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
+            .setValue(null);
         }
 
-        // 5) finally, fire off your dependent routines
+        // then call the dependents
         amountChange(executionContext);
         initializeRAOptions(executionContext);
         initializeMaturityOptions(executionContext);
         enableDisableAmount(executionContext);
 
-    })
-    .catch(function(err) {
+      } catch (err) {
         console.error("Error fetching maturity instructions:", err);
-    });
+      }
+    })();  // <-- invoke it
 }
-
