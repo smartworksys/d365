@@ -1,20 +1,127 @@
-Logical Architecture Considerations
-Self-Hosted Integration Runtime (SHIR) with Private Endpoint: SHIR is utilized for secure data movement and transformation, with a private endpoint ensuring data privacy and isolation.
+// 1) Make sure this is declared async in your library:
+async function getMaturityInstructions(executionContext, accessNumber, accountTypeId, accountNumber, affiliateAccountNumber) {
+    const fetchXml = `
+      <fetch version="1.0" output-format="xml-platform" mapping="logical" distinct="false">
+        <entity name="${CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS}">
+          <attribute name="nf1pbm_maturityinstructionsid" />
+          <attribute name="nf1pbm_maturityinstructionid" />
+          <attribute name="createdon" />
+          <order attribute="nf1pbm_maturityinstructionid" descending="false" />
+          <filter type="and">
+            <condition attribute="nf1pbm_accessnumberint" operator="eq" value="${accessNumber}" />
+            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE}" operator="eq"
+                       uiname="Share Certificate" uitype="nf1pbm_certificateaccounttype"
+                       value="${accountTypeId}" />
+            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER}"
+                       operator="eq" value="${accountNumber}" />
+            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER}"
+                       operator="eq" value="${affiliateAccountNumber}" />
+            <condition attribute="nf1pbm_instructionstatus" operator="not-in">
+              <value>582860001</value>
+              <value>582860000</value>
+              <value>582860003</value>
+            </condition>
+          </filter>
+        </entity>
+      </fetch>`;
 
-Azure Integration Runtime (AIR) for SQL Server: Azure Integration Runtime is employed to establish a secure and efficient connection between the on-premises SQL Server and Dataverse, ensuring data synchronization and integration.
+    try {
+        const result = await Xrm.WebApi.retrieveMultipleRecords(
+          CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
+          `?fetchXml=${encodeURIComponent(fetchXml)}`
+        );
 
-Express Route/Private Peering: Express Route establishes a private and dedicated network connection between the on-premises network and Azure, enhancing security and network performance.
+        if (result.entities.length > 0) {
+            const existingRecordId = result.entities[0].nf1pbm_maturityinstructionid;
+            const message = formatString(
+              CONSTANTS.MESSAGES.DUPLICATE_RECORD,
+              existingRecordId
+            );
+            showFormNotification(executionContext, message, "ERROR", "duplicateRecordError");
+            makeFormReadOnly(executionContext);
+            return []; // return an empty array so downstream logic can still run
+        }
 
-Azure Virtual Network VM with SHIR: An Azure Virtual Network hosts a Virtual Machine (VM) running SHIR, providing a secure network environment for data integration.
-
-Secure Data Transmission: Data is transmitted securely using HTTPS over TLS 1.2, ensuring the confidentiality and integrity of data in transit.
-
-Azure Key Vault Integration: Azure Key Vault is integrated for secure credential management, safeguarding client credentials used during data migration and integration.
-
-These architectural considerations, including the inclusion of Azure Integration Runtime for SQL Server to Dataverse integration, create a robust and secure application architecture for the SQL on-premises database migration to Azure Blob Storage and Dataverse.
-
-
-
+        console.log("Maturity instructions retrieved successfully:", result.entities);
+        return result.entities;
+    }
+    catch (error) {
+        console.error("Error retrieving maturity instructions:", error.message);
+        throw error;
+    }
+}
 
 
-This application architecture document outlines the design of an application responsible for migrating an SQL on-premises database to Azure Blob Storage and Dataverse. The architecture incorporates several critical elements to ensure data security, privacy, and reliability throughout the migration process:
+// 2) Your OnChange handler:
+function onAffiliateAccountNumberChange(executionContext) {
+    const formContext = executionContext.getFormContext();
+
+    // — pull all your form values before the async call —
+    const affiliateAccountNumber = formContext
+      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER)
+      .getValue();
+    const certAccountNumber = formContext
+      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER)
+      .getValue();
+    const accNumber = formContext
+      .getAttribute("nf1pbm_accessnumberint")
+      .getValue();
+    const accountTypeId = formContext
+      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE)
+      .getValue();  // <— you need this!
+
+    // — now wrap in an IIFE so you can await —
+    (async () => {
+      try {
+        // 3) await your async call
+        const instructions = await getMaturityInstructions(
+          executionContext,
+          accNumber,
+          accountTypeId,
+          certAccountNumber,
+          affiliateAccountNumber
+        );
+        console.log("Maturity Instructions:", instructions);
+
+        // 4) proceed with your affiliate-balance logic
+        if (affiliateAccountNumber && affiliateAccountNumber !== "--Select--") {
+          apiaccountsData.forEach(item => {
+            if (affiliateAccountNumber === item.accountNumber) {
+              formContext
+                .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
+                .setValue(parseFloat(item.availableBalance));
+              CONSTANTS.ACCOUNT_DETAILS.AFFILIATE_ACCOUNT_TYPE = item.accountType;
+
+              // make sure this helper name matches exactly:
+              if (item.subType === "IR" || item.subType === "EDN") {
+                setAffiliateAccountTypeOptionSetValue(
+                  formContext,
+                  item.iraPlanSequenceNumber
+                );
+              } else {
+                setAffiliateAccountTypeOptionSetValue(
+                  formContext,
+                  item.subType
+                );
+              }
+            }
+          });
+        } else {
+          formContext
+            .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
+            .setValue(null);
+        }
+
+        // 5) fire your dependent routines
+        amountChange(executionContext);
+        initializeRAOptions(executionContext);
+        initializeMaturityOptions(executionContext);
+        enableDisableAmount(executionContext);
+      }
+      catch (err) {
+        console.error("Error in onAffiliateAccountNumberChange:", err);
+      }
+    })();
+}
+
+
