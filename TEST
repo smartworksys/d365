@@ -1,66 +1,55 @@
-function onAffiliateAccountNumberChange(executionContext) {
-    var formContext = executionContext.getFormContext();
-    var affiliateAccountNumber = formContext
-      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_ACCOUNT_NUMBER)
-      .getValue();
-    var certAccountNumber = formContext
-      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER)
-      .getValue();
-    var accNumber = formContext
-      .getAttribute("nf1pbm_accessnumberint")
-      .getValue();
-    var accountType = formContext
-      .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE)
-      .getValue();
+async function GetSecurityRoles() {
+    // 1. Retrieve role IDs from environment variables
+    const supervisorRoleId = await getEnvironmentVariable("nf1pbm_VarEnvPBMBACKOFFICESUPERVISORSecurityRoleID");
+    const specialistRoleId = await getEnvironmentVariable("nf1pbm_VarEnvPBMBackOfficeSpecialistSecurityRoleID");
+    const adminRoleId = await getEnvironmentVariable("nf1pbm_VarEnvPBMAdminSecurityRoleID");
 
-    // IIFE so we can use await inside
-    (async function() {
-      try {
-        const instructions = await getMaturityInstructions(
-          executionContext,
-          accNumber,
-          accountType,
-          certAccountNumber,
-          affiliateAccountNumber
+    // 2. Store in constants
+    CONSTANTS.SECURITY_ROLES.PBM_Backoffice_Supervisor = supervisorRoleId;
+    CONSTANTS.SECURITY_ROLES.PBM_Backoffice_Specialist = specialistRoleId;
+    CONSTANTS.SECURITY_ROLES.PBM_ADMIN = adminRoleId;
+
+    console.log("PBM Supervisor Role:", supervisorRoleId);
+    console.log("PBM Specialist Role:", specialistRoleId);
+    console.log("PBM Admin Role:", adminRoleId);
+
+    // 3. Check if user has any of these roles
+    const roleIdsToCheck = [
+        supervisorRoleId,
+        specialistRoleId,
+        adminRoleId
+    ];
+
+    const userHasRole = await userHasAnyRoleByIds(roleIdsToCheck);
+    return userHasRole; // true or false
+}
+
+async function userHasAnyRoleByIds(roleIdsToCheck) {
+    const userId = Xrm.Utility.getGlobalContext().userSettings.userId.replace(/[{}]/g, "");
+
+    try {
+        const result = await Xrm.WebApi.retrieveMultipleRecords(
+            "systemuserrolescollection",
+            `?$filter=systemuserid eq ${userId}&$expand=roleid($select=roleid)`
         );
-        console.log("Maturity Instructions:", instructions);
 
-        if (affiliateAccountNumber && affiliateAccountNumber !== "--Select--") {
-          apiaccountsData.forEach(function(item) {
-            if (affiliateAccountNumber === item.accountNumber) {
-              var affiliateBalance = parseFloat(item.availableBalance);
-              formContext
-                .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
-                .setValue(affiliateBalance);
-              CONSTANTS.ACCOUNT_DETAILS.AFFILIATE_ACCOUNT_TYPE = item.accountType;
-              // fix typo in helper name
-              if (item.subType === "IR" || item.subType === "EDN") {
-                setAffiliateAccountTypeOptionSetValue(
-                  formContext,
-                  item.iraPlanSequenceNumber
-                );
-              } else {
-                setAffiliateAccountTypeOptionSetValue(
-                  formContext,
-                  item.subType
-                );
-              }
-            }
-          });
-        } else {
-          formContext
-            .getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)
-            .setValue(null);
-        }
+        const userRoleIds = result.entities.map(e => e.roleid.roleid.toLowerCase());
+        return roleIdsToCheck.some(roleId => userRoleIds.includes(roleId.toLowerCase()));
 
-        // then call the dependents
-        amountChange(executionContext);
-        initializeRAOptions(executionContext);
-        initializeMaturityOptions(executionContext);
-        enableDisableAmount(executionContext);
+    } catch (error) {
+        console.error("Error retrieving user roles:", error.message);
+        return false;
+    }
+}
 
-      } catch (err) {
-        console.error("Error fetching maturity instructions:", err);
-      }
-    })();  // <-- invoke it
+async function onFormLoad(executionContext) {
+    const hasPBMRole = await GetSecurityRoles();
+
+    if (hasPBMRole) {
+        console.log("✔️ User has PBM role access");
+        // formContext.getControl("admin_section").setVisible(true);
+    } else {
+        console.log("🚫 User does NOT have PBM role access");
+        // formContext.getControl("admin_section").setVisible(false);
+    }
 }
