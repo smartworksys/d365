@@ -1,55 +1,5 @@
-async function GetSecurityRoles() {
-    // 1. Retrieve role IDs from environment variables
-    const supervisorRoleId = await getEnvironmentVariable("nf1pbm_VarEnvPBMBACKOFFICESUPERVISORSecurityRoleID");
-    const specialistRoleId = await getEnvironmentVariable("nf1pbm_VarEnvPBMBackOfficeSpecialistSecurityRoleID");
-    const adminRoleId = await getEnvironmentVariable("nf1pbm_VarEnvPBMAdminSecurityRoleID");
-
-    // 2. Store in constants
-    CONSTANTS.SECURITY_ROLES.PBM_Backoffice_Supervisor = supervisorRoleId;
-    CONSTANTS.SECURITY_ROLES.PBM_Backoffice_Specialist = specialistRoleId;
-    CONSTANTS.SECURITY_ROLES.PBM_ADMIN = adminRoleId;
-
-    console.log("PBM Supervisor Role:", supervisorRoleId);
-    console.log("PBM Specialist Role:", specialistRoleId);
-    console.log("PBM Admin Role:", adminRoleId);
-
-    // 3. Check if user has any of these roles
-    const roleIdsToCheck = [
-        supervisorRoleId,
-        specialistRoleId,
-        adminRoleId
-    ];
-
-    const userHasRole = await userHasAnyRoleByIds(roleIdsToCheck);
-    return userHasRole; // true or false
-}
-
-async function userHasAnyRoleByIds(roleIdsToCheck) {
-    const userId = Xrm.Utility.getGlobalContext().userSettings.userId.replace(/[{}]/g, "");
-
-    try {
-        const result = await Xrm.WebApi.retrieveMultipleRecords(
-            "systemuserrolescollection",
-            `?$filter=systemuserid eq ${userId}&$expand=roleid($select=roleid)`
-        );
-
-        const userRoleIds = result.entities.map(e => e.roleid.roleid.toLowerCase());
-        return roleIdsToCheck.some(roleId => userRoleIds.includes(roleId.toLowerCase()));
-
-    } catch (error) {
-        console.error("Error retrieving user roles:", error.message);
-        return false;
-    }
-}
-
-async function onFormLoad(executionContext) {
-    const hasPBMRole = await GetSecurityRoles();
-
-    if (hasPBMRole) {
-        console.log("✔️ User has PBM role access");
-        // formContext.getControl("admin_section").setVisible(true);
-    } else {
-        console.log("🚫 User does NOT have PBM role access");
-        // formContext.getControl("admin_section").setVisible(false);
+if (ISoptionSetValue !== CONSTANTS.OPTION_SET_VALUES.PENDING) {
+    if (!(ISoptionSetValue === CONSTANTS.OPTION_SET_VALUES.EXCEPTION && hasPBMRole)) {
+        makeFormReadOnly(executionContext);
     }
 }
