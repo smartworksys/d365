@@ -1,5 +1,14 @@
-if (ISoptionSetValue !== CONSTANTS.OPTION_SET_VALUES.PENDING) {
-    if (!(ISoptionSetValue === CONSTANTS.OPTION_SET_VALUES.EXCEPTION && hasPBMRole)) {
-        makeFormReadOnly(executionContext);
+function clearChoiceField(executionContext, fieldName) {
+    var formContext = executionContext.getFormContext();
+
+    var attribute = formContext.getAttribute(fieldName);
+    if (attribute) {
+        attribute.setValue(null);
+        console.log(`Cleared value for field: ${fieldName}`);
+    } else {
+        console.warn(`Field '${fieldName}' not found on the form.`);
     }
 }
+
+
+clearChoiceField(executionContext, "nf1pbm_paymentmethod");
