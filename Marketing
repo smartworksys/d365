@@ -1,20 +1,44 @@
-function disableSpecificControlInIframe(executionContext) {
+/**
+ * Standalone function to handle manual review logic.
+ * @param {Xrm.ExecutionContext<any, any>} executionContext
+ */
+function handleManualReview(executionContext) {
     var formContext = executionContext.getFormContext();
 
-    var iframeControl = formContext.getControl("IFRAME_customhtml"); // Replace with your iframe name
+    // Plan sequence flags for cert and affiliate IRAs
+    var acctDetails = CONSTANTS.ACCOUNT_DETAILS;
+    var validPlans = ["IRA", "RTH", "SEP", "EDN"];
+    var isCertAcctIRA = validPlans.includes(acctDetails.PLAN_SEQUENCE_NO);
+    var isAfflAcctIRA = validPlans.includes(acctDetails.AFFILIATE_ACCOUNT_PLAN_TYPE);
 
-    if (!iframeControl) return;
+    // Monetary Transaction Type
+    var monTypeAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MONETARY_TRAN_TYPE);
+    var monType = monTypeAttr ? monTypeAttr.getValue() : null;
 
-    var iframe = iframeControl.getObject();
+    // Manual Review attributes & control
+    var manualBoolAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW_BOOL);
+    var manualPickAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW);
+    var manualControl = formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.MANUAL_REVIEW);
 
-    iframe.onload = function () {
-        var iframeDocument = iframe.contentWindow.document;
+    // Reset flags & enable control by default
+    if (manualBoolAttr) manualBoolAttr.setValue(false);
+    if (manualPickAttr) manualPickAttr.setValue(null);
+    if (manualControl) manualControl.setDisabled(false);
 
-        // Get the element by ID
-        var input = iframeDocument.getElementById("mySpecialInput");
-
-        if (input) {
-            input.disabled = true;
+    // Withdraw (D or L) for cert IRA without affiliate IRA
+    if ((monType === "D" || monType === "L") && !isAfflAcctIRA && isCertAcctIRA) {
+        if (manualBoolAttr) manualBoolAttr.setValue(true);
+        if (manualPickAttr) manualPickAttr.setValue("Y");
+        if (manualControl) manualControl.setDisabled(true);
+    }
+    // Credit (C) & Contribution Year = "B" for cert IRA without affiliate IRA
+    else if (monType === "C" && !isAfflAcctIRA && isCertAcctIRA) {
+        var contribAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.CONTRIBUTION_YEAR);
+        var contrib = contribAttr ? contribAttr.getValue() : null;
+        if (contrib === "B") {
+            if (manualBoolAttr) manualBoolAttr.setValue(true);
+            if (manualPickAttr) manualPickAttr.setValue("Y");
+            if (manualControl) manualControl.setDisabled(true);
         }
-    };
+    }
 }
