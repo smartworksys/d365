@@ -13,19 +13,29 @@
             font-size: 14px;
         }
 
-        .form-group {
+        .ira-row {
             display: flex;
-            flex-direction: column;
+            align-items: center;
+            gap: 8px;
             width: 100%;
-            padding: 0;
+            box-sizing: border-box;
         }
 
-        label.labelPBMcls {
+        .ira-label {
+            width: 140px; /* Match Dynamics label width */
             font-weight: 600;
-            margin-bottom: 4px;
         }
 
-        select.selectPBMcls {
+        .ira-required {
+            color: #a80000;
+            margin-left: 4px;
+        }
+
+        .ira-select-wrapper {
+            flex: 1;
+        }
+
+        select.ira-select {
             height: 32px;
             width: 100%;
             border: 1px solid #ccc;
@@ -34,52 +44,18 @@
             font-size: 14px;
             box-sizing: border-box;
         }
-
-        #dvallstates {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            justify-content: flex-start;
-        }
-
-        .required-icon {
-            color: #a80000;
-            font-size: 16px;
-            margin-left: 4px;
-        }
     </style>
 </head>
 <body>
-    <div class="form-group" id="dvallstates" style="display:none;">
-        <label id="lbldrpAllStates" for="drpAllStates" class="labelPBMcls" title="Select a State">
-            IRA <span class="required-icon" aria-hidden="true">*</span>
+    <div class="ira-row">
+        <label for="drpAllStates" class="ira-label" title="Select a State">
+            IRA <span class="ira-required" aria-hidden="true">*</span>
         </label>
-        <select id="drpAllStates" class="selectPBMcls" title="Select a State" onchange="sendStateValue()">
-            <!-- Options will be loaded dynamically -->
-        </select>
+        <div class="ira-select-wrapper">
+            <select id="drpAllStates" class="ira-select" title="Select a State" onchange="sendStateValue()">
+                <!-- Options will be dynamically loaded here -->
+            </select>
+        </div>
     </div>
 </body>
 </html>
-
-
-window.onload = function () {
-    const dropdown = document.getElementById("drpAllStates");
-    if (dropdown) {
-        dropdown.style.height = "32px";
-        dropdown.style.lineHeight = "32px";
-        dropdown.style.marginTop = "0";
-
-        // Adjust iframe height to fit nicely
-        resizeIframe();
-    }
-};
-
-function resizeIframe() {
-    if (window.parent) {
-        const iframe = window.frameElement;
-        if (iframe) {
-            iframe.style.height = "70px"; // Match typical field height + margin
-            iframe.style.width = "100%";
-        }
-    }
-}
