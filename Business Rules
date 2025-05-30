@@ -1,147 +1,51 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <title>IRA Dropdown</title>
-  <link rel="stylesheet" type="text/css" href="/WebResources/nf1pbm_MaturityInstructions/CSS/CommonStyle.css" />
-  <script type="text/javascript" src="/WebResources/nf1pbm_MaturityInstructions/JS/AllStatesDropdown.js" defer></script>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      font-size: 14px;
-      color: #323130;
-    }
+✅ Goal 1: Learn New Skill
+Category: Learn New Skills
+Goal Description:
 
-    .ira-row {
-      display: flex;
-      align-items: center;
-      width: 100%;
-      box-sizing: border-box;
-      min-height: 36px;
-      margin-bottom: 0; /* no spacing below the control */
-      padding-bottom: 0;
-    }
+Enhance my technical skill set by deepening knowledge in Azure Logic Apps development, HTTP-triggered Azure Function Apps, and Dynamics 365 customizations.
 
-    .ira-label {
-      width: 160px; /* match Dynamics label column */
-      font-weight: 400;
-      line-height: 36px;
-      white-space: nowrap;
-    }
+Attend advanced training and hands-on labs focusing on creating resilient and scalable Logic Apps integrated with Service Bus, Key Vault, and third-party APIs.
 
-    .ira-required {
-      color: #a80000;
-      margin-left: 2px;
-      font-size: 14px;
-      vertical-align: middle;
-    }
+Gain deeper experience in developing Function Apps to support backend services and exposing them securely via HTTP triggers.
 
-    .ira-select-wrapper {
-      flex-grow: 1;
-      display: flex;
-      align-items: center;
-    }
+Learn advanced Power Automate patterns and best practices for automating enterprise workflows.
 
-    select.ira-select {
-      height: 36px;
-      width: 100%;
-      border: 1px solid #8a8886;
-      border-radius: 2px;
-      padding: 0 8px;
-      font-size: 14px;
-      font-family: inherit;
-      box-sizing: border-box;
-      background-color: white;
-      appearance: none;
-    }
+Strengthen capabilities in web resources development (JavaScript, HTML, CSS) for enhanced UI in Model-Driven Apps.
 
-    select.ira-select:focus {
-      outline: 2px solid #0078d4;
-    }
-  </style>
-</head>
-<body>
-  <div class="ira-row">
-    <label for="drpAllStates" class="ira-label" title="Select a State">
-      IRA<span class="ira-required" aria-hidden="true">*</span>
-    </label>
-    <div class="ira-select-wrapper">
-      <select id="drpAllStates" class="ira-select" title="Select a State" onchange="sendStateValue()">
-        <!-- Options will be populated dynamically -->
-      </select>
-    </div>
-  </div>
-</body>
-</html>
+The goal is to apply these new skills to improve production stability, simplify integrations, and enhance user experience in Dynamics 365.
 
+✅ Goal 2: Improve a Product or Process
+Category: Improve a Product or Process
+Goal Description:
 
-var formContext;
-var statesData = [];
+Improve technical delivery and maintainability of Dynamics 365 integrations and customization processes by:
 
-// Populate dropdown from state data
-function populateStatesDropdown(data, accountsubtype) {
-    const dropdown = document.getElementById("drpAllStates");
-    if (!dropdown) {
-        console.error("Dropdown not found");
-        return;
-    }
+Standardizing Azure DevOps Pipelines to automate Logic App deployments across DEV, TEST, and UAT environments with environment-specific service connections.
 
-    dropdown.innerHTML = '';
+Enhancing security posture by auditing and refining access to Azure Key Vault and Service Principals across Logic Apps and Functions.
 
-    const defaultOption = document.createElement("option");
-    defaultOption.text = "--Select--";
-    defaultOption.value = "";
-    dropdown.add(defaultOption);
+Refactoring existing Logic Apps for better modularity and introducing error-handling/retry strategies.
 
-    if (Array.isArray(data)) {
-        // Optional: sort by name
-        data.sort((a, b) => a.stateName.localeCompare(b.stateName));
+Improving custom Dynamics 365 forms by optimizing business rules, form logic, and conditional field visibility.
 
-        data.forEach(state => {
-            const option = document.createElement("option");
-            option.value = state.stateCode;
-            option.text = state.stateName || state.stateCode;
-            dropdown.add(option);
-        });
-    } else {
-        console.warn("State data is invalid or empty:", data);
-    }
-}
+Increasing coordination across cross-functional teams to address support issues quickly and escalate only when necessary.
 
-// Receive data from parent form
-function receiveStatesDataFromParent(context) {
-    formContext = context.formContext;
-    var selectedData = context.data;
-    var accountsubtype = context.accountsubtype;
+These improvements will drive operational efficiency and ensure smoother production support and change delivery cycles.
 
-    window._formContextPBM = formContext;
+✅ Goal 3: Improve our Production Support Delivery
+Category: Engage Our Customers
+Goal Description:
 
-    setTimeout(() => {
-        populateStatesDropdown(selectedData, accountsubtype);
-    }, 50); // delay to ensure DOM is ready
-}
+Strengthen Dynamics 365 production support delivery to reduce incident frequency and improve customer satisfaction, especially during peak periods like fiscal year-end.
 
-// Adjust iframe height to remove bottom space
-function resizeIframe() {
-    if (window.parent) {
-        const iframe = window.frameElement;
-        if (iframe) {
-            iframe.style.height = "40px"; // reduced height
-            iframe.style.width = "100%";
-            iframe.style.paddingBottom = "0";
-            iframe.style.marginBottom = "0";
-        }
-    }
-}
+Implement robust Logic App monitoring and diagnostics, and improve logging to proactively catch and resolve failures.
 
-window.onload = function () {
-    const dropdown = document.getElementById("drpAllStates");
-    if (dropdown) {
-        dropdown.style.height = "36px";
-        dropdown.style.marginTop = "0";
-        resizeIframe();
-    }
-};
+Build custom Function Apps for processing external requests and improving turnaround time for automation scenarios.
 
+Collaborate with QA and developers to ensure test coverage includes newly written web resources and integrations.
+
+Lead communication and coordination within the team and across departments to address support tickets efficiently.
+
+Utilize Power Automate to streamline manual tasks and error-handling scenarios in production support workflows.
+
+This goal aims to improve delivery reliability, reduce resolution time, and enhance the user experience through technical and process-driven improvements.
