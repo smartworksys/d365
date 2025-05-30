@@ -20,10 +20,12 @@
       width: 100%;
       box-sizing: border-box;
       min-height: 36px;
+      margin-bottom: 0; /* no spacing below the control */
+      padding-bottom: 0;
     }
 
     .ira-label {
-      width: 160px; /* slightly wider like Dynamics */
+      width: 160px; /* match Dynamics label column */
       font-weight: 400;
       line-height: 36px;
       white-space: nowrap;
@@ -57,7 +59,6 @@
 
     select.ira-select:focus {
       outline: 2px solid #0078d4;
-      outline-offset: 0;
     }
   </style>
 </head>
@@ -74,3 +75,73 @@
   </div>
 </body>
 </html>
+
+
+var formContext;
+var statesData = [];
+
+// Populate dropdown from state data
+function populateStatesDropdown(data, accountsubtype) {
+    const dropdown = document.getElementById("drpAllStates");
+    if (!dropdown) {
+        console.error("Dropdown not found");
+        return;
+    }
+
+    dropdown.innerHTML = '';
+
+    const defaultOption = document.createElement("option");
+    defaultOption.text = "--Select--";
+    defaultOption.value = "";
+    dropdown.add(defaultOption);
+
+    if (Array.isArray(data)) {
+        // Optional: sort by name
+        data.sort((a, b) => a.stateName.localeCompare(b.stateName));
+
+        data.forEach(state => {
+            const option = document.createElement("option");
+            option.value = state.stateCode;
+            option.text = state.stateName || state.stateCode;
+            dropdown.add(option);
+        });
+    } else {
+        console.warn("State data is invalid or empty:", data);
+    }
+}
+
+// Receive data from parent form
+function receiveStatesDataFromParent(context) {
+    formContext = context.formContext;
+    var selectedData = context.data;
+    var accountsubtype = context.accountsubtype;
+
+    window._formContextPBM = formContext;
+
+    setTimeout(() => {
+        populateStatesDropdown(selectedData, accountsubtype);
+    }, 50); // delay to ensure DOM is ready
+}
+
+// Adjust iframe height to remove bottom space
+function resizeIframe() {
+    if (window.parent) {
+        const iframe = window.frameElement;
+        if (iframe) {
+            iframe.style.height = "40px"; // reduced height
+            iframe.style.width = "100%";
+            iframe.style.paddingBottom = "0";
+            iframe.style.marginBottom = "0";
+        }
+    }
+}
+
+window.onload = function () {
+    const dropdown = document.getElementById("drpAllStates");
+    if (dropdown) {
+        dropdown.style.height = "36px";
+        dropdown.style.marginTop = "0";
+        resizeIframe();
+    }
+};
+
