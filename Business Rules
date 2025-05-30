@@ -1,51 +1,53 @@
-What is Business Rules and why it has been introduced in CRM?
-Business Rules in Dynamics 365 CRM are a way to apply logic in the form to enforce business logic without writing JavaScript or custom server-side code. They were introduced to empower non-developers to configure forms and enforce business logic, making the system more adaptable and reducing the need for technical resources for common tasks.
+// Auto-adjust dropdown styling for alignment with D365 controls
+document.addEventListener("DOMContentLoaded", function () {
+    const dropdown = document.getElementById("drpAllStates");
+    if (dropdown) {
+        dropdown.style.height = "32px";
+        dropdown.style.lineHeight = "32px";
+        dropdown.style.marginTop = "0";
+    }
+});
 
-What is the Scope of Business Rules?
-The scope of Business Rules can be set to a specific entity or can be global. If set to a specific entity, the rule will only apply to that entity. If set globally, it applies to all instances of the entity across the application.
+<style>
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 14px;
+    }
 
-Does Business Rules work for Record Creation or Save?
-Yes, Business Rules trigger on both record creation and record saving events in the form.
+    .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        width: 100%;
+    }
 
-Does Business Rules work during Bulk Import and Bulk Edit?
-No, Business Rules do not trigger during bulk import or bulk edit operations as they are designed to work only within the form environment.
+    label.labelPBMcls {
+        font-weight: 600;
+        margin-bottom: 2px;
+    }
 
-Does Business Rules work when plugin record updates, workflow record updates, etc.?
-No, Business Rules only work within the context of form events and do not trigger due to backend operations like plugin or workflow updates.
+    select.selectPBMcls {
+        height: 32px;
+        width: 100%;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        padding: 0 8px;
+        box-sizing: border-box;
+        font-size: 14px;
+    }
 
-Which run first: JavaScript or Business Rules if both are performing action on the same field?
-Business Rules run before JavaScript. This order helps ensure that any system-level validations or defaults set by Business Rules are applied before JavaScript potentially modifies them.
+    #dvallstates {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-start;
+    }
 
-When do business rules run with respect to JavaScript?
-Business Rules run before any custom JavaScript that is executed on the form.
-
-What is the execution order of System JavaScript (source code by Microsoft), Your Custom JavaScript, and Business Rules?
-System JavaScript typically runs first, followed by Business Rules, and then any custom JavaScript.
-
-When a business rule is used to set or change a field value, does JavaScript OnChange event handler get triggered?
-Yes, if a Business Rule changes a field value, it can trigger the JavaScript OnChange event for that field if an event handler is registered.
-
-Do Business Rules work when a record is being created from an external web application?
-No, Business Rules only execute within the Dynamics 365 form interface. They do not apply to data modifications made through external applications unless those applications specifically use the form or API that triggers form-like behaviors.
-
-How to Fire a Business Rule after a field is updated using JavaScript?
-You can trigger a Business Rule programmatically by setting the field value using JavaScript, which in turn activates any Business Rules associated with that field if they are set to run when the field value changes.
-
-Is there any Order to run Business Rules on a Particular field or Entity? How does it work and How to configure the same?
-Business Rules on a specific field run based on the order they are activated in the system. You can control the order by activating or deactivating Business Rules. However, precise control over the sequence of execution within a set of active rules is limited.
-
-How can Section and Tab be Hide/Show using Business Rules?
-Business Rules can be used to set visibility for sections and tabs based on certain conditions. This is configured directly within the Business Rule editor by setting conditions and then actions to hide or show sections or tabs.
-
-What are the limitations of Business Rules?
-Limitations include their non-executability in server-side processes, inability to handle complex logic that goes beyond simple conditional statements, and no support for custom code execution.
-
-Maximum number of if/else statements allowed in Business Rules?
-As of the latest updates, Business Rules allow up to 10 nested if/else conditions. This limitation helps ensure performance and maintainability.
-
-Can we enable the Business Rules on Lookup Fields?
-Yes, Business Rules can be applied to lookup fields, allowing for conditions based on the value selected in a lookup field.
-
-CRM 365, Developer complaining, business rules are not working. What could be the reasons for that?
-Possible reasons could include scope misconfiguration (not set correctly to the entity or form where needed), conditions in the rules not being met, conflicts with JavaScript, or issues with how fields are configured (e.g., fields not being on the form or being locked). Checking these aspects usually helps in diagnosing and resolving issues with Business Rules.
-
+    .pa-jd.pa-gv.pa-kh {
+        color: #a80000;
+        font-size: 16px;
+        margin-left: 4px;
+    }
+</style>
