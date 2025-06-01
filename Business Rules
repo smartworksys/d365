@@ -1,51 +1,49 @@
-✅ Goal 1: Learn New Skill
-Category: Learn New Skills
-Goal Description:
+function validateFedTaxPercent(executionContext) {
+    const formContext = executionContext.getFormContext();
+    const fieldName = "nf1pbm_irafedtaxpercent";
+    const value = formContext.getAttribute(fieldName).getValue();
 
-Enhance my technical skill set by deepening knowledge in Azure Logic Apps development, HTTP-triggered Azure Function Apps, and Dynamics 365 customizations.
+    if (value != null && (value < 0 || value > 100)) {
+        formContext.getControl(fieldName).setNotification("Please enter a value between 0 and 100", "fedtax_range_error");
 
-Attend advanced training and hands-on labs focusing on creating resilient and scalable Logic Apps integrated with Service Bus, Key Vault, and third-party APIs.
+        Xrm.Navigation.openAlertDialog({
+            text: "Federal Tax Percent must be between 0 and 100.",
+            title: "Invalid Input"
+        });
 
-Gain deeper experience in developing Function Apps to support backend services and exposing them securely via HTTP triggers.
+        return false;
+    } else {
+        formContext.getControl(fieldName).clearNotification("fedtax_range_error");
+        return true;
+    }
+}
 
-Learn advanced Power Automate patterns and best practices for automating enterprise workflows.
+function validateStTaxPercent(executionContext) {
+    const formContext = executionContext.getFormContext();
+    const fieldName = "nf1pbm_irasttaxpercent";
+    const value = formContext.getAttribute(fieldName).getValue();
 
-Strengthen capabilities in web resources development (JavaScript, HTML, CSS) for enhanced UI in Model-Driven Apps.
+    if (value != null && (value < 0 || value > 100)) {
+        formContext.getControl(fieldName).setNotification("Please enter a value between 0 and 100", "sttax_range_error");
 
-The goal is to apply these new skills to improve production stability, simplify integrations, and enhance user experience in Dynamics 365.
+        Xrm.Navigation.openAlertDialog({
+            text: "State Tax Percent must be between 0 and 100.",
+            title: "Invalid Input"
+        });
 
-✅ Goal 2: Improve a Product or Process
-Category: Improve a Product or Process
-Goal Description:
+        return false;
+    } else {
+        formContext.getControl(fieldName).clearNotification("sttax_range_error");
+        return true;
+    }
+}
 
-Improve technical delivery and maintainability of Dynamics 365 integrations and customization processes by:
+function onSaveValidation(executionContext) {
+    const isFedValid = validateFedTaxPercent(executionContext);
+    const isStValid = validateStTaxPercent(executionContext);
 
-Standardizing Azure DevOps Pipelines to automate Logic App deployments across DEV, TEST, and UAT environments with environment-specific service connections.
-
-Enhancing security posture by auditing and refining access to Azure Key Vault and Service Principals across Logic Apps and Functions.
-
-Refactoring existing Logic Apps for better modularity and introducing error-handling/retry strategies.
-
-Improving custom Dynamics 365 forms by optimizing business rules, form logic, and conditional field visibility.
-
-Increasing coordination across cross-functional teams to address support issues quickly and escalate only when necessary.
-
-These improvements will drive operational efficiency and ensure smoother production support and change delivery cycles.
-
-✅ Goal 3: Improve our Production Support Delivery
-Category: Engage Our Customers
-Goal Description:
-
-Strengthen Dynamics 365 production support delivery to reduce incident frequency and improve customer satisfaction, especially during peak periods like fiscal year-end.
-
-Implement robust Logic App monitoring and diagnostics, and improve logging to proactively catch and resolve failures.
-
-Build custom Function Apps for processing external requests and improving turnaround time for automation scenarios.
-
-Collaborate with QA and developers to ensure test coverage includes newly written web resources and integrations.
-
-Lead communication and coordination within the team and across departments to address support tickets efficiently.
-
-Utilize Power Automate to streamline manual tasks and error-handling scenarios in production support workflows.
-
-This goal aims to improve delivery reliability, reduce resolution time, and enhance the user experience through technical and process-driven improvements.
+    if (!isFedValid || !isStValid) {
+        const eventArgs = executionContext.getEventArgs();
+        eventArgs.preventDefault(); // Cancel the save
+    }
+}
