@@ -47,3 +47,5 @@ function onSaveValidation(executionContext) {
         eventArgs.preventDefault(); // Cancel the save
     }
 }
+
+ formContext.data.setFormDirty(false);
