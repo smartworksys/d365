@@ -49,3 +49,18 @@ function onSaveValidation(executionContext) {
 }
 
  formContext.data.setFormDirty(false);
+
+function discardChangesAndNavigate(formContext) {
+    // Set all attributes to not submit changes
+    formContext.data.entity.attributes.forEach(function (attribute) {
+        attribute.setSubmitMode("never");
+    });
+
+    // Navigate to the desired page
+    var pageInput = {
+        pageType: "entitylist",
+        entityName: formContext.data.entity.getEntityName()
+    };
+    Xrm.Navigation.navigateTo(pageInput, { target: 1 });
+}
+
