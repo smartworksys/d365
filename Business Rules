@@ -1,1 +1,6 @@
+const userId = Xrm.Utility.getGlobalContext().userSettings.userId.replace(/[{}]/g, "");
+const result = await Xrm.WebApi.retrieveMultipleRecords(
+  "systemuser",
+  `(${userId})/systemuserroles_collection?$select=roleid`
+);
 
