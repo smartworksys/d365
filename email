@@ -1,6 +1,0 @@
-const includeConnectorCode = [
-    "PRIIND", "PRIJNT", "SECJNT", "INDPOD", "PRIPOD", "SECPOD",
-    "PRISUR", "SECSUR", "INDTRS", "PRITRS", "SECTRS",
-    "INDTST", "PRITST", "SECTST", "PRICGA", "SECCGA",
-    "CUSUGM"
-];
