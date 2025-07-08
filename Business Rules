@@ -1,6 +1,16 @@
-const userId = Xrm.Utility.getGlobalContext().userSettings.userId.replace(/[{}]/g, "");
-const result = await Xrm.WebApi.retrieveMultipleRecords(
-  "systemuser",
-  `(${userId})/systemuserroles_collection?$select=roleid`
-);
+async function userHasAnyRoleByIds(roleIdsToCheck) {
+  const userId = Xrm.Utility.getGlobalContext().userSettings.userId.replace(/[{}]/g, "");
 
+  try {
+    const result = await Xrm.WebApi.retrieveMultipleRecords(
+      "systemuser",
+      `(${userId})/systemuserroles_collection?$select=roleid`
+    );
+
+    const userRoleIds = result.entities.map(e => e.roleid.toLowerCase());
+    return roleIdsToCheck.some(roleId => userRoleIds.includes(roleId.toLowerCase()));
+  } catch (error) {
+    console.error("Error retrieving user roles:", error.message);
+    return false;
+  }
+}
