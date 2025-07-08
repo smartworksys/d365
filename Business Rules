@@ -2,12 +2,14 @@ async function userHasAnyRoleByIds(roleIdsToCheck) {
   const userId = Xrm.Utility.getGlobalContext().userSettings.userId.replace(/[{}]/g, "");
 
   try {
-    const result = await Xrm.WebApi.retrieveMultipleRecords(
-      "systemuserrolescollection",
-      `?$filter=systemuserid eq ${userId}&$select=roleid`
+    const result = await Xrm.WebApi.retrieveRecord(
+      "systemuser",
+      userId,
+      "?$expand=systemuserroles_association($select=roleid)"
     );
 
-    const userRoleIds = result.entities.map(e => e.roleid.toLowerCase());
+    const userRoleIds = (result.systemuserroles_association || []).map(r => r.roleid.toLowerCase());
+
     return roleIdsToCheck.some(roleId => userRoleIds.includes(roleId.toLowerCase()));
   } catch (error) {
     console.error("Error retrieving user roles:", error.message);
