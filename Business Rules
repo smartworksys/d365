@@ -3,8 +3,8 @@ async function userHasAnyRoleByIds(roleIdsToCheck) {
 
   try {
     const result = await Xrm.WebApi.retrieveMultipleRecords(
-      "systemuser",
-      `(${userId})/systemuserroles_collection?$select=roleid`
+      "systemuserrolescollection",
+      `?$filter=systemuserid eq ${userId}&$select=roleid`
     );
 
     const userRoleIds = result.entities.map(e => e.roleid.toLowerCase());
