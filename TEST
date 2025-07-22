@@ -1,1 +1,67 @@
 
+function onRACodeChange(executionContext) {
+    const formContext = executionContext.getFormContext();
+
+    const selectedRACodeOption = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.RA_CODE)?.getValue();
+    const selectedMaturityOption = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_OPTIONS)?.getValue();
+    const iraPlanClosure = formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.IRA_Plan_Clouser);
+    const federalTaxAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.IRS_FEDERAL_TAX_PERCENTAGE);
+    const federalTaxCtrl = formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.IRS_FEDERAL_TAX_PERCENTAGE);
+    const stateTaxAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.IRS_STATE_TAX_PERCENTAGE);
+    const stateTaxCtrl = formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.IRS_STATE_TAX_PERCENTAGE);
+    const webResourceControl = formContext.getControl("WebResource_ira_all_states");
+
+    const accountsubtype = CONSTANTS.VARIABLES.ACCOUNTSUBTYPE;  // Ensure this is defined in your context
+    const instructionStatus = CONSTANTS.VARIABLES.INSTRUCTION_STATUS; // Likewise
+
+    // Hide all optional fields initially
+    iraPlanClosure?.setVisible(false);
+    federalTaxAttr?.setRequiredLevel("none");
+    federalTaxCtrl?.setVisible(false);
+    stateTaxAttr?.setRequiredLevel("none");
+    stateTaxCtrl?.setVisible(false);
+    webResourceControl?.setVisible(false);
+
+    const maturityMatches = 
+        selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT ||
+        selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.CLOSE ||
+        CONSTANTS.VARIABLES.CALCULATED_MATURITY_OPTION === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT;
+
+    const raCodeMatches = selectedRACodeOption === 582860001 || selectedRACodeOption === 582860000;
+
+    if (accountsubtype === "IR" && maturityMatches && raCodeMatches) {
+        // Show and require tax fields
+        federalTaxAttr?.setRequiredLevel("required");
+        federalTaxCtrl?.setVisible(true);
+        stateTaxAttr?.setRequiredLevel("required");
+        stateTaxCtrl?.setVisible(true);
+
+        // Show and send data to the WebResource
+        if (webResourceControl) {
+            webResourceControl.getContentWindow().then(function (window) {
+                const iraSelectedState = formContext.getAttribute("nf1pbm_irastate")?.getValue();
+                window.receiveStatesDataFromParent({
+                    formContext: formContext,
+                    data: CONSTANTS.VARIABLES.All_STATES_DATA,
+                    accountsubtype: accountsubtype,
+                    mode: CONSTANTS.VARIABLES.FARM_MODE,
+                    instructionStatus: instructionStatus,
+                    hasRole: CONSTANTS.SECURITY_ROLES.PBM_HAS_ROLE,
+                    stateSelected: iraSelectedState
+                });
+            });
+            webResourceControl.setVisible(true);
+        }
+
+        // Conditionally show IRA Plan Closure
+        const shouldShowClosure =
+            selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.CLOSE &&
+            CONSTANTS.IRA_STATE_CODES.mandPlanCls === "Y";
+        if (shouldShowClosure) {
+            iraPlanClosure?.setVisible(true);
+        }
+    }
+
+    // Always validate tax withholding
+    validateTaxWithholding(formContext);
+}
