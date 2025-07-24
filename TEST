@@ -1,1 +1,33 @@
+function isMemberFiftyNinePointFive(formContext, dateOfBirth) {
+  // 1. Parse DOB
+  const dob = typeof dateOfBirth === "string"
+    ? new Date(dateOfBirth)
+    : new Date(dateOfBirth);
+  if (isNaN(dob)) {
+    console.error("Invalid dateOfBirth:", dateOfBirth);
+    return false;
+  }
+
+  // 2. Compute threshold = DOB + 59 years + 6 months
+  const threshold = new Date(dob);
+  threshold.setFullYear(threshold.getFullYear() + 59);
+  threshold.setMonth(threshold.getMonth() + 6);
+
+  // 3. Pull the maturity date from the form
+  const matAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_DATE);
+  const matValue = matAttr ? matAttr.getValue() : null;
+  if (!matValue) {
+    console.warn("Maturity date not set on form.");
+    return false;
+  }
+
+  const maturityDate = new Date(matValue);
+  if (isNaN(maturityDate)) {
+    console.error("Invalid maturityDate on form:", matValue);
+    return false;
+  }
+
+  // 4. Return true only if maturityDate ≥ threshold (i.e., member is at least 59.5 on maturity date)
+  return maturityDate >= threshold;
+}
 
