@@ -1,1 +1,197 @@
+import os
+import json
+import csv
+import xml.etree.ElementTree as ET
+
+# ----------------------------
+# Helper Utilities
+# ----------------------------
+def flatten_json(obj):
+    if isinstance(obj, dict):
+        for v in obj.values():
+            yield from flatten_json(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            yield from flatten_json(item)
+    else:
+        yield str(obj)
+
+def matches_any(text, fields):
+    return any(f.lower() in str(text).lower() for f in fields)
+
+def get_matching_field(text, fields):
+    for f in fields:
+        if f.lower() in str(text).lower():
+            return f
+    return ""
+
+# ----------------------------
+# Parsers by Artifact Type
+# ----------------------------
+def parse_generic_json(file_path, fields, label):
+    matches = []
+    try:
+        with open(file_path, encoding='utf-8') as f:
+            data = json.load(f)
+        values = list(flatten_json(data))
+        for val in values:
+            if matches_any(val, fields):
+                matched = get_matching_field(val, fields)
+                matches.append({
+                    "Field": matched,
+                    "Type": label,
+                    "Entity": "N/A",
+                    "Context": "Referenced in structure",
+                    "File": file_path
+                })
+    except Exception as e:
+        print(f"⚠️ JSON error ({label}): {file_path} — {e}")
+    return matches
+
+def parse_code_file(file_path, fields, label):
+    matches = []
+    try:
+        with open(file_path, encoding='utf-8') as f:
+            for i, line in enumerate(f, 1):
+                if matches_any(line, fields):
+                    matched = get_matching_field(line, fields)
+                    matches.append({
+                        "Field": matched,
+                        "Type": label,
+                        "Entity": "N/A",
+                        "Context": f"Line {i}: {line.strip()[:120]}",
+                        "File": file_path
+                    })
+    except Exception as e:
+        print(f"⚠️ Code error ({label}): {file_path} — {e}")
+    return matches
+
+def parse_view_fetchxml(file_path, fields):
+    matches = []
+    try:
+        tree = ET.parse(file_path)
+        root = tree.getroot()
+        entity = root.attrib.get("name", os.path.basename(file_path))
+        for attr in root.findall(".//attribute"):
+            name = attr.attrib.get("name", "")
+            if name.lower() in map(str.lower, fields):
+                matches.append({
+                    "Field": name,
+                    "Type": "View",
+                    "Entity": entity,
+                    "Context": "Displayed column",
+                    "File": file_path
+                })
+        for cond in root.findall(".//condition"):
+            attr = cond.attrib.get("attribute", "")
+            if attr.lower() in map(str.lower, fields):
+                matches.append({
+                    "Field": attr,
+                    "Type": "View",
+                    "Entity": entity,
+                    "Context": "Filter condition",
+                    "File": file_path
+                })
+    except Exception as e:
+        print(f"⚠️ View error: {file_path} — {e}")
+    return matches
+
+def parse_form_json(file_path, fields):
+    matches = []
+    try:
+        with open(file_path, encoding='utf-8') as f:
+            data = json.load(f)
+        entity = os.path.basename(os.path.dirname(file_path))
+        for tab in data.get("formTabs", []):
+            tab_label = tab.get("label", "")
+            for section in tab.get("sections", []):
+                section_label = section.get("label", "")
+                for control in section.get("controls", []):
+                    field = control.get("dataFieldName", "")
+                    if field and field.lower() in map(str.lower, fields):
+                        matches.append({
+                            "Field": field,
+                            "Type": "Form",
+                            "Entity": entity,
+                            "Context": f"{tab_label} > {section_label}",
+                            "File": file_path
+                        })
+    except Exception as e:
+        print(f"⚠️ Form error: {file_path} — {e}")
+    return matches
+
+# ----------------------------
+# Master Scanner
+# ----------------------------
+def scan_d365_solution(root_folder, field_list):
+    results = []
+    for dirpath, _, files in os.walk(root_folder):
+        for file in files:
+            full_path = os.path.join(dirpath, file)
+            low_path = full_path.lower()
+            if file == "form.json":
+                results += parse_form_json(full_path, field_list)
+            elif file.endswith(".fetchxml"):
+                results += parse_view_fetchxml(full_path, field_list)
+            elif file.endswith(".definition.json"):
+                results += parse_generic_json(full_path, field_list, "Power Automate")
+            elif file.endswith(".workflow.json"):
+                results += parse_generic_json(full_path, field_list, "Workflow")
+            elif "businessrules" in low_path and file.endswith(".json"):
+                results += parse_generic_json(full_path, field_list, "Business Rule")
+            elif "formulas" in low_path and file.endswith(".json"):
+                results += parse_generic_json(full_path, field_list, "Formula")
+            elif "appactions" in low_path and file.endswith(".json"):
+                results += parse_generic_json(full_path, field_list, "App Action")
+            elif "duplicaterules" in low_path and file.endswith(".json"):
+                results += parse_generic_json(full_path, field_list, "Duplicate Rule")
+            elif "environmentvariabledefinitions" in low_path and file.endswith(".json"):
+                results += parse_generic_json(full_path, field_list, "Environment Variable")
+            elif file.endswith(('.js', '.ts')):
+                results += parse_code_file(full_path, field_list, "Web Resource")
+            elif file.endswith(".cs"):
+                results += parse_code_file(full_path, field_list, "Plugin Assembly")
+    return results
+
+# ----------------------------
+# Writers
+# ----------------------------
+def write_csv(results, filename="field_usage_report.csv"):
+    keys = ["Field", "Type", "Entity", "Context", "File"]
+    with open(filename, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=keys)
+        writer.writeheader()
+        writer.writerows(results)
+
+def write_markdown(results, filename="field_usage_report.md"):
+    with open(filename, "w", encoding="utf-8") as f:
+        f.write("# 📋 Dynamics 365 Field Usage Report\n\n")
+        fields = sorted(set(r["Field"] for r in results))
+        for field in fields:
+            f.write(f"## 🔎 Field: `{field}`\n\n")
+            for r in [r for r in results if r["Field"] == field]:
+                f.write(f"### [{r['Type']}] {r['Entity']}\n")
+                f.write(f"- 📁 `{r['File']}`\n")
+                f.write(f"- 🧩 **Context**: {r['Context']}\n\n")
+
+# ----------------------------
+# Configure & Run
+# ----------------------------
+if __name__ == "__main__":
+    solution_folder = "./your_solution_folder_here"  # 🔁 update
+    field_list = ["new_customfieldname", "new_contactref"]  # 🔁 add more fields
+
+    print(f"\n🔍 Scanning solution for fields: {', '.join(field_list)}\n")
+    results = scan_d365_solution(solution_folder, field_list)
+
+    if results:
+        print(f"✅ Found {len(results)} usage(s) across the solution.")
+        for r in results:
+            print(f"[{r['Type']}] {r['Field']} — {r['Context']} ➤ {r['File']}")
+        write_csv(results)
+        write_markdown(results)
+        print("\n📁 CSV saved as: field_usage_report.csv")
+        print("📝 Markdown saved as: field_usage_report.md\n")
+    else:
+        print("❌ No field usage found.")
 
