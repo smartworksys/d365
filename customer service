@@ -6,121 +6,78 @@ import xml.etree.ElementTree as ET
 # ----------------------------
 # Helper Utilities
 # ----------------------------
-def flatten_json(obj):
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            yield from flatten_json(v)
-    elif isinstance(obj, list):
-        for item in obj:
-            yield from flatten_json(item)
+def search_json(data, search_terms, path=""):
+    matches = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            full_path = f"{path}.{key}" if path else key
+            matches.extend(search_json(value, search_terms, full_path))
+    elif isinstance(data, list):
+        for index, item in enumerate(data):
+            full_path = f"{path}[{index}]"
+            matches.extend(search_json(item, search_terms, full_path))
     else:
-        yield str(obj)
-
-def matches_any(text, terms):
-    return any(term.lower() in str(text).lower() for term in terms)
-
-def get_matching_term(text, terms):
-    for term in terms:
-        if term.lower() in str(text).lower():
-            return term
-    return ""
-
-# ----------------------------
-# Parsers by Artifact Type
-# ----------------------------
-def parse_generic_json(file_path, terms, label):
-    matches = []
-    try:
-        with open(file_path, encoding='utf-8') as f:
-            data = json.load(f)
-        values = list(flatten_json(data))
-        display_name = data.get("displayName") or data.get("name") or os.path.basename(file_path)
-        for val in values:
-            if matches_any(val, terms):
-                matched = get_matching_term(val, terms)
-                matches.append({
-                    "Field": matched,
-                    "Type": label,
-                    "Entity": "N/A",
-                    "Context": f"{label}: {display_name} — Referenced in content",
-                    "File": file_path
-                })
-    except Exception as e:
-        print(f"⚠️ JSON error ({label}): {file_path} — {e}")
+        for term in search_terms:
+            if term.lower() in str(data).lower():
+                matches.append((path, data, term))
     return matches
 
-def parse_code_file(file_path, terms, label):
-    matches = []
-    try:
-        name = os.path.splitext(os.path.basename(file_path))[0]
-        with open(file_path, encoding='utf-8') as f:
-            for i, line in enumerate(f, 1):
-                if matches_any(line, terms):
-                    matched = get_matching_term(line, terms)
-                    matches.append({
-                        "Field": matched,
-                        "Type": label,
-                        "Entity": "N/A",
-                        "Context": f"{label}: {name} — Line {i}: {line.strip()[:100]}",
-                        "File": file_path
-                    })
-    except Exception as e:
-        print(f"⚠️ Code error ({label}): {file_path} — {e}")
-    return matches
-
-def parse_view_fetchxml(file_path, terms):
-    matches = []
-    try:
-        tree = ET.parse(file_path)
-        root = tree.getroot()
-        entity = root.attrib.get("name", os.path.basename(file_path))
-        view_name = os.path.splitext(os.path.basename(file_path))[0]
-        for elem in root.iter():
-            for attr_val in elem.attrib.values():
-                if matches_any(attr_val, terms):
-                    matched = get_matching_term(attr_val, terms)
-                    matches.append({
-                        "Field": matched,
-                        "Type": "View",
-                        "Entity": entity,
-                        "Context": f"View: {view_name} — Element: {elem.tag}",
-                        "File": file_path
-                    })
-    except Exception as e:
-        print(f"⚠️ View error: {file_path} — {e}")
-    return matches
+def get_artifact_type(file_path):
+    file = os.path.basename(file_path).lower()
+    path = file_path.lower()
+    if file == "form.json": return "Form"
+    if file.endswith(".fetchxml"): return "View"
+    if file.endswith(".definition.json"): return "Power Automate"
+    if file.endswith(".workflow.json"): return "Workflow"
+    if "businessrules" in path and file.endswith(".json"): return "Business Rule"
+    if "formulas" in path and file.endswith(".json"): return "Formula"
+    if "appactions" in path and file.endswith(".json"): return "App Action"
+    if "duplicaterules" in path and file.endswith(".json"): return "Duplicate Rule"
+    if "environmentvariabledefinitions" in path and file.endswith(".json"): return "Environment Variable"
+    if file.endswith(".js") or file.endswith(".ts"): return "Web Resource"
+    if file.endswith(".cs"): return "Plugin Assembly"
+    if file.endswith(".xml"): return "XML"
+    return "Unknown"
 
 # ----------------------------
-# Master Scanner
+# Scanner
 # ----------------------------
-def scan_d365_solution(root_folder, term_list):
+def scan_all_files(root_folder, search_terms):
     results = []
     for dirpath, _, files in os.walk(root_folder):
         for file in files:
             full_path = os.path.join(dirpath, file)
-            low_path = full_path.lower()
-            if file == "form.json":
-                results += parse_generic_json(full_path, term_list, "Form")
-            elif file.endswith(".fetchxml"):
-                results += parse_view_fetchxml(full_path, term_list)
-            elif file.endswith(".definition.json"):
-                results += parse_generic_json(full_path, term_list, "Power Automate")
-            elif file.endswith(".workflow.json"):
-                results += parse_generic_json(full_path, term_list, "Workflow")
-            elif "businessrules" in low_path and file.endswith(".json"):
-                results += parse_generic_json(full_path, term_list, "Business Rule")
-            elif "formulas" in low_path and file.endswith(".json"):
-                results += parse_generic_json(full_path, term_list, "Formula")
-            elif "appactions" in low_path and file.endswith(".json"):
-                results += parse_generic_json(full_path, term_list, "App Action")
-            elif "duplicaterules" in low_path and file.endswith(".json"):
-                results += parse_generic_json(full_path, term_list, "Duplicate Rule")
-            elif "environmentvariabledefinitions" in low_path and file.endswith(".json"):
-                results += parse_generic_json(full_path, term_list, "Environment Variable")
-            elif file.endswith(('.js', '.ts')):
-                results += parse_code_file(full_path, term_list, "Web Resource")
-            elif file.endswith(".cs"):
-                results += parse_code_file(full_path, term_list, "Plugin Assembly")
+            artifact_type = get_artifact_type(full_path)
+            if file.lower().endswith(".json"):
+                try:
+                    with open(full_path, encoding='utf-8') as f:
+                        data = json.load(f)
+                    matches = search_json(data, search_terms)
+                    for path, value, term in matches:
+                        results.append({
+                            "Field": term,
+                            "Type": artifact_type,
+                            "Entity": "N/A",
+                            "Context": f"Path: {path} → Value: {str(value)[:100]}",
+                            "File": full_path
+                        })
+                except Exception as e:
+                    print(f"⚠️ JSON error: {full_path} — {e}")
+            elif file.lower().endswith((".js", ".ts", ".cs", ".xml")):
+                try:
+                    with open(full_path, encoding='utf-8') as f:
+                        for i, line in enumerate(f, 1):
+                            for term in search_terms:
+                                if term.lower() in line.lower():
+                                    results.append({
+                                        "Field": term,
+                                        "Type": artifact_type,
+                                        "Entity": "N/A",
+                                        "Context": f"Line {i}: {line.strip()[:100]}",
+                                        "File": full_path
+                                    })
+                except Exception as e:
+                    print(f"⚠️ Text error: {full_path} — {e}")
     return results
 
 # ----------------------------
@@ -135,12 +92,12 @@ def write_csv(results, filename="field_usage_report.csv"):
 
 def write_markdown(results, filename="field_usage_report.md"):
     with open(filename, "w", encoding="utf-8") as f:
-        f.write("# 📋 Dynamics 365 Field/Text Usage Report\n\n")
+        f.write("# 📋 Dynamics 365 Loose Text Usage Report\n\n")
         fields = sorted(set(r["Field"] for r in results))
         for field in fields:
             f.write(f"## 🔎 Term: `{field}`\n\n")
             for r in [r for r in results if r["Field"] == field]:
-                f.write(f"### [{r['Type']}] {r['Entity']}\n")
+                f.write(f"### [{r['Type']}]\n")
                 f.write(f"- 📁 `{r['File']}`\n")
                 f.write(f"- 🧩 **Context**: {r['Context']}\n\n")
 
@@ -148,11 +105,11 @@ def write_markdown(results, filename="field_usage_report.md"):
 # Configure & Run
 # ----------------------------
 if __name__ == "__main__":
-    solution_folder = "./your_unmanaged_solution_folder"  # 🔁 Replace with path
-    term_list = ["reporting expectations", "new_contactref"]  # 🔍 Search terms
+    solution_folder = "./your_unmanaged_solution_folder"  # 🔁 Replace with actual path
+    search_terms = ["reporting expectations", "new_contactref"]  # 🔍 Add more terms as needed
 
-    print(f"\n🔍 Scanning for terms: {', '.join(term_list)}\n")
-    results = scan_d365_solution(solution_folder, term_list)
+    print(f"\n🔍 Scanning all files for terms: {', '.join(search_terms)}\n")
+    results = scan_all_files(solution_folder, search_terms)
 
     if results:
         print(f"✅ Found {len(results)} usage(s).")
