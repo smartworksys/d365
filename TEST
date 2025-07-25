@@ -1,67 +1,57 @@
 import os
 import json
 
-def search_in_json(data, search_text, path=""):
-    """Recursively search for text in nested JSON structure."""
-    results = []
+def search_in_json(data, search_text):
+    """Recursively search for text in nested JSON."""
     if isinstance(data, dict):
-        for key, value in data.items():
-            full_path = f"{path}.{key}" if path else key
-            results.extend(search_in_json(value, search_text, full_path))
+        return any(search_in_json(v, search_text) for v in data.values())
     elif isinstance(data, list):
-        for index, item in enumerate(data):
-            full_path = f"{path}[{index}]"
-            results.extend(search_in_json(item, search_text, full_path))
+        return any(search_in_json(item, search_text) for item in data)
     else:
-        if search_text.lower() in str(data).lower():
-            results.append((path, data))
-    return results
+        return search_text.lower() in str(data).lower()
 
 def search_in_text_file(file_path, search_text):
-    """Search for text in plain text file."""
-    matches = []
+    """Search for text in plain text file line-by-line."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            for i, line in enumerate(f, 1):
-                if search_text.lower() in line.lower():
-                    matches.append((f"Line {i}", line.strip()))
+            return any(search_text.lower() in line.lower() for line in f)
     except Exception as e:
         print(f"⚠️ Could not read text file: {file_path} — {e}")
-    return matches
+        return False
 
-def search_folder_recursive(folder_path, search_text):
-    results = {}
+def find_matching_files(folder_path, search_text):
+    matched_files = []
 
-    for root, dirs, files in os.walk(folder_path):
+    for root, _, files in os.walk(folder_path):
         for file in files:
             full_path = os.path.join(root, file)
+
             try:
                 with open(full_path, 'r', encoding='utf-8') as f:
                     content = f.read()
                 try:
                     json_data = json.loads(content)
-                    matches = search_in_json(json_data, search_text)
+                    if search_in_json(json_data, search_text):
+                        matched_files.append(full_path)
                 except json.JSONDecodeError:
-                    matches = search_in_text_file(full_path, search_text)
-                if matches:
-                    results[full_path] = matches
+                    if search_in_text_file(full_path, search_text):
+                        matched_files.append(full_path)
             except Exception as e:
-                print(f"⚠️ Skipped file {full_path} due to error: {e}")
-    return results
+                print(f"⚠️ Skipped file {full_path}: {e}")
+
+    return matched_files
 
 # ---- CONFIG ----
-search_root = "./your_folder_path_here"       # Replace with your folder path
-search_term = "reporting expectations"        # Replace with your search string
+search_root = "./your_folder_path_here"         # Replace with your folder path
+search_term = "reporting expectations"          # Replace with your search term
 
-# ---- EXECUTE ----
-found = search_folder_recursive(search_root, search_term)
+# ---- RUN ----
+matched = find_matching_files(search_root, search_term)
 
 # ---- OUTPUT ----
-if found:
-    print(f"\n🔍 Found '{search_term}' in these files:\n")
-    for filepath, matches in found.items():
-        print(f"📁 {filepath}")
-        for path, value in matches:
-            print(f"  ➤ {path}: {value}\n")
+if matched:
+    print(f"\n📂 Found {len(matched)} file(s) containing '{search_term}':\n")
+    for file_path in matched:
+        print(file_path)
 else:
-    print(f"\n❌ No matches found for '{search_term}' in '{search_root}'")
+    print(f"\n❌ No files found containing '{search_term}' in '{search_root}'")
