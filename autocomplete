@@ -34,6 +34,7 @@ def parse_generic_json(file_path, fields, label):
         with open(file_path, encoding='utf-8') as f:
             data = json.load(f)
         values = list(flatten_json(data))
+        display_name = data.get("displayName") or data.get("name") or os.path.basename(file_path)
         for val in values:
             if matches_any(val, fields):
                 matched = get_matching_field(val, fields)
@@ -41,7 +42,7 @@ def parse_generic_json(file_path, fields, label):
                     "Field": matched,
                     "Type": label,
                     "Entity": "N/A",
-                    "Context": "Referenced in structure",
+                    "Context": f"{label}: {display_name} — Referenced in structure",
                     "File": file_path
                 })
     except Exception as e:
@@ -51,6 +52,7 @@ def parse_generic_json(file_path, fields, label):
 def parse_code_file(file_path, fields, label):
     matches = []
     try:
+        resource_name = os.path.splitext(os.path.basename(file_path))[0]
         with open(file_path, encoding='utf-8') as f:
             for i, line in enumerate(f, 1):
                 if matches_any(line, fields):
@@ -59,7 +61,7 @@ def parse_code_file(file_path, fields, label):
                         "Field": matched,
                         "Type": label,
                         "Entity": "N/A",
-                        "Context": f"Line {i}: {line.strip()[:120]}",
+                        "Context": f"{label}: {resource_name} — Line {i}: {line.strip()[:100]}",
                         "File": file_path
                     })
     except Exception as e:
@@ -72,6 +74,7 @@ def parse_view_fetchxml(file_path, fields):
         tree = ET.parse(file_path)
         root = tree.getroot()
         entity = root.attrib.get("name", os.path.basename(file_path))
+        view_name = os.path.splitext(os.path.basename(file_path))[0]
         for attr in root.findall(".//attribute"):
             name = attr.attrib.get("name", "")
             if name.lower() in map(str.lower, fields):
@@ -79,7 +82,7 @@ def parse_view_fetchxml(file_path, fields):
                     "Field": name,
                     "Type": "View",
                     "Entity": entity,
-                    "Context": "Displayed column",
+                    "Context": f"View: {view_name} — Displayed column",
                     "File": file_path
                 })
         for cond in root.findall(".//condition"):
@@ -89,7 +92,7 @@ def parse_view_fetchxml(file_path, fields):
                     "Field": attr,
                     "Type": "View",
                     "Entity": entity,
-                    "Context": "Filter condition",
+                    "Context": f"View: {view_name} — Filter condition",
                     "File": file_path
                 })
     except Exception as e:
@@ -102,6 +105,7 @@ def parse_form_json(file_path, fields):
         with open(file_path, encoding='utf-8') as f:
             data = json.load(f)
         entity = os.path.basename(os.path.dirname(file_path))
+        form_name = data.get("name") or data.get("displayName") or "Unknown Form"
         for tab in data.get("formTabs", []):
             tab_label = tab.get("label", "")
             for section in tab.get("sections", []):
@@ -113,7 +117,7 @@ def parse_form_json(file_path, fields):
                             "Field": field,
                             "Type": "Form",
                             "Entity": entity,
-                            "Context": f"{tab_label} > {section_label}",
+                            "Context": f"Form: {form_name} → {tab_label} > {section_label}",
                             "File": file_path
                         })
     except Exception as e:
@@ -194,4 +198,3 @@ if __name__ == "__main__":
         print("📝 Markdown saved as: field_usage_report.md\n")
     else:
         print("❌ No field usage found.")
-
