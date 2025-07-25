@@ -1,33 +1,50 @@
-function isMemberFiftyNinePointFive(formContext, dateOfBirth) {
-  // 1. Parse DOB
-  const dob = typeof dateOfBirth === "string"
-    ? new Date(dateOfBirth)
-    : new Date(dateOfBirth);
-  if (isNaN(dob)) {
-    console.error("Invalid dateOfBirth:", dateOfBirth);
-    return false;
-  }
+import os
+import json
 
-  // 2. Compute threshold = DOB + 59 years + 6 months
-  const threshold = new Date(dob);
-  threshold.setFullYear(threshold.getFullYear() + 59);
-  threshold.setMonth(threshold.getMonth() + 6);
+def search_json(data, search_text, path=""):
+    results = []
+    if isinstance(data, dict):
+        for key, value in data.items():
+            full_path = f"{path}.{key}" if path else key
+            results.extend(search_json(value, search_text, full_path))
+    elif isinstance(data, list):
+        for index, item in enumerate(data):
+            full_path = f"{path}[{index}]"
+            results.extend(search_json(item, search_text, full_path))
+    else:
+        if search_text.lower() in str(data).lower():
+            results.append((path, data))
+    return results
 
-  // 3. Pull the maturity date from the form
-  const matAttr = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_DATE);
-  const matValue = matAttr ? matAttr.getValue() : null;
-  if (!matValue) {
-    console.warn("Maturity date not set on form.");
-    return false;
-  }
+def search_folder_for_text(folder_path, search_text):
+    all_matches = {}
+    for filename in os.listdir(folder_path):
+        if filename.endswith('.json'):
+            file_path = os.path.join(folder_path, filename)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    json_data = json.load(f)
+                matches = search_json(json_data, search_text)
+                if matches:
+                    all_matches[filename] = matches
+            except Exception as e:
+                print(f"Error reading {filename}: {e}")
+    return all_matches
 
-  const maturityDate = new Date(matValue);
-  if (isNaN(maturityDate)) {
-    console.error("Invalid maturityDate on form:", matValue);
-    return false;
-  }
+# ---- CONFIGURATION ----
+folder_to_search = "./your_folder_path_here"  # Replace with your folder path
+search_term = "reporting expectations"        # Replace with your search term
 
-  // 4. Return true only if maturityDate ≥ threshold (i.e., member is at least 59.5 on maturity date)
-  return maturityDate >= threshold;
-}
+# ---- RUN SEARCH ----
+results = search_folder_for_text(folder_to_search, search_term)
 
+# ---- DISPLAY RESULTS ----
+if results:
+    print(f"\n🔍 Found matches for '{search_term}' in the following files:\n")
+    for file, matches in results.items():
+        print(f"📄 File: {file}")
+        for path, value in matches:
+            print(f"  ➤ Path: {path}")
+            print(f"     Value: {value}\n")
+else:
+    print(f"\n❌ No matches found for '{search_term}' in folder '{folder_to_search}'")
