@@ -130,8 +130,6 @@ def parse_form_json(file_path, fields):
 def scan_d365_solution(root_folder, field_list):
     results = []
     for dirpath, _, files in os.walk(root_folder):
-        if "/Other/" in dirpath or "\\Other\\" in dirpath:
-            continue  # Skip non-solution folders
         for file in files:
             full_path = os.path.join(dirpath, file)
             low_path = full_path.lower()
