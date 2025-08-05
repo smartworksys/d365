@@ -1,57 +1,69 @@
-import os
-import json
+async function getMaturityInstructions(executionContext, accessNumber, accountTypeId, accountNumber) {
+    const formContext = executionContext.getFormContext();
 
-def search_in_json(data, search_text):
-    """Recursively search for text in nested JSON."""
-    if isinstance(data, dict):
-        return any(search_in_json(v, search_text) for v in data.values())
-    elif isinstance(data, list):
-        return any(search_in_json(item, search_text) for item in data)
-    else:
-        return search_text.lower() in str(data).lower()
+    const fetchXml = `
+      <fetch version="1.0" output-format="xml-platform" mapping="logical">
+        <entity name="${CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS}">
+          <attribute name="nf1pbm_maturityinstructionsid" />
+          <attribute name="nf1pbm_maturityinstructionid" />
+          <filter type="and">
+            <condition attribute="nf1pbm_accessnumberint" operator="eq" value="${accessNumber}" />
+            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE}" operator="eq" value="${accountTypeId}" />
+            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER}" operator="eq" value="${accountNumber}" />
+            <condition attribute="nf1pbm_instructionstatus" operator="not-in">
+              <value>582860001</value>
+              <value>582860000</value>
+              <value>582860003</value>
+            </condition>
+          </filter>
+        </entity>
+      </fetch>`;
 
-def search_in_text_file(file_path, search_text):
-    """Search for text in plain text file line-by-line."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return any(search_text.lower() in line.lower() for line in f)
-    except Exception as e:
-        print(f"⚠️ Could not read text file: {file_path} — {e}")
-        return False
+    try {
+        const response = await Xrm.WebApi.retrieveMultipleRecords(
+            CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
+            `?fetchXml=${encodeURIComponent(fetchXml)}`
+        );
 
-def find_matching_files(folder_path, search_text):
-    matched_files = []
+        if (response.entities.length > 0) {
+            const record = response.entities[0];
+            const recordId = record.nf1pbm_maturityinstructionsid;
+            const recordTitle = record.nf1pbm_maturityinstructionid;
 
-    for root, _, files in os.walk(folder_path):
-        for file in files:
-            full_path = os.path.join(root, file)
+            makeFormReadOnly(executionContext);
 
-            try:
-                with open(full_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
-                try:
-                    json_data = json.loads(content)
-                    if search_in_json(json_data, search_text):
-                        matched_files.append(full_path)
-                except json.JSONDecodeError:
-                    if search_in_text_file(full_path, search_text):
-                        matched_files.append(full_path)
-            except Exception as e:
-                print(f"⚠️ Skipped file {full_path}: {e}")
+            const confirmStrings = {
+                text: formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, recordTitle),
+                title: "Duplicate Maturity Instruction",
+                subtitle: ""
+            };
 
-    return matched_files
+            const confirmOptions = {
+                confirmButtonLabel: `Yes`,
+                cancelButtonLabel: "Cancel"
+            };
 
-# ---- CONFIG ----
-search_root = "./your_folder_path_here"         # Replace with your folder path
-search_term = "reporting expectations"          # Replace with your search term
+            Xrm.Navigation.openConfirmDialog(confirmStrings, confirmOptions)
+                .then(function (result) {
+                    if (result.confirmed) {
+                        formContext.data.entity.attributes.get().forEach(attr => attr.setSubmitMode("never"));
+                        Xrm.Navigation.openForm({
+                            entityName: CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
+                            entityId: recordId
+                        }).then(() => window.location.reload())
+                          .catch(err => console.error("openForm error", err));
+                    } else {
+                        reload(); // Placeholder function
+                    }
+                })
+                .catch(err => console.error("ConfirmDialog error", err));
 
-# ---- RUN ----
-matched = find_matching_files(search_root, search_term)
+            return [];
+        }
 
-# ---- OUTPUT ----
-if matched:
-    print(f"\n📂 Found {len(matched)} file(s) containing '{search_term}':\n")
-    for file_path in matched:
-        print(file_path)
-else:
-    print(f"\n❌ No files found containing '{search_term}' in '{search_root}'")
+        return response.entities;
+    } catch (error) {
+        console.error("Error retrieving maturity instructions:", error);
+        throw error;
+    }
+}
