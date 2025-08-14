@@ -1,1 +1,70 @@
+async function getMaturityInstructions(executionContext, accessNumber, accountTypeId, accountNumber) {
+    const formContext = executionContext.getFormContext();
+
+    const fetchXml = `
+      <fetch version="1.0" output-format="xml-platform" mapping="logical">
+        <entity name="${CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS}">
+          <attribute name="nf1pbm_maturityinstructionsid" />
+          <attribute name="nf1pbm_maturityinstructionid" />
+          <filter type="and">
+            <condition attribute="nf1pbm_accessnumberint" operator="eq" value="${accessNumber}" />
+            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE}" operator="eq" value="${accountTypeId}" />
+            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER}" operator="eq" value="${accountNumber}" />
+            <condition attribute="nf1pbm_instructionstatus" operator="not-in">
+              <value>582860001</value>
+              <value>582860000</value>
+              <value>582860003</value>
+            </condition>
+          </filter>
+        </entity>
+      </fetch>`;
+
+    try {
+        const response = await Xrm.WebApi.retrieveMultipleRecords(
+            CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
+            `?fetchXml=${encodeURIComponent(fetchXml)}`
+        );
+
+        if (response.entities.length > 0) {
+            const record = response.entities[0];
+            const recordId = record.nf1pbm_maturityinstructionsid;
+            const recordTitle = record.nf1pbm_maturityinstructionid;
+
+            makeFormReadOnly(executionContext);
+
+            const confirmStrings = {
+                text: formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, recordTitle),
+                title: "Duplicate Maturity Instruction",
+                subtitle: ""
+            };
+
+            const confirmOptions = {
+                confirmButtonLabel: `View Instruction: ${recordTitle}`,
+                cancelButtonLabel: "Cancel"
+            };
+
+            Xrm.Navigation.openConfirmDialog(confirmStrings, confirmOptions)
+                .then(function (result) {
+                    if (result.confirmed) {
+                        formContext.data.entity.attributes.get().forEach(attr => attr.setSubmitMode("never"));
+                        Xrm.Navigation.openForm({
+                            entityName: CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
+                            entityId: recordId
+                        }).then(() => window.location.reload())
+                          .catch(err => console.error("openForm error", err));
+                    } else {
+                        reload(); // Placeholder function
+                    }
+                })
+                .catch(err => console.error("ConfirmDialog error", err));
+
+            return [];
+        }
+
+        return response.entities;
+    } catch (error) {
+        console.error("Error retrieving maturity instructions:", error);
+        throw error;
+    }
+}
 
