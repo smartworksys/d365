@@ -1,19 +1,15 @@
-Subject: Load Testing via CRM APIs – Feasibility & Security Considerations
-
-Hi [Name],
-
-Following our earlier conversation, I want to flag that load testing Dynamics 365 via CRM APIs is not a straightforward option. I also reviewed this with our architect, David, and he echoed the same concerns. This approach requires significant setup effort, including:
+Following our earlier conversation, I want to flag that load testing Dynamics 365 via CRM APIs in Postman is not a straightforward option. I also reviewed this with our architect, David, and he echoed the same concerns. This approach requires significant setup effort, including:
 
 Designing and preparing representative test datasets
 
 Building and maintaining request orchestration to simulate concurrent loads
 
-Handling API limits, throttling, and retries to avoid false results
+Knowing field formats for each entity and using the correct GUID format for lookups, option sets, and other field types
 
-Developing automated cleanup to maintain environment stability
+In our Sales application, we have about 89 entities, which could translate to roughly 200–300 individual API endpoints when considering create, retrieve, update, delete, relationship management, and relevant actions/functions for each entity. This count could increase further depending on the specific scope and scenarios included in the load testing.
 
 Given the complexity, this approach is resource-intensive and needs careful planning and dedicated tooling—not just Postman scripts. It should only be pursued if the team is already proficient with CRM APIs and comfortable using Postman to post data to Dynamics 365 with the correct field formats for each field type.
 
-In addition, our InfoSec team might not approve storing or using a Client ID and Secret in Postman for this purpose due to credential-exposure risks. Any performance testing would need to run through approved, secure methods (e.g., CI/CD pipelines, secured test harnesses, or service principals managed via Key Vault).
+We also need to confirm with InfoSec whether storing a Client ID and Secret in Postman, and using Postman for backend testing, is permissible under our security policies. This is important because credentials in Postman (especially if cloud sync is enabled) may present exposure risks. If InfoSec does not approve, any load testing would need to be done using approved, secure tooling such as CI/CD pipelines or secured test harnesses.
 
-If you still want to pursue this option, here’s a simple example to post data to CRM via the Web API in
+If you still want to pursue this option, I will need at least 2–3 days to compile and provide all the relevant endpoint details for load testing. Please let me know so I can plan accordingly.
