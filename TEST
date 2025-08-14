@@ -1,70 +1,19 @@
-async function getMaturityInstructions(executionContext, accessNumber, accountTypeId, accountNumber) {
-    const formContext = executionContext.getFormContext();
+Subject: Load Testing via CRM APIs – Feasibility & Security Considerations
 
-    const fetchXml = `
-      <fetch version="1.0" output-format="xml-platform" mapping="logical">
-        <entity name="${CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS}">
-          <attribute name="nf1pbm_maturityinstructionsid" />
-          <attribute name="nf1pbm_maturityinstructionid" />
-          <filter type="and">
-            <condition attribute="nf1pbm_accessnumberint" operator="eq" value="${accessNumber}" />
-            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.ACCOUNT_TYPE}" operator="eq" value="${accountTypeId}" />
-            <condition attribute="${CONSTANTS.ATTRIBUTE_NAMES.CERTIFICATE_ACCOUNT_NUMBER}" operator="eq" value="${accountNumber}" />
-            <condition attribute="nf1pbm_instructionstatus" operator="not-in">
-              <value>582860001</value>
-              <value>582860000</value>
-              <value>582860003</value>
-            </condition>
-          </filter>
-        </entity>
-      </fetch>`;
+Hi [Name],
 
-    try {
-        const response = await Xrm.WebApi.retrieveMultipleRecords(
-            CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
-            `?fetchXml=${encodeURIComponent(fetchXml)}`
-        );
+Following our earlier conversation, I want to flag that load testing Dynamics 365 via CRM APIs is not a straightforward option. I also reviewed this with our architect, David, and he echoed the same concerns. This approach requires significant setup effort, including:
 
-        if (response.entities.length > 0) {
-            const record = response.entities[0];
-            const recordId = record.nf1pbm_maturityinstructionsid;
-            const recordTitle = record.nf1pbm_maturityinstructionid;
+Designing and preparing representative test datasets
 
-            makeFormReadOnly(executionContext);
+Building and maintaining request orchestration to simulate concurrent loads
 
-            const confirmStrings = {
-                text: formatString(CONSTANTS.MESSAGES.DUPLICATE_RECORD, recordTitle),
-                title: "Duplicate Maturity Instruction",
-                subtitle: ""
-            };
+Handling API limits, throttling, and retries to avoid false results
 
-            const confirmOptions = {
-                confirmButtonLabel: `View Instruction: ${recordTitle}`,
-                cancelButtonLabel: "Cancel"
-            };
+Developing automated cleanup to maintain environment stability
 
-            Xrm.Navigation.openConfirmDialog(confirmStrings, confirmOptions)
-                .then(function (result) {
-                    if (result.confirmed) {
-                        formContext.data.entity.attributes.get().forEach(attr => attr.setSubmitMode("never"));
-                        Xrm.Navigation.openForm({
-                            entityName: CONSTANTS.ENTITY_NAMES.MATURITY_INSTRUCTIONS,
-                            entityId: recordId
-                        }).then(() => window.location.reload())
-                          .catch(err => console.error("openForm error", err));
-                    } else {
-                        reload(); // Placeholder function
-                    }
-                })
-                .catch(err => console.error("ConfirmDialog error", err));
+Given the complexity, this approach is resource-intensive and needs careful planning and dedicated tooling—not just Postman scripts. It should only be pursued if the team is already proficient with CRM APIs and comfortable using Postman to post data to Dynamics 365 with the correct field formats for each field type.
 
-            return [];
-        }
+In addition, our InfoSec team might not approve storing or using a Client ID and Secret in Postman for this purpose due to credential-exposure risks. Any performance testing would need to run through approved, secure methods (e.g., CI/CD pipelines, secured test harnesses, or service principals managed via Key Vault).
 
-        return response.entities;
-    } catch (error) {
-        console.error("Error retrieving maturity instructions:", error);
-        throw error;
-    }
-}
-
+If you still want to pursue this option, here’s a simple example to post data to CRM via the Web API in
