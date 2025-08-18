@@ -1,1 +1,14 @@
 
+function showDialog(message, title = "Validation Error") {
+    const alertStrings = {
+        text: message,
+        title: title
+    };
+    const alertOptions = {
+        height: 200,
+        width: 400
+    };
+
+    Xrm.Navigation.openAlertDialog(alertStrings, alertOptions);
+    return false;
+}
