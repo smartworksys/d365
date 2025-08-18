@@ -1,1 +1,493 @@
 CONSTANTS.IRA_STATE_CODES = testStateConfig1;
+
+function validateTaxWithholding(formContext) {
+  const {
+    stateName,
+    stateCode,
+    minRate,
+    minAmt,
+    wholeDollarAmt,     // 'Y' => whole dollars (only in $ mode)
+    formReqWaive,       // 'N' => exemption allowed
+    stateRegType,       // 'S' | 'M' | 'V'
+    dollarAmtReq,       // 'Y' => % mode (minRate), 'N' => $ mode (minAmt)
+    followFedWld,       // 'R' | 'Y' | 'N' | 'V'
+    appFedRate,         // 'Y' => label cue
+    mandPlanCls,        // 'R' | 'Y' | 'X'
+    mandPremDist        // 'R' | 'Y' | 'X'
+  } = CONSTANTS.IRA_STATE_CODES;
+
+  const A = CONSTANTS.ATTRIBUTE_NAMES;
+  const stateAttr = formContext.getAttribute(A.IRS_STATE_TAX_PERCENTAGE);
+  const stateCtrl = formContext.getControl(A.IRS_STATE_TAX_PERCENTAGE);
+
+  const getVal = (name, def = null) => formContext.getAttribute(name)?.getValue() ?? def;
+
+  const amountTo = getVal(A.MATURITY_OPTIONS);
+  const fedWh = Number(getVal(A.IRS_FEDERAL_TAX_PERCENTAGE, 0)) || 0;
+  const stateWh = Number(getVal(A.IRS_STATE_TAX_PERCENTAGE, 0)) || 0;
+  const raCode = getVal(A.RA_CODE);
+  const exemptionReceived = getVal("nf1pbm_exceptionreceived");
+
+  const age = getMemberAge(formContext, CONSTANTS.VARIABLES.MEMBER_DOB);
+  const isUnder59_5 = typeof age === "number" ? age < 59.5 : !!age;
+
+  const isRACodeMatch = [582860001, 582860000].includes(raCode);
+
+  const CLOSE_VALUE = (CONSTANTS.OPTION_SET_VALUES?.CLOSE ?? 'Close');
+  const isClose = (amountTo === CLOSE_VALUE || (amountTo && amountTo.toString().toLowerCase() === 'close'));
+
+  const isPercentMode = (dollarAmtReq === 'Y');
+  const MIN_VALUE = isPercentMode ? Number(minRate || 0) : Number(minAmt || 0);
+
+  // UI helpers
+  function showDialog(message) { Xrm.Navigation.openAlertDialog({ text: message }); return false; }
+  function showExemptionRadio() { formContext.getControl("nf1pbm_exceptionreceived")?.setVisible(true); }
+  function hideStateWH() {
+    if (stateAttr) stateAttr.setValue(null);
+    if (stateCtrl) { stateCtrl.setDisabled(true); stateCtrl.setVisible(false); }
+    return false;
+  }
+  function showStateWH() {
+    if (stateCtrl) { stateCtrl.setDisabled(false); stateCtrl.setVisible(true); }
+  }
+
+  // Label cue
+  if (stateCtrl?.setLabel) {
+    const base = "State Withholding";
+    stateCtrl.setLabel(appFedRate === 'Y' ? `${base} (of Federal Withholding)` : base);
+  }
+
+  const fmtMin = (v) => isPercentMode ? `${v.toFixed(2)}%` : `$${v.toFixed(2)}`;
+  const zeroDisp = () => isPercentMode ? '0.00%' : '$0.00';
+
+  const MSG = {
+    1: `State Withholding must be ${fmtMin(MIN_VALUE)} or higher. This state requires taxes to be withheld when Federal taxes are withheld.`,
+    2: `State Withholding must be ${fmtMin(MIN_VALUE)} or higher. State taxes are mandated for plan closures, without the ability to exempt out.`,
+    3: `State Withholding must be ${fmtMin(MIN_VALUE)} or higher. State taxes are mandated for premature distributions, without the ability to exempt out.`,
+    4: `State Withholding must be ${fmtMin(MIN_VALUE)} or higher. State taxes are mandated for when Federal taxes are withheld, or ${zeroDisp()} must be entered and an exemption form or signature must be received.`,
+    5: `State Withholding must be ${fmtMin(MIN_VALUE)} or higher. State taxes are mandated for plan closures, or ${zeroDisp()} must be entered and an exemption form or signature must be received.`,
+    6: `State Withholding must be ${fmtMin(MIN_VALUE)} or higher. State taxes are mandated for premature distributions, or ${zeroDisp()} must be entered and an exemption form or signature must be received.`,
+    7: `State Withholding must be ${fmtMin(MIN_VALUE)} or higher. This state requires taxes to be withheld regardless if Federal taxes are withheld.`,
+    8: `State Withholding must be ${fmtMin(MIN_VALUE)} or higher. State taxes are mandated, or ${zeroDisp()} must be entered and an exemption form or signature must be received.`
+  };
+
+  function enforceMinNoExemption(msg) {
+    return (stateWh >= MIN_VALUE) ? true : showDialog(msg);
+  }
+  function enforceMinOrZeroWithExemption(msg) {
+    if (stateWh === 0) {
+      showExemptionRadio();
+      const ok = (exemptionReceived === true || exemptionReceived === 'Y' || exemptionReceived === 1);
+      return ok ? true : showDialog(msg);
+    }
+    return (stateWh >= MIN_VALUE) ? true : showDialog(msg);
+  }
+  function checkPrecision() {
+    if (isPercentMode) {
+      if (!Number.isInteger(stateWh * 100)) return showDialog("Percentage may have at most two decimal places.");
+    } else {
+      if (wholeDollarAmt === 'Y' && stateWh % 1 !== 0) return showDialog("State Withholding must be a whole amount.");
+      if (!Number.isInteger(stateWh * 100)) return showDialog("State Withholding may have at most two decimal places.");
+    }
+    return true;
+  }
+
+  if (!isRACodeMatch) return hideStateWH();
+  showStateWH();
+
+  // Branch by regType
+  if (stateRegType === 'S') {
+    if (followFedWld === 'R') {
+      if (fedWh > 0) { if (!enforceMinNoExemption(MSG[1])) return false; }
+      else { return hideStateWH(); }
+    } else if (followFedWld === 'Y') {
+      if (fedWh > 0) { if (!enforceMinOrZeroWithExemption(MSG[4])) return false; }
+      else { return hideStateWH(); }
+    } else if (followFedWld === 'V') {
+      if (formReqWaive === 'N') {
+        if (!enforceMinOrZeroWithExemption(MSG[8])) return false;
+      } else {
+        if (!enforceMinNoExemption(MSG[7])) return false;
+      }
+    }
+
+    if (isClose) {
+      if (mandPlanCls === 'R')       { if (!enforceMinNoExemption(MSG[2])) return false; }
+      else if (mandPlanCls === 'Y')  { if (!enforceMinOrZeroWithExemption(MSG[5])) return false; }
+      else if (mandPlanCls === 'X')  { return hideStateWH(); }
+    }
+
+    if (isUnder59_5) {
+      if (mandPremDist === 'R')      { if (!enforceMinNoExemption(MSG[3])) return false; }
+      else if (mandPremDist === 'Y') { if (!enforceMinOrZeroWithExemption(MSG[6])) return false; }
+      else if (mandPremDist === 'X') { return hideStateWH(); }
+    }
+  }
+  else if (stateRegType === 'M' || stateRegType === 'V') {
+    if (followFedWld === 'R') {
+      if (fedWh > 0) { if (!enforceMinNoExemption(MSG[1])) return false; }
+      else { return hideStateWH(); }
+    } else if (followFedWld === 'Y') {
+      if (fedWh > 0) { if (!enforceMinOrZeroWithExemption(MSG[4])) return false; }
+      else { return hideStateWH(); }
+    } else if (followFedWld === 'V') {
+      if (formReqWaive === 'N') {
+        if (!enforceMinOrZeroWithExemption(MSG[8])) return false;
+      } else {
+        if (!enforceMinNoExemption(MSG[7])) return false;
+      }
+    }
+
+    if (appFedRate === 'Y' && fedWh > 0) {
+      if (!enforceMinNoExemption(MSG[1])) return false;
+    }
+
+    if (isClose) {
+      if (mandPlanCls === 'R')       { if (!enforceMinNoExemption(MSG[2])) return false; }
+      else if (mandPlanCls === 'Y')  { if (!enforceMinOrZeroWithExemption(MSG[5])) return false; }
+      else if (mandPlanCls === 'X')  { return hideStateWH(); }
+    }
+
+    if (isUnder59_5) {
+      if (mandPremDist === 'R')      { if (!enforceMinNoExemption(MSG[3])) return false; }
+      else if (mandPremDist === 'Y') { if (!enforceMinOrZeroWithExemption(MSG[6])) return false; }
+      else if (mandPremDist === 'X') { return hideStateWH(); }
+    }
+  }
+  else {
+    return hideStateWH(); // Unknown regType
+  }
+
+  if (!checkPrecision()) return false;
+  return true;
+}
+
+
+
+
+
+// A1 — REG=S, Follow FED=R, % mode → Msg1 (FED>0) / hide (FED=0)
+const SC_A1_S_FedR = {
+  stateName: "OKLAHOMA-like (FedR)",
+  stateCode: "OK",
+  minRate: 4.75,         // %
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',     // % mode (use minRate)
+  wholeDollarAmt: 'N',
+  followFedWld: 'R',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'N',
+  mandPremDist: 'N',
+  formReqWaive: 'Y'
+};
+
+// A2 — REG=S, Follow FED=Y, % mode → Msg4 (FED>0) / hide (FED=0)
+const SC_A2_S_FedY = {
+  stateName: "ARIZONA-like (FedY)",
+  stateCode: "AZ",
+  minRate: 3.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'Y',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'N',
+  mandPremDist: 'N',
+  formReqWaive: 'N'      // exemption path enabled
+};
+
+// A3 — REG=S, Always Mandated (V): with exemption (Msg8) when 0, else >=MIN
+const SC_A3_S_FedV_WithEx = {
+  stateName: "S-type Always (with waiver)",
+  stateCode: "SW",
+  minRate: 2.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'V',     // always mandated
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'N',
+  mandPremDist: 'N',
+  formReqWaive: 'N'      // exemption allowed ⇒ Msg8 path when stateWh=0
+};
+
+// A4 — REG=S, Always Mandated (V): without exemption (Msg7)
+const SC_A4_S_FedV_NoEx = {
+  stateName: "S-type Always (no waiver)",
+  stateCode: "SN",
+  minRate: 5.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'V',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'N',
+  mandPremDist: 'N',
+  formReqWaave: 'Y',     // (typo-safe: if your key is formReqWaive)
+  formReqWaive: 'Y'      // no exemption ⇒ Msg7
+};
+
+// B1 — REG=S, Plan Closure=R, $ mode whole-dollar → Msg2 on Close
+const SC_B1_S_CloseR_DollarsWhole = {
+  stateName: "PlanClose R (whole $)",
+  stateCode: "PC_R",
+  minRate: 0.00,
+  minAmt: 50.00,         // $
+  dollarAmtReq: 'N',     // $ mode
+  wholeDollarAmt: 'Y',   // must be whole dollar
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'R',      // triggers Msg2 when Close
+  mandPremDist: 'N',
+  formReqWaive: 'Y'
+};
+
+// B2 — REG=S, Plan Closure=Y, $ mode → Msg5 (>=MIN or 0 with exemption) on Close
+const SC_B2_S_CloseY_Dollars = {
+  stateName: "PlanClose Y ($)",
+  stateCode: "PC_Y",
+  minRate: 0.00,
+  minAmt: 25.00,
+  dollarAmtReq: 'N',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'Y',
+  mandPremDist: 'N',
+  formReqWaive: 'N'      // shows exemption path at 0
+};
+
+// B3 — REG=S, Plan Closure=X → Hide on Close
+const SC_B3_S_CloseX = {
+  stateName: "PlanClose X (hide)",
+  stateCode: "PC_X",
+  minRate: 0.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'N',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'X',      // not permitted
+  mandPremDist: 'N',
+  formReqWaive: 'Y'
+};
+
+// C1 — REG=S, Premature Dist=R (<59.5) → Msg3
+const SC_C1_S_PremR = {
+  stateName: "Premature R",
+  stateCode: "PR_R",
+  minRate: 5.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'N',
+  mandPremDist: 'R',     // Msg3 when age < 59.5
+  formReqWaive: 'Y'
+};
+
+// C2 — REG=S, Premature Dist=Y (<59.5) → Msg6 (>=MIN or 0 with exemption)
+const SC_C2_S_PremY = {
+  stateName: "Premature Y",
+  stateCode: "PR_Y",
+  minRate: 3.50,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'N',
+  mandPremDist: 'Y',
+  formReqWaive: 'N'
+};
+
+// C3 — REG=S, Premature Dist=X (<59.5) → Hide
+const SC_C3_S_PremX = {
+  stateName: "Premature X (hide)",
+  stateCode: "PR_X",
+  minRate: 0.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'S',
+  mandPlanCls: 'N',
+  mandPremDist: 'X',
+  formReqWaive: 'Y'
+};
+
+// M/V branch extras:
+
+// M1 — REG=M, Follow FED=R, % → Msg1 (FED>0) / hide (FED=0)
+const SC_M1_M_FedR = {
+  stateName: "M-type FedR",
+  stateCode: "MT_R",
+  minRate: 6.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'R',
+  appFedRate: 'N',
+  stateRegType: 'M',
+  mandPlanCls: 'N',
+  mandPremDist: 'N',
+  formReqWaive: 'Y'
+};
+
+// M2 — REG=M, Follow FED=Y, % → Msg4 (FED>0) / hide (FED=0)
+const SC_M2_M_FedY = {
+  stateName: "M-type FedY",
+  stateCode: "MT_Y",
+  minRate: 2.50,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'Y',
+  appFedRate: 'N',
+  stateRegType: 'M',
+  mandPlanCls: 'N',
+  mandPremDist: 'N',
+  formReqWaive: 'N'
+};
+
+// M3 — REG=M, Always mandated (V), with exemption → Msg8 at 0
+const SC_M3_M_FedV_Ex = {
+  stateName: "M-type Always (ex)",
+  stateCode: "MT_VE",
+  minRate: 4.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'V',
+  appFedRate: 'N',
+  stateRegType: 'M',
+  mandPlanCls: 'N',
+  mandPremDist: 'N',
+  formReqWaive: 'N'
+};
+
+// M4 — REG=V, RT APPL TO FED=Y (and FED>0) → Msg1 (no exemption)
+const SC_M4_V_RtApplFed = {
+  stateName: "V-type RT Applies",
+  stateCode: "VT_RT",
+  minRate: 3.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'Y',       // RT applies to FED
+  stateRegType: 'V',
+  mandPlanCls: 'N',
+  mandPremDist: 'N',
+  formReqWaive: 'Y'
+};
+
+// M5 — REG=V, Plan Closure=Y + $ mode → Msg5 on Close (allow 0 with exemption)
+const SC_M5_V_CloseY_Dollars = {
+  stateName: "V Close Y $",
+  stateCode: "VT_CY",
+  minRate: 0.00,
+  minAmt: 10.00,
+  dollarAmtReq: 'N',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'V',
+  mandPlanCls: 'Y',
+  mandPremDist: 'N',
+  formReqWaive: 'N'
+};
+
+// M6 — REG=V, Premature=R + % mode → Msg3 when <59.5
+const SC_M6_V_PremR = {
+  stateName: "V Prem R %",
+  stateCode: "VT_PR",
+  minRate: 7.50,
+  minAmt: 0.00,
+  dollarAmtReq: 'Y',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'V',
+  mandPlanCls: 'N',
+  mandPremDist: 'R',
+  formReqWaive: 'Y'
+};
+
+// M7 — REG=M, Plan Closure=X → Hide on Close
+const SC_M7_M_CloseX = {
+  stateName: "M Close X (hide)",
+  stateCode: "MT_CX",
+  minRate: 0.00,
+  minAmt: 0.00,
+  dollarAmtReq: 'N',
+  wholeDollarAmt: 'N',
+  followFedWld: 'N',
+  appFedRate: 'N',
+  stateRegType: 'M',
+  mandPlanCls: 'X',
+  mandPremDist: 'N',
+  formReqWaive: 'Y'
+};
+
+
+
+
+How to exercise each branch quickly
+
+Follow FED (R/Y/V)
+
+Set CONSTANTS.IRA_STATE_CODES to the matching object above.
+
+Set FED % (A.IRS_FEDERAL_TAX_PERCENTAGE) to > 0 or 0 to hit both outcomes.
+
+Plan Closure (R/Y/X)
+
+Use isClose = true by setting A.MATURITY_OPTIONS to your Close option.
+
+Premature Distribution (R/Y/X)
+
+Set DOB so that getMemberAge(...) < 59.5 for the “premature” path.
+
+Exemption paths
+
+For Y-branches or V with formReqWaive = 'N', set state W/H to 0 and toggle the exemption radio to validate blocking vs allowing.
+
+Precision
+
+For $ mode with wholeDollarAmt = 'Y', try entering 12.34 → expect “whole amount” error.
+
+For % mode, try 1.234 → expect “two decimals” error.
+
+Want me to bundle these into a tiny harness that mocks formContext so you can run them outside D365 (node/console) and see pass/fail logs?
+
+
+
+Yep—here’s a compact set of state config test fixtures (plain JS objects) that map to the columns you showed and, together, cover all branches of your validator:
+
+S vs M vs V
+
+Follow FED: R / Y / V (always mandated)
+
+Plan Closure: R / Y / X
+
+Premature Distribution: R / Y / X
+
+Amount mode: % (dollarAmtReq='Y') vs $ (dollarAmtReq='N')
+
+Whole dollar enforcement
+
+“Rate applies to FED” (appFedRate = 'Y')
+
+Use each object by assigning CONSTANTS.IRA_STATE_CODES = <object>; then set form fields (FED %, Amount To, DOB, exemption radio) to drive the scenario.
