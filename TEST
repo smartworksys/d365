@@ -1,1 +1,204 @@
+# Using Dynamics 365 Web API in Postman (Client Credentials)
+
+The **Dynamics 365 Web API** is an **OData v4** REST service. You can explore it from **Postman** by authenticating with **Azure AD** using a **Client ID + Secret** (client-credentials flow). This page shows the exact steps and ready‑to‑paste snippets.
+
+---
+
+## Prerequisites
+
+- **Azure AD App registration** with:
+  - **Client ID** (Application ID)
+  - **Client Secret**
+  - **Tenant ID** (GUID)
+- **Dataverse/Dynamics URL** (e.g., `https://yourorg.crm.dynamics.com`)
+- The app is mapped to an **Application User** in Dataverse and has the required **security roles**.
+
+---
+
+## 1) Get an Access Token
+
+**Request**  
+```
+POST https://login.microsoftonline.com/<tenant-id>/oauth2/v2.0/token
+```
+
+**Headers**  
+```
+Content-Type: application/x-www-form-urlencoded
+```
+
+**Body (x-www-form-urlencoded)**  
+```
+client_id=<your-client-id>
+client_secret=<your-client-secret>
+scope=https://yourorg.crm.dynamics.com/.default
+grant_type=client_credentials
+```
+
+**Sample Response**  
+```json
+{
+  "token_type": "Bearer",
+  "expires_in": 3599,
+  "access_token": "eyJ0eXAiOiJK..."
+}
+```
+
+> Copy the `access_token` value. We will store it in a Postman environment variable.
+
+---
+
+## 2) Create a Postman Environment
+
+Create an environment (e.g., **Dataverse - Dev**) and add the following variables:
+
+| Variable        | Example value                                      |
+|-----------------|----------------------------------------------------|
+| `tenant_id`     | `aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee`            |
+| `client_id`     | `11111111-2222-3333-4444-555555555555`            |
+| `client_secret` | `your-super-secret`                                |
+| `org_url`       | `https://yourorg.crm.dynamics.com`                 |
+| `token`         | (leave blank; will be filled after token request)  |
+
+---
+
+## 3) Build a Reusable “Get Token” Request
+
+Create a new **Collection** (e.g., `Dynamics 365 Web API`) and add a request named **Get Token**:
+
+- **Method:** `POST`  
+- **URL:** `https://login.microsoftonline.com/{{tenant_id}}/oauth2/v2.0/token`  
+- **Body → x-www-form-urlencoded:**  
+  - `client_id` = `{{client_id}}`  
+  - `client_secret` = `{{client_secret}}`  
+  - `scope` = `{{org_url}}/.default`  
+  - `grant_type` = `client_credentials`  
+
+**Tests tab** → paste:
+```js
+let json = pm.response.json();
+pm.environment.set("token", json.access_token);
+```
+
+> Run **Get Token** any time to refresh your `{{token}}` variable.
+
+---
+
+## 4) Make Your First Web API Call
+
+**Example: list the top 3 Accounts**
+```
+GET {{org_url}}/api/data/v9.2/accounts?$top=3&$select=name,accountnumber
+```
+
+**Headers**
+```
+Authorization: Bearer {{token}}
+OData-MaxVersion: 4.0
+OData-Version: 4.0
+Accept: application/json
+Content-Type: application/json
+```
+
+**Tip:** Add this header when you want the created/updated record returned:  
+```
+Prefer: return=representation
+```
+
+---
+
+## 5) Common CRUD Patterns
+
+- **Create**  
+  `POST {{org_url}}/api/data/v9.2/accounts`  
+  Body (raw JSON):  
+  ```json
+  { "name": "Contoso (API)", "telephone1": "555-0100" }
+  ```
+
+- **Read (single)**  
+  `GET {{org_url}}/api/data/v9.2/accounts(<recordId>)`
+
+- **Read (multiple)**  
+  `GET {{org_url}}/api/data/v9.2/accounts?$select=name,revenue&$top=10`
+
+- **Update (partial)**  
+  `PATCH {{org_url}}/api/data/v9.2/accounts(<recordId>)`  
+  Body:  
+  ```json
+  { "telephone1": "555-0101" }
+  ```
+
+- **Delete**  
+  `DELETE {{org_url}}/api/data/v9.2/accounts(<recordId>)`
+
+---
+
+## 6) Useful OData Query Options
+
+- `$select` → choose columns (e.g., `?$select=name,accountnumber`)  
+- `$filter` → filter rows (e.g., `?$filter=contains(name,'Contoso')`)  
+- `$orderby` → sort (e.g., `?$orderby=createdon desc`)  
+- `$top` / paging with `@odata.nextLink`  
+- `$expand` → include related entity columns (e.g., `?$select=name&$expand=primarycontactid($select=fullname,emailaddress1)`)  
+
+---
+
+## 7) Pre-request Script (Optional Auto-Refresh)
+
+You can automate token refresh by adding a **Pre-request Script** to the collection. Example (simple pattern):
+```js
+if (!pm.environment.get("token")) {
+  // If token empty, ask user to run Get Token first or implement a token request here.
+  console.warn("Token is empty; run 'Get Token' request.");
+}
+```
+> Advanced: You can also create a separate **“Refresh Token”** request and call it from scripts via `pm.sendRequest(...)`.
+
+---
+
+## 8) Status Codes & Troubleshooting
+
+- **200/204** → Success (GET returns data; PATCH/DELETE often 204)  
+- **400** → Bad Request (check payload, headers, logical names)  
+- **401** → Unauthorized (expired token/permissions)  
+- **403** → Forbidden (role missing for the Application User)  
+- **404** → Not found (entity set or record GUID incorrect)  
+- **429** → Throttled (reduce request rate; add retry)  
+
+**Quick checks:**
+- Verify `Authorization` header is `Bearer {{token}}`
+- Confirm `org_url` matches the environment domain
+- Ensure your app user has correct **Dataverse security roles**
+
+---
+
+## 9) Handy Snippets
+
+**Batch (change set) endpoint**  
+```
+POST {{org_url}}/api/data/v9.2/$batch
+```
+
+**Metadata (discover entity sets & schema)**  
+```
+GET {{org_url}}/api/data/v9.2/$metadata
+```
+
+**WhoAmI**
+```
+GET {{org_url}}/api/data/v9.2/WhoAmI()
+```
+
+---
+
+## 10) Security Notes
+
+- Treat the **client secret** as a password: store in Postman **Environment** (not in plain text docs).
+- Prefer **Azure Key Vault** for secrets in CI/CD.
+- Use least-privilege **Application Roles** for the app user.
+
+---
+
+You're now set to authenticate and explore **Dynamics 365 Web API** from **Postman** using client credentials!
 
