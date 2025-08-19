@@ -1,50 +1,647 @@
-# Dynamics 365 Web API Overview
+# Dynamics 365 Web API CRUD URLs (Selected Entities)
 
-The **Dynamics 365 Web API** is an **OData v4 REST service** that provides a uniform way to interact with Microsoft Dataverse (the data platform behind Dynamics 365). It exposes tables (entities), columns (attributes), and relationships in a RESTful manner, allowing you to work with Dynamics data using standard HTTP methods and OData query options.
+> **Base URL Template:** `https://yourorg.crm.dynamics.com/api/data/v9.2`
 
-## Key Characteristics
-- **OData v4 compliant** → follows the OData (Open Data Protocol) version 4 standard.
-- **RESTful interface** → CRUD operations map directly to HTTP verbs (POST, GET, PATCH, DELETE).
-- **Entity-centric** → each Dataverse table is an *entity set*, accessed via its plural name (e.g., `/accounts`).
-- **JSON payloads** → requests and responses use JSON by default.
-- **Metadata-driven** → schema, relationships, and options are discoverable via `$metadata`.
+> Replace `yourorg` with your Dynamics 365 organization domain.
 
-## Base URL
-All requests use the organization’s service root:
-
-```
-https://yourorg.crm.dynamics.com/api/data/v9.2
-```
-
-- `yourorg` = your Dynamics 365 instance name.
-- `v9.2` = Web API version (latest recommended).
-
-## Authentication
-- Secured by **Azure Active Directory** and requires an **OAuth 2.0 Bearer token**.
-- Tokens can be obtained via **Client Credentials flow** (Client ID + Secret) for service apps, or **Authorization Code flow** for delegated user access.
-
-## CRUD Mapping
-- **Create** → `POST /<entityset>`
-- **Read (Retrieve)** → `GET /<entityset>(<id>)` or `GET /<entityset>`
-- **Update** → `PATCH /<entityset>(<id>)`
-- **Delete** → `DELETE /<entityset>(<id>)`
-
-## Querying Data
-Supports OData system query options:
-- `$select` → choose specific fields
-- `$filter` → filter results server-side
-- `$orderby` → sort results
-- `$top` / `$skip` → paging
-- `$expand` → include related entities
-
-## Extensibility
-Beyond standard CRUD, the Web API supports:
-- **Bound/unbound actions** → business operations (e.g., `WinOpportunity`)
-- **Functions** → read-only server logic
-- **Batch requests** → multiple operations in one HTTP call
-- **Annotations** → formatted values, option set labels, and metadata
+> Replace `<recordId>` with the entity's GUID in parentheses.
 
 ---
 
-⚡ **Why it matters:**  
-This API enables seamless integration between Dynamics 365 and custom apps, services, portals, and automation workflows—without needing the legacy SOAP SDKs. It is the modern, future-proof way to access and manipulate Dynamics 365 data.
+## Accounts
+
+**Entity Set Name (Plural):** `accounts`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/accounts
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/accounts(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/accounts
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/accounts(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/accounts(<recordId>)
+   ```
+
+---
+
+## Activitypointers
+
+**Entity Set Name (Plural):** `activitypointers`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/activitypointers
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/activitypointers(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/activitypointers
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/activitypointers(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/activitypointers(<recordId>)
+   ```
+
+---
+
+## Connections
+
+**Entity Set Name (Plural):** `connections`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/connections
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/connections(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/connections
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/connections(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/connections(<recordId>)
+   ```
+
+---
+
+## Contacts
+
+**Entity Set Name (Plural):** `contacts`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/contacts
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/contacts(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/contacts
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/contacts(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/contacts(<recordId>)
+   ```
+
+---
+
+## Emails
+
+**Entity Set Name (Plural):** `emails`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/emails
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/emails(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/emails
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/emails(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/emails(<recordId>)
+   ```
+
+---
+
+## Feedback
+
+**Entity Set Name (Plural):** `feedback`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/feedback
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/feedback(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/feedback
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/feedback(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/feedback(<recordId>)
+   ```
+
+---
+
+## Incidents
+
+**Entity Set Name (Plural):** `incidents`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/incidents
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/incidents(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/incidents
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/incidents(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/incidents(<recordId>)
+   ```
+
+---
+
+## Incidentresolutions
+
+**Entity Set Name (Plural):** `incidentresolutions`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/incidentresolutions
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/incidentresolutions(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/incidentresolutions
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/incidentresolutions(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/incidentresolutions(<recordId>)
+   ```
+
+---
+
+## Knowledgearticles
+
+**Entity Set Name (Plural):** `knowledgearticles`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/knowledgearticles
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/knowledgearticles(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/knowledgearticles
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/knowledgearticles(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/knowledgearticles(<recordId>)
+   ```
+
+---
+
+## Kofc Banners
+
+**Entity Set Name (Plural):** `kofc_banners`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_banners
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_banners(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_banners
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_banners(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_banners(<recordId>)
+   ```
+
+---
+
+## Kofc Configsettings
+
+**Entity Set Name (Plural):** `kofc_configsettings`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_configsettings
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_configsettings(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_configsettings
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_configsettings(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_configsettings(<recordId>)
+   ```
+
+---
+
+## Kofc Contactaccountrelationships
+
+**Entity Set Name (Plural):** `kofc_contactaccountrelationships`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_contactaccountrelationships
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_contactaccountrelationships(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_contactaccountrelationships
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_contactaccountrelationships(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_contactaccountrelationships(<recordId>)
+   ```
+
+---
+
+## Kofc Policies
+
+**Entity Set Name (Plural):** `kofc_policies`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policies
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policies(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policies
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policies(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policies(<recordId>)
+   ```
+
+---
+
+## Kofc Policyrequests
+
+**Entity Set Name (Plural):** `kofc_policyrequests`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequests
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequests(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequests
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequests(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequests(<recordId>)
+   ```
+
+---
+
+## Kofc Policyrequestconfigurations
+
+**Entity Set Name (Plural):** `kofc_policyrequestconfigurations`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequestconfigurations
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequestconfigurations(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequestconfigurations
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequestconfigurations(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/kofc_policyrequestconfigurations(<recordId>)
+   ```
+
+---
+
+## Phonecalls
+
+**Entity Set Name (Plural):** `phonecalls`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/phonecalls
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/phonecalls(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/phonecalls
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/phonecalls(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/phonecalls(<recordId>)
+   ```
+
+---
+
+## Phonetocaseprocesses
+
+**Entity Set Name (Plural):** `phonetocaseprocesses`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/phonetocaseprocesses
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/phonetocaseprocesses(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/phonetocaseprocesses
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/phonetocaseprocesses(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/phonetocaseprocesses(<recordId>)
+   ```
+
+---
+
+## Queues
+
+**Entity Set Name (Plural):** `queues`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/queues
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/queues(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/queues
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/queues(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/queues(<recordId>)
+   ```
+
+---
+
+## Queueitems
+
+**Entity Set Name (Plural):** `queueitems`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/queueitems
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/queueitems(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/queueitems
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/queueitems(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/queueitems(<recordId>)
+   ```
+
+---
+
+## Slakpiinstances
+
+**Entity Set Name (Plural):** `slakpiinstances`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/slakpiinstances
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/slakpiinstances(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/slakpiinstances
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/slakpiinstances(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/slakpiinstances(<recordId>)
+   ```
+
+---
+
+## Systemusers
+
+**Entity Set Name (Plural):** `systemusers`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/systemusers
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/systemusers(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/systemusers
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/systemusers(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/systemusers(<recordId>)
+   ```
+
+---
+
+## Tasks
+
+**Entity Set Name (Plural):** `tasks`
+
+**Endpoints:**
+
+1. **Create**
+   ```http
+   POST https://yourorg.crm.dynamics.com/api/data/v9.2/tasks
+   ```
+2. **Read (Single)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/tasks(<recordId>)
+   ```
+3. **Read (Multiple)**
+   ```http
+   GET https://yourorg.crm.dynamics.com/api/data/v9.2/tasks
+   ```
+4. **Update**
+   ```http
+   PATCH https://yourorg.crm.dynamics.com/api/data/v9.2/tasks(<recordId>)
+   ```
+5. **Delete**
+   ```http
+   DELETE https://yourorg.crm.dynamics.com/api/data/v9.2/tasks(<recordId>)
+   ```
+
+---
