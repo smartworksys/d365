@@ -3,32 +3,47 @@ name: Infra_Deploy_$(BuildDefinitionName)_$(date:yyyyMMdd)$(rev:.r)
 trigger: none
 
 parameters:
-  # Select one or more environments (checkboxes)
+  # Env checkboxes
   - name: deploy_dev
     displayName: 'Deploy to DEV'
     type: boolean
     default: false
-
   - name: deploy_test
     displayName: 'Deploy to TEST'
     type: boolean
     default: false
-
   - name: deploy_uat
     displayName: 'Deploy to UAT'
     type: boolean
     default: false
-
   - name: deploy_prod
     displayName: 'Deploy to PROD'
     type: boolean
     default: false
 
-  # Veracode scan toggle (runs during build if true)
+  # Veracode toggle
   - name: veracode_scan
     displayName: 'Run VeraCode Scan'
     type: boolean
     default: false
+
+  # --- Service connection names (strings). EDIT THESE DEFAULTS ---
+  - name: sc_dev
+    displayName: 'Service Connection (DEV)'
+    type: string
+    default: 'AzureRM-DEV'
+  - name: sc_test
+    displayName: 'Service Connection (TEST)'
+    type: string
+    default: 'AzureRM-TEST'
+  - name: sc_uat
+    displayName: 'Service Connection (UAT)'
+    type: string
+    default: 'AzureRM-UAT'
+  - name: sc_prod
+    displayName: 'Service Connection (PROD)'
+    type: string
+    default: 'AzureRM-PROD'
 
 variables:
   - name: vmImageName
@@ -70,7 +85,6 @@ stages:
               archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
               replaceExistingArchive: true
 
-          # Conditional Veracode scan
           - task: Veracode.veracode-vsts-build-extension.veracode-scanner-task.Veracode@3
             condition: eq('${{ parameters.veracode_scan }}', true)
             displayName: 'Veracode Scan'
@@ -96,7 +110,7 @@ stages:
     condition: succeeded()
     jobs:
 
-      # DEV (runs first)
+      # DEV
       - deployment: Deploy_DEV
         displayName: 'Deploy to DEV'
         environment: dev
@@ -115,12 +129,12 @@ stages:
                 - task: AzureFunctionApp@1
                   displayName: 'Azure Functions App Deploy (DEV)'
                   inputs:
-                    azureSubscription: '$(serviceConnection)'
+                    azureSubscription: ${{ parameters.sc_dev }}
                     appType: functionApp
                     appName: $(functionAppName)
                     package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
 
-      # TEST (depends on DEV finishing/skipping)
+      # TEST (after DEV)
       - deployment: Deploy_TEST
         displayName: 'Deploy to TEST'
         environment: test
@@ -140,12 +154,12 @@ stages:
                 - task: AzureFunctionApp@1
                   displayName: 'Azure Functions App Deploy (TEST)'
                   inputs:
-                    azureSubscription: '$(serviceConnection)'
+                    azureSubscription: ${{ parameters.sc_test }}
                     appType: functionApp
                     appName: $(functionAppName)
                     package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
 
-      # UAT (depends on TEST finishing/skipping)
+      # UAT (after TEST)
       - deployment: Deploy_UAT
         displayName: 'Deploy to UAT'
         environment: uat
@@ -165,12 +179,12 @@ stages:
                 - task: AzureFunctionApp@1
                   displayName: 'Azure Functions App Deploy (UAT)'
                   inputs:
-                    azureSubscription: '$(serviceConnection)'
+                    azureSubscription: ${{ parameters.sc_uat }}
                     appType: functionApp
                     appName: $(functionAppName)
                     package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
 
-      # PROD (depends on UAT finishing/skipping)
+      # PROD (after UAT)
       - deployment: Deploy_PROD
         displayName: 'Deploy to PROD'
         environment: prod
@@ -190,7 +204,7 @@ stages:
                 - task: AzureFunctionApp@1
                   displayName: 'Azure Functions App Deploy (PROD)'
                   inputs:
-                    azureSubscription: '$(serviceConnection)'
+                    azureSubscription: ${{ parameters.sc_prod }}
                     appType: functionApp
                     appName: $(functionAppName)
                     package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
