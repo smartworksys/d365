@@ -1,1 +1,262 @@
+function validateTaxWithholding(formContext) {
+  // ========= Config & Inputs =========
+  const {
+    stateName,
+    stateCode,
+    minRate,
+    minAmt,
+    wholeDollarAmt,      // 'Y' => whole dollars (only in $ mode)
+    formReqWaive,        // 'N' => exemption allowed
+    stateRegType,        // 'S' | 'M' | 'V'
+    dollarAmtReq,        // 'Y' => % mode (minRate), 'N' => $ mode (minAmt)
+    followFedWld,        // 'R' | 'Y' | 'N' | 'V' (V = always mandated)
+    appFedRate,          // 'Y' => add "(of Federal Withholding)" label cue
+    mandPlanCls,         // 'R' | 'Y' | 'X'
+    mandPremDist         // 'R' | 'Y' | 'X'
+  } = CONSTANTS.IRA_STATE_CODES;
+
+  const A = CONSTANTS.ATTRIBUTE_NAMES;
+  const SETTINGS = {
+    CLEAR_ON_HIDE: CONSTANTS?.SETTINGS?.CLEAR_ON_HIDE ?? false
+  };
+
+  const attr = (schema) => formContext.getAttribute(schema);
+  const ctrl = (schema) => formContext.getControl(schema);
+  const getVal = (schema, def=null) => attr(schema)?.getValue() ?? def;
+
+  const stateAttr = attr(A.IRS_STATE_TAX_PERCENTAGE);
+  const stateCtrl = ctrl(A.IRS_STATE_TAX_PERCENTAGE);
+  const exCtrl    = ctrl("nf1pbm_exceptionreceived");
+
+  const amountTo = getVal(A.MATURITY_OPTIONS);
+  const fedWh    = Number(getVal(A.IRS_FEDERAL_TAX_PERCENTAGE, 0)) || 0;
+  const stateWh  = Number(getVal(A.IRS_STATE_TAX_PERCENTAGE, 0)) || 0;
+  const raCode   = getVal(A.RA_CODE);
+  const exemptionReceived = getVal("nf1pbm_exceptionreceived");
+
+  // Age (fractional years); under 59.5 triggers “Premature”
+  const age = getMemberAge(formContext, CONSTANTS.VARIABLES.MEMBER_DOB);
+  const isUnder59_5 = typeof age === "number" ? (age < 59.5) : !!age;
+
+  const isRACodeMatch = [582860001, 582860000].includes(raCode);
+  const CLOSE_VALUE = (CONSTANTS.OPTION_SET_VALUES?.CLOSE ?? "Close");
+  const isClose = (amountTo === CLOSE_VALUE || (amountTo && String(amountTo).toLowerCase() === "close"));
+
+  const isPercentMode = (dollarAmtReq === "Y");
+  const MIN_VALUE = isPercentMode ? Number(minRate || 0) : Number(minAmt || 0);
+
+  // ========= Message text (still tokenized, but shown on controls) =========
+  const M = CONSTANTS.MESSAGES || {};
+  const DEFAULT = {
+    bodies: {
+      MSG1: "State withholding must be {MIN} or higher. This state requires taxes to be withheld when Federal taxes are withheld.",
+      MSG2: "State withholding must be {MIN} or higher. State taxes are mandated for plan closures (no exemption).",
+      MSG3: "State withholding must be {MIN} or higher. State taxes are mandated for premature distributions (no exemption).",
+      MSG4: "State withholding must be {MIN} or higher, or {ZERO} with an exemption when Federal taxes are withheld.",
+      MSG5: "On plan closure, enter {MIN} or higher, or {ZERO} with an exemption.",
+      MSG6: "Under age 59½, enter {MIN} or higher, or {ZERO} with an exemption.",
+      MSG7: "State withholding is always required: enter at least {MIN}.",
+      MSG8: "State withholding is mandated: enter {MIN} or higher, or {ZERO} with an exemption.",
+      PCT_TOO_PRECISE: "Percentage may have at most two decimal places.",
+      CURR_WHOLE_ONLY: "Dollar amount must be a whole number.",
+      CURR_TOO_PRECISE: "Dollar amount may have at most two decimal places."
+    }
+  };
+
+  const fmtMin = (v) => isPercentMode ? `${v.toFixed(2)}%` : `$${v.toFixed(2)}`;
+  const zeroDisp = () => isPercentMode ? "0.00%" : "$0.00";
+  const fedDisp = () => `${fedWh.toFixed(2)}%`;
+  const tokens = {
+    "{MIN}": fmtMin(MIN_VALUE),
+    "{ZERO}": zeroDisp(),
+    "{STATE}": stateCode || "",
+    "{FED}": fedDisp()
+  };
+  const tpl = (str) => (str ? Object.entries(tokens).reduce((s,[k,v]) => s.replaceAll(k,v), str) : "");
+
+  // ========= Notification helpers (control-level only) =========
+  const NID = {
+    STATE: "STATE_WHT_ERR",
+    EXEMPT: "STATE_WHT_EXEMPT",
+    PREC: "STATE_WHT_PREC"
+  };
+
+  function clearNotifications() {
+    try { stateCtrl?.clearNotification(NID.STATE); } catch {}
+    try { stateCtrl?.clearNotification(NID.PREC); } catch {}
+    try { exCtrl?.clearNotification?.(NID.EXEMPT); } catch {}
+  }
+
+  function notifyState(body, id = NID.STATE) {
+    clearNotifications();
+    stateCtrl?.setNotification(body, id);
+    return false; // to keep your existing return contract
+  }
+
+  function notifyExemption(body) {
+    clearNotifications();
+    stateCtrl?.setNotification(body, NID.STATE);
+    // optional: also mark the exemption radio
+    exCtrl?.setVisible(true);
+    exCtrl?.setNotification?.("Exemption required to continue.", NID.EXEMPT);
+    return false;
+  }
+
+  // Precision masking on the control
+  function setPrecisionForMode() {
+    if (!stateCtrl?.setPrecision) return;
+    if (isPercentMode) stateCtrl.setPrecision(2);
+    else stateCtrl.setPrecision(wholeDollarAmt === "Y" ? 0 : 2);
+  }
+
+  // Label cue (caption only; does not touch value)
+  if (stateCtrl?.setLabel) {
+    const base = "State Withholding";
+    stateCtrl.setLabel(appFedRate === "Y" ? `${base} (of Federal Withholding)` : base);
+  }
+  setPrecisionForMode();
+
+  // ========= Guard & visibility =========
+  if (!isRACodeMatch) return hideStateWH();
+  showStateWH(); // default visible; branches may hide
+
+  function hideStateWH() {
+    clearNotifications();
+    if (stateCtrl) { stateCtrl.setDisabled(true); stateCtrl.setVisible(false); }
+    if (SETTINGS.CLEAR_ON_HIDE && stateAttr) stateAttr.setValue(null);
+    return false;
+  }
+  function showStateWH() {
+    if (stateCtrl) { stateCtrl.setDisabled(false); stateCtrl.setVisible(true); }
+  }
+
+  // ========= Core evaluators (return true on success, false after notifying) =========
+  function enforceMinNoExemption(msgKey) {
+    if (stateWh >= MIN_VALUE) { clearNotifications(); return true; }
+    const body = tpl(M.bodies?.[msgKey] || DEFAULT.bodies[msgKey]);
+    return notifyState(body);
+  }
+
+  function enforceMinOrZeroWithExemption(msgKey) {
+    if (stateWh === 0) {
+      const hasEx = (exemptionReceived === true || exemptionReceived === "Y" || exemptionReceived === 1);
+      if (hasEx) { clearNotifications(); return true; }
+      const body = tpl(M.bodies?.[msgKey] || DEFAULT.bodies[msgKey]);
+      return notifyExemption(body);
+    }
+    return enforceMinNoExemption(msgKey);
+  }
+
+  function checkPrecision() {
+    // Put precision notifications in their own ID so rule messages aren’t blown away
+    if (isPercentMode) {
+      if (!Number.isInteger(stateWh * 100)) {
+        stateCtrl?.setNotification(M.bodies?.PCT_TOO_PRECISE || DEFAULT.bodies.PCT_TOO_PRECISE, NID.PREC);
+        return false;
+      }
+    } else {
+      if (wholeDollarAmt === "Y" && stateWh % 1 !== 0) {
+        stateCtrl?.setNotification(M.bodies?.CURR_WHOLE_ONLY || DEFAULT.bodies.CURR_WHOLE_ONLY, NID.PREC);
+        return false;
+      }
+      if (!Number.isInteger(stateWh * 100)) {
+        stateCtrl?.setNotification(M.bodies?.CURR_TOO_PRECISE || DEFAULT.bodies.CURR_TOO_PRECISE, NID.PREC);
+        return false;
+      }
+    }
+    // Clear precision notices if OK
+    try { stateCtrl?.clearNotification(NID.PREC); } catch {}
+    return true;
+  }
+
+  // ========= Flow: split by stateRegType =========
+  if (stateRegType === "S") {
+    // A. Follow Fed
+    if (followFedWld === "R") {
+      if (fedWh > 0) { if (!enforceMinNoExemption("MSG1")) return false; }
+      else { return hideStateWH(); }
+    } else if (followFedWld === "Y") {
+      if (fedWh > 0) { if (!enforceMinOrZeroWithExemption("MSG4")) return false; }
+      else { return hideStateWH(); }
+    } else if (followFedWld === "V") {
+      if (formReqWaive === "N") { if (!enforceMinOrZeroWithExemption("MSG8")) return false; }
+      else { if (!enforceMinNoExemption("MSG7")) return false; }
+    }
+
+    // B. Plan Closure
+    if (isClose) {
+      if (mandPlanCls === "R")       { if (!enforceMinNoExemption("MSG2")) return false; }
+      else if (mandPlanCls === "Y")  { if (!enforceMinOrZeroWithExemption("MSG5")) return false; }
+      else if (mandPlanCls === "X")  { return hideStateWH(); }
+    }
+
+    // C. Premature Distribution
+    if (isUnder59_5) {
+      if (mandPremDist === "R")      { if (!enforceMinNoExemption("MSG3")) return false; }
+      else if (mandPremDist === "Y") { if (!enforceMinOrZeroWithExemption("MSG6")) return false; }
+      else if (mandPremDist === "X") { return hideStateWH(); }
+    }
+
+    // S fall-through → hide
+    const sHit =
+      (followFedWld === "R" && fedWh > 0) ||
+      (followFedWld === "Y" && fedWh > 0) ||
+      (followFedWld === "V") ||
+      (isClose && ["R","Y","X"].includes(mandPlanCls)) ||
+      (isUnder59_5 && ["R","Y","X"].includes(mandPremDist));
+    if (!sHit) return hideStateWH();
+  }
+  else if (stateRegType === "M" || stateRegType === "V") {
+    // A. Follow Fed
+    if (followFedWld === "R") {
+      if (fedWh > 0) { if (!enforceMinNoExemption("MSG1")) return false; }
+      else { return hideStateWH(); }
+    } else if (followFedWld === "Y") {
+      if (fedWh > 0) { if (!enforceMinOrZeroWithExemption("MSG4")) return false; }
+      else { return hideStateWH(); }
+    } else if (followFedWld === "V") {
+      if (formReqWaive === "N") { if (!enforceMinOrZeroWithExemption("MSG8")) return false; }
+      else { if (!enforceMinNoExemption("MSG7")) return false; }
+    }
+
+    // Extra: RT applies to FED (no exemption) when fed > 0
+    if (appFedRate === "Y" && fedWh > 0) {
+      if (!enforceMinNoExemption("MSG1")) return false;
+    }
+
+    // B. Plan Closure
+    if (isClose) {
+      if (mandPlanCls === "R")       { if (!enforceMinNoExemption("MSG2")) return false; }
+      else if (mandPlanCls === "Y")  { if (!enforceMinOrZeroWithExemption("MSG5")) return false; }
+      else if (mandPlanCls === "X")  { return hideStateWH(); }
+    }
+
+    // C. Premature Distribution
+    if (isUnder59_5) {
+      if (mandPremDist === "R")      { if (!enforceMinNoExemption("MSG3")) return false; }
+      else if (mandPremDist === "Y") { if (!enforceMinOrZeroWithExemption("MSG6")) return false; }
+      else if (mandPremDist === "X") { return hideStateWH(); }
+    }
+
+    // M/V fall-through → hide
+    const mvHit =
+      (followFedWld === "R" && fedWh > 0) ||
+      (followFedWld === "Y" && fedWh > 0) ||
+      (followFedWld === "V") ||
+      (appFedRate === "Y" && fedWh > 0) ||
+      (isClose && ["R","Y","X"].includes(mandPlanCls)) ||
+      (isUnder59_5 && ["R","Y","X"].includes(mandPremDist));
+    if (!mvHit) return hideStateWH();
+  }
+  else {
+    return hideStateWH(); // Unknown reg type
+  }
+
+  // Precision last (keeps rule messages when precision is OK)
+  if (!checkPrecision()) return false;
+
+  // Clear any lingering notifications if everything passes
+  clearNotifications();
+  return true;
+}
 
