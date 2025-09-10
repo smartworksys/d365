@@ -1,1 +1,80 @@
+// Function to set RA code based on maturity option and member age
+function setRACodeBasedOnMaturityAndAge(executionContext) {
+    const formContext = executionContext.getFormContext();
+    const selectedMaturityOption = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_OPTIONS).getValue();
+    const raCodesControl = formContext.getControl(CONSTANTS.ATTRIBUTE_NAMES.RA_CODE);
+    
+    // Only set RA code for withdrawal or close scenarios
+    const isWithdrawOrClose = selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT || 
+                             selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.CLOSE || 
+                             CONSTANTS.VARIABLES.CALCULATED_MATURITY_OPTION === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT;
+    
+    if (!isWithdrawOrClose) {
+        console.log("Not a withdrawal/close scenario, skipping RA code setting");
+        return;
+    }
+    
+    // Only set for IRA accounts
+    if (accountsubtype !== "IR") {
+        console.log("Not an IRA account, skipping RA code setting");
+        return;
+    }
+    
+    // Check if RA code control exists and has options
+    if (!raCodesControl) {
+        console.log("RA Code control not found");
+        return;
+    }
+    
+    const options = raCodesControl.getOptions();
+    if (!options || options.length === 0) {
+        console.log("RA Code dropdown has no options yet");
+        return;
+    }
+    
+    // Check member age and set appropriate RA code
+    const isMember59_5 = isMemberFiftyNinePointFive(formContext, CONSTANTS.VARIABLES.MEMBER_DOB);
+    console.log("Member is 59.5 or older:", isMember59_5);
+    
+    if (!isMember59_5) {
+        // Member is under 59.5 - set to Premature Withdrawal
+        const hasPrematureOption = options.some(option => option.value === 582860000);
+        if (hasPrematureOption) {
+            formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.RA_CODE).setValue(582860000);
+            console.log("Set RA Code to Premature Withdrawal (582860000) - Member under 59.5");
+            
+            // Remove normal withdrawal option
+            const hasNormalOption = options.some(option => option.value === 582860001);
+            if (hasNormalOption) {
+                raCodesControl.removeOption(582860001);
+                console.log("Removed Normal Withdrawal option");
+            }
+        } else {
+            console.log("Premature Withdrawal option not available");
+        }
+    } else {
+        // Member is 59.5+ - remove premature withdrawal option
+        const hasPrematureOption = options.some(option => option.value === 582860000);
+        if (hasPrematureOption) {
+            raCodesControl.removeOption(582860000);
+            console.log("Removed Premature Withdrawal option - Member 59.5+");
+        }
+    }
+}
+
+
+    setRACodeBasedOnMaturityAndAge(executionContext);
+
+
+    // If RA code is empty and we're in a withdrawal scenario, set default based on age
+    if (!selectedRACodeOption && accountsubtype === "IR") {
+        const isWithdrawOrClose = selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT || 
+                                 selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.CLOSE || 
+                                 CONSTANTS.VARIABLES.CALCULATED_MATURITY_OPTION === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT;
+        
+        if (isWithdrawOrClose) {
+            console.log("RA Code is empty, setting default based on member age");
+            setRACodeBasedOnMaturityAndAge(executionContext);
+        }
+    }
 
