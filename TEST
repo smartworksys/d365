@@ -1,1 +1,79 @@
+else if (stateRegType === "M" || stateRegType === "V") {
+
+  // 1) Plan Closure = X → not permitted
+  if (mandPlanCls === "X" && isClose) {
+    return hideStateWH();
+  }
+
+  // 2) Premature Dist = X → not permitted
+  if (mandPremDist === "X" && isUnder59_5) {
+    return hideStateWH();
+  }
+
+  // 3) RT APPL TO FED = Y (when FED > 0 → ≥ MIN, no exemption)
+  if (appFedRate === "Y" && fedWh > 0) {
+    if (!enforceMinNoExemption(1)) return false;        // MSG1
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 4) Follow FED = V (Always mandated)
+  if (followFedWld === "V") {
+    if (formReqWaive === "N") {
+      if (!enforceMinOrZeroWithExemption(8)) return false; // MSG8 (≥ MIN or 0 + exemption)
+    } else {
+      if (!enforceMinNoExemption(7)) return false;         // MSG7 (≥ MIN, no exemption)
+    }
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 5) Follow FED = R
+  if (followFedWld === "R") {
+    if (fedWh === 0) return hideStateWH();
+    if (!enforceMinNoExemption(1)) return false;        // MSG1 (≥ MIN, no exemption)
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 6) Plan Closure = R
+  if (mandPlanCls === "R" && isClose) {
+    if (!enforceMinNoExemption(2)) return false;        // MSG2
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 7) Premature Dist = R
+  if (mandPremDist === "R" && isUnder59_5) {
+    if (!enforceMinNoExemption(3)) return false;        // MSG3
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 8) Follow FED = Y
+  if (followFedWld === "Y") {
+    if (fedWh === 0) return hideStateWH();
+    if (!enforceMinOrZeroWithExemption(4)) return false; // MSG4 (≥ MIN or 0 + exemption)
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 9) Plan Closure = Y
+  if (mandPlanCls === "Y" && isClose) {
+    if (!enforceMinOrZeroWithExemption(5)) return false; // MSG5 (≥ MIN or 0 + exemption)
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 10) Premature Dist = Y
+  if (mandPremDist === "Y" && isUnder59_5) {
+    // Use MSG6 for 0-with-exemption path; MSG10 when >0 but < MIN
+    if (!enforceMinOrZeroWithExemption(6, 10)) return false;
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 11) Nothing matched → hide
+  return hideStateWH();
+}
 
