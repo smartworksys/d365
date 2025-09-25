@@ -1,1 +1,255 @@
+// Dynamics 365 Web Resource: State Tax Withholding Validator (control notifications only)
+// - Exact flow ordering per latest diagrams
+// - Uses updated messages 1–11 (with XX.XX / 0.00 auto-formatted to % or $)
+// - Exemption radio shown only when 0-with-exemption path is valid; hides again when not needed
+// - Hides control when not permitted; optional value clearing via SETTINGS
+
+function validateTaxWithholding(formContext) {
+  const {
+    stateName,
+    stateCode,
+    minRate,
+    minAmt,
+    wholeDollarAmt,
+    formReqWaive,
+    stateRegType,
+    dollarAmtReq,
+    followFedWld,
+    appFedRate,
+    mandPlanCls,
+    mandPremDist
+  } = CONSTANTS.IRA_STATE_CODES;
+
+  const A = CONSTANTS.ATTRIBUTE_NAMES;
+  const SETTINGS = {
+    CLEAR_ON_HIDE: CONSTANTS?.SETTINGS?.CLEAR_ON_HIDE ?? false,
+    CLEAR_EXEMPTION_ON_HIDE: CONSTANTS?.SETTINGS?.CLEAR_EXEMPTION_ON_HIDE ?? false
+  };
+
+  const attr = (schema) => formContext.getAttribute(schema);
+  const ctrl = (schema) => formContext.getControl(schema);
+  const getVal = (schema, def=null) => attr(schema)?.getValue() ?? def;
+
+  const stateAttr = attr(A.IRS_STATE_TAX_PERCENTAGE);
+  const stateCtrl = ctrl(A.IRS_STATE_TAX_PERCENTAGE);
+  const exAttr    = attr("nf1pbm_exceptionreceived");
+  const exCtrl    = ctrl("nf1pbm_exceptionreceived");
+
+  const amountTo = getVal(A.MATURITY_OPTIONS);
+  const fedWh    = Number(getVal(A.IRS_FEDERAL_TAX_PERCENTAGE, 0)) || 0;
+  const stateWh  = Number(getVal(A.IRS_STATE_TAX_PERCENTAGE, 0)) || 0;
+  const raCode   = getVal(A.RA_CODE);
+  const exemptionReceived = getVal("nf1pbm_exceptionreceived");
+
+  const age = getMemberAge(formContext, CONSTANTS.VARIABLES.MEMBER_DOB);
+  const isUnder59_5 = typeof age === "number" ? (age < 59.5) : !!age;
+
+  const CLOSE_VALUE = (CONSTANTS.OPTION_SET_VALUES?.CLOSE ?? "Close");
+  const isClose = (amountTo === CLOSE_VALUE || (amountTo && String(amountTo).toLowerCase() === "close"));
+
+  const isPercentMode = (dollarAmtReq === "Y");
+  const MIN_VALUE = isPercentMode ? Number(minRate || 0) : Number(minAmt || 0);
+
+  function applyFieldConstraints() {
+    const ctrlRef = ctrl(A.IRS_STATE_TAX_PERCENTAGE);
+    if (!ctrlRef) return;
+    const baseLabel = "State Withholding";
+    if (ctrlRef.setLabel) {
+      const suffix = (appFedRate === 'Y') ? ' (of Federal Withholding)' : '';
+      ctrlRef.setLabel(baseLabel + suffix);
+    }
+    if (ctrlRef.setPrecision) {
+      if (dollarAmtReq === 'Y') ctrlRef.setPrecision(2);
+      else ctrlRef.setPrecision(wholeDollarAmt === 'Y' ? 0 : 2);
+    }
+    showStateWH();
+  }
+
+  const M = {
+    1:  "State Withholding must be XX.XX or higher. This state requires taxes to be withheld when Federal taxes are withheld.",
+    2:  "State Withholding must be XX.XX or higher. State taxes are mandated for plan closures, without the ability to exempt out.",
+    3:  "State Withholding must be XX.XX or higher. State taxes are mandated for premature distributions, without the ability to exempt out.",
+    4:  "State Withholding must be XX.XX or higher. State taxes are mandated for when Federal taxes are withheld, or 0.00 must be entered and an exemption form or signature must be received.",
+    5:  "State Withholding must be XX.XX or higher. State taxes are mandated for plan closures, or 0.00 must be entered and an exemption form or signature must be received.",
+    6:  "State Withholding must be XX.XX or higher. State taxes are mandated for premature distributions, or 0.00 must be entered and an exemption form or signature must be received.",
+    7:  "State Withholding must be XX.XX or higher. This state requires taxes to be withheld regardless if Federal taxes are withheld.",
+    8:  "State Withholding must be XX.XX or higher. State taxes are mandated, or 0.00 must be entered and an exemption form or signature must be received.",
+    9:  "This state only accepts whole numbers for Federal and State rates",
+    10: "State Withholding must be XX.XX or higher.",
+    11: "State Withholding must be XX.XX or higher, and a whole dollar amount"
+  };
+
+  function fmtMin()  { return isPercentMode ? `${MIN_VALUE.toFixed(2)}%` : `$${MIN_VALUE.toFixed(2)}`; }
+  function fmtZero() { return isPercentMode ? `0.00%` : `$0.00`; }
+  function fill(msg) { return msg.replaceAll("XX.XX", fmtMin()).replaceAll("0.00", fmtZero()); }
+
+  const NID = { RULE: "STATE_WHT_RULE", PREC: "STATE_WHT_PREC", EX: "STATE_WHT_EXEMPT" };
+
+  function clearAllNotifs() {
+    try { stateCtrl?.clearNotification(NID.RULE); } catch {}
+    try { stateCtrl?.clearNotification(NID.PREC); } catch {}
+    try { exCtrl?.clearNotification?.(NID.EX); } catch {}
+  }
+
+  function notifyRule(msgKey) {
+    clearAllNotifs();
+    stateCtrl?.setNotification(fill(M[msgKey]), NID.RULE);
+    return false;
+  }
+
+  function showExemptionRadio() { exCtrl?.setVisible(true); }
+  function hideExemptionRadio() {
+    try { exCtrl?.clearNotification?.(NID.EX); } catch {}
+    if (SETTINGS.CLEAR_EXEMPTION_ON_HIDE && exAttr) exAttr.setValue(null);
+    exCtrl?.setVisible(false);
+  }
+
+  function notifyExemption(msgKey) {
+    clearAllNotifs();
+    stateCtrl?.setNotification(fill(M[msgKey]), NID.RULE);
+    showExemptionRadio();
+    exCtrl?.setNotification?.("Exemption required to continue.", NID.EX);
+    return false;
+  }
+
+  function checkPrecision() {
+    if (isPercentMode) {
+      if (!Number.isInteger(stateWh * 100)) {
+        stateCtrl?.setNotification("Percentage may have at most two decimal places.", NID.PREC);
+        return false;
+      }
+    } else {
+      if (wholeDollarAmt === "Y" && stateWh % 1 !== 0) {
+        stateCtrl?.setNotification("Dollar amount must be a whole number.", NID.PREC);
+        return false;
+      }
+      if (!Number.isInteger(stateWh * 100)) {
+        stateCtrl?.setNotification("Dollar amount may have at most two decimal places.", NID.PREC);
+        return false;
+      }
+    }
+    try { stateCtrl?.clearNotification(NID.PREC); } catch {}
+    return true;
+  }
+
+  function hideStateWH() {
+    clearAllNotifs();
+    hideExemptionRadio();
+    if (stateCtrl) { stateCtrl.setDisabled(true); stateCtrl.setVisible(false); }
+    if (SETTINGS.CLEAR_ON_HIDE && stateAttr) stateAttr.setValue(null);
+    return false;
+  }
+  function showStateWH() { if (stateCtrl) { stateCtrl.setDisabled(false); stateCtrl.setVisible(true); } }
+
+  if (!([582860001, 582860000].includes(getVal(A.RA_CODE)))) return hideStateWH();
+  showStateWH();
+  applyFieldConstraints();
+
+  function enforceMinNoExemption(msgKey) {
+    hideExemptionRadio();
+    if (stateWh >= MIN_VALUE) { clearAllNotifs(); return true; }
+    return notifyRule(msgKey);
+  }
+
+  function enforceMinOrZeroWithExemption(msgKey) {
+    if (stateWh === 0) {
+      const hasEx = (exemptionReceived === true || exemptionReceived === "Y" || exemptionReceived === 1);
+      if (hasEx) { clearAllNotifs(); showExemptionRadio(); return true; }
+      return notifyExemption(8); // always MSG8 when 0 and exemption missing
+    }
+    hideExemptionRadio();
+    if (stateWh < MIN_VALUE) return notifyRule(10); // explicit MSG10 when < MIN_VALUE and not 0
+    return true;
+  }
+
+  if (stateRegType === "S") {
+    if (followFedWld === "R") {
+      if (fedWh === 0) return hideStateWH();
+      if (!enforceMinNoExemption(1)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (mandPlanCls === "R" && isClose) {
+      if (!enforceMinNoExemption(2)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (mandPremDist === "R" && isUnder59_5) {
+      if (!enforceMinNoExemption(3)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (followFedWld === "Y") {
+      if (fedWh === 0) return hideStateWH();
+      if (!enforceMinOrZeroWithExemption(4)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (mandPlanCls === "Y" && isClose) {
+      if (!enforceMinOrZeroWithExemption(5)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (mandPremDist === "Y" && isUnder59_5) {
+      if (!enforceMinOrZeroWithExemption(6)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    return hideStateWH();
+  } else if (stateRegType === "M" || stateRegType === "V") {
+    if (mandPlanCls === "X" && isClose) return hideStateWH();
+    if (mandPremDist === "X" && isUnder59_5) return hideStateWH();
+    if (appFedRate === "Y" && fedWh > 0) {
+      if (!enforceMinNoExemption(1)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (followFedWld === "V") {
+      if (formReqWaive === "N") {
+        if (!enforceMinOrZeroWithExemption(8)) return false;
+      } else {
+        if (!enforceMinNoExemption(7)) return false;
+      }
+      if (!checkPrecision()) return false; return true;
+    }
+    if (mandPlanCls === "R" && isClose) {
+      if (!enforceMinNoExemption(2)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (mandPremDist === "R" && isUnder59_5) {
+      if (!enforceMinNoExemption(3)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (followFedWld === "Y") {
+      if (fedWh === 0) return hideStateWH();
+      if (!enforceMinOrZeroWithExemption(4)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (mandPlanCls === "Y" && isClose) {
+      if (!enforceMinOrZeroWithExemption(5)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    if (mandPremDist === "Y" && isUnder59_5) {
+      if (!enforceMinOrZeroWithExemption(6)) return false;
+      if (!checkPrecision()) return false; return true;
+    }
+    return hideStateWH();
+  } else return hideStateWH();
+}
+
+// -- Revalidation wiring (call on Form OnLoad) --
+function wireTaxWithholdingRevalidate(executionContext) {
+  const formContext = executionContext.getFormContext();
+  const A = CONSTANTS.ATTRIBUTE_NAMES;
+  const fields = [
+    A.IRS_STATE_TAX_PERCENTAGE,
+    A.IRS_FEDERAL_TAX_PERCENTAGE,
+    A.MATURITY_OPTIONS,
+    A.RA_CODE,
+    "nf1pbm_exceptionreceived",
+    CONSTANTS.VARIABLES.MEMBER_DOB
+  ];
+  fields.forEach((schema) => {
+    const a = formContext.getAttribute(schema);
+    if (a && typeof a.addOnChange === "function") {
+      a.addOnChange(() => validateTaxWithholding(formContext));
+    }
+  });
+  // initial run
+  validateTaxWithholding(formContext);
+}
+
 
