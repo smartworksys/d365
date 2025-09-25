@@ -1,1 +1,58 @@
+// --- Add these near the top helpers (with the others) ---
+const PLAN_CLOSURE_FIELD = "nf1pbm_planclosure"; // <-- TODO: set to your schema name
+const pcAttr = formContext.getAttribute(PLAN_CLOSURE_FIELD);
+const pcCtrl = formContext.getControl(PLAN_CLOSURE_FIELD);
+
+// Optional clearing flags (mirror your other SETTINGS)
+const CLEAR_PLAN_CLOSURE_ON_HIDE = CONSTANTS?.SETTINGS?.CLEAR_PLAN_CLOSURE_ON_HIDE ?? false;
+
+function showPlanClosureRadio() {
+  pcCtrl?.setVisible(true);
+}
+
+function hidePlanClosureRadio() {
+  try { pcCtrl?.clearNotification?.("PLAN_CLOSURE_REQ"); } catch {}
+  if (CLEAR_PLAN_CLOSURE_ON_HIDE && pcAttr) pcAttr.setValue(null);
+  pcCtrl?.setVisible(false);
+}
+
+// Call this once per run after you compute `isClose` and have mandPlanCls
+function reconcilePlanClosureRadioVisibility() {
+  // Show only when Amount To = Close and the state allows/mandates closure logic.
+  // X = not permitted (hide). For N/blank we also hide.
+  if (isClose && (mandPlanCls === "R" || mandPlanCls === "Y")) {
+    showPlanClosureRadio();
+  } else {
+    hidePlanClosureRadio();
+  }
+}
+
+
+// ===== RA code gating =====
+if (!([582860001, 582860000].includes(getVal(A.RA_CODE)))) return hideStateWH();
+showStateWH();
+applyFieldConstraints();
+
+// NEW: keep the Plan Closure radio UI in sync with current state
+reconcilePlanClosureRadioVisibility();
+
+
+// Example inside the S or M/V branches when you hit Plan Closure = R or Y:
+if (pcCtrl?.getVisible && pcCtrl.getVisible()) {
+  const pcVal = pcAttr?.getValue();
+  if (!pcVal) {
+    pcCtrl?.setNotification("Please confirm Plan Closure to continue.", "PLAN_CLOSURE_REQ");
+    return false;
+  } else {
+    try { pcCtrl?.clearNotification("PLAN_CLOSURE_REQ"); } catch {}
+  }
+}
+
+
+// In wireTaxWithholdingRevalidate(...)
+const extra = [ PLAN_CLOSURE_FIELD ]; // add your schema
+[...fields, ...extra].forEach((schema) => {
+  const a = formContext.getAttribute(schema);
+  if (a?.addOnChange) a.addOnChange(() => validateTaxWithholding(formContext));
+});
 
