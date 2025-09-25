@@ -1,58 +1,146 @@
-// --- Add these near the top helpers (with the others) ---
-const PLAN_CLOSURE_FIELD = "nf1pbm_planclosure"; // <-- TODO: set to your schema name
-const pcAttr = formContext.getAttribute(PLAN_CLOSURE_FIELD);
-const pcCtrl = formContext.getControl(PLAN_CLOSURE_FIELD);
+// =====================================================
+// STATE REG TYPE === "S"
+// =====================================================
+if (stateRegType === "S") {
 
-// Optional clearing flags (mirror your other SETTINGS)
-const CLEAR_PLAN_CLOSURE_ON_HIDE = CONSTANTS?.SETTINGS?.CLEAR_PLAN_CLOSURE_ON_HIDE ?? false;
-
-function showPlanClosureRadio() {
-  pcCtrl?.setVisible(true);
-}
-
-function hidePlanClosureRadio() {
-  try { pcCtrl?.clearNotification?.("PLAN_CLOSURE_REQ"); } catch {}
-  if (CLEAR_PLAN_CLOSURE_ON_HIDE && pcAttr) pcAttr.setValue(null);
-  pcCtrl?.setVisible(false);
-}
-
-// Call this once per run after you compute `isClose` and have mandPlanCls
-function reconcilePlanClosureRadioVisibility() {
-  // Show only when Amount To = Close and the state allows/mandates closure logic.
-  // X = not permitted (hide). For N/blank we also hide.
-  if (isClose && (mandPlanCls === "R" || mandPlanCls === "Y")) {
-    showPlanClosureRadio();
-  } else {
-    hidePlanClosureRadio();
+  // 1) Follow FED = R
+  if (followFedWld === "R") {
+    if (fedWh === 0) return hideStateWH();
+    if (!enforceMinNoExemption(1)) return false;        // MSG1
+    if (!checkPrecision()) return false;
+    return true;
   }
-}
 
-
-// ===== RA code gating =====
-if (!([582860001, 582860000].includes(getVal(A.RA_CODE)))) return hideStateWH();
-showStateWH();
-applyFieldConstraints();
-
-// NEW: keep the Plan Closure radio UI in sync with current state
-reconcilePlanClosureRadioVisibility();
-
-
-// Example inside the S or M/V branches when you hit Plan Closure = R or Y:
-if (pcCtrl?.getVisible && pcCtrl.getVisible()) {
-  const pcVal = pcAttr?.getValue();
-  if (!pcVal) {
-    pcCtrl?.setNotification("Please confirm Plan Closure to continue.", "PLAN_CLOSURE_REQ");
-    return false;
-  } else {
-    try { pcCtrl?.clearNotification("PLAN_CLOSURE_REQ"); } catch {}
+  // 2) Plan Closure = R
+  if (mandPlanCls === "R" && isClose) {
+    if (!enforceMinNoExemption(2)) return false;        // MSG2
+    if (!checkPrecision()) return false;
+    return true;
   }
+
+  // 3) Premature Dist = R
+  if (mandPremDist === "R" && isUnder59_5) {
+    if (!enforceMinNoExemption(3)) return false;        // MSG3
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 4) Follow FED = Y
+  if (followFedWld === "Y") {
+    if (fedWh === 0) return hideStateWH();
+    if (!enforceMinOrZeroWithExemption(4)) return false; // MSG4
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 5) Plan Closure = Y
+  if (mandPlanCls === "Y" && isClose) {
+    if (!enforceMinOrZeroWithExemption(5)) return false; // MSG5
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 6) Premature Dist = Y
+  if (mandPremDist === "Y" && isUnder59_5) {
+    if (!enforceMinOrZeroWithExemption(6)) return false; // MSG6
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 7) Nothing matched
+  return hideStateWH();
 }
 
+// =====================================================
+// STATE REG TYPE === "M" || "V"
+// =====================================================
+else if (stateRegType === "M" || stateRegType === "V") {
 
-// In wireTaxWithholdingRevalidate(...)
-const extra = [ PLAN_CLOSURE_FIELD ]; // add your schema
-[...fields, ...extra].forEach((schema) => {
-  const a = formContext.getAttribute(schema);
-  if (a?.addOnChange) a.addOnChange(() => validateTaxWithholding(formContext));
-});
+  // 1) Plan Closure = X
+  if (mandPlanCls === "X" && isClose) {
+    return hideStateWH();
+  }
 
+  // 2) Premature Dist = X
+  if (mandPremDist === "X" && isUnder59_5) {
+    return hideStateWH();
+  }
+
+  // 3) RT Applies to FED = Y
+  if (appFedRate === "Y" && fedWh > 0) {
+    if (!enforceMinNoExemption(1)) return false;        // MSG1
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 4) Follow FED = V
+  if (followFedWld === "V") {
+    if (formReqWaive === "N") {
+      if (!enforceMinOrZeroWithExemption(8)) return false; // MSG8
+    } else {
+      if (!enforceMinNoExemption(7)) return false;         // MSG7
+    }
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 5) Follow FED = R
+  if (followFedWld === "R") {
+    if (fedWh === 0) return hideStateWH();
+    if (!enforceMinNoExemption(1)) return false;        // MSG1
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 6) Plan Closure = R
+  if (mandPlanCls === "R" && isClose) {
+    if (!enforceMinNoExemption(2)) return false;        // MSG2
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 7) Premature Dist = R
+  if (mandPremDist === "R" && isUnder59_5) {
+    if (!enforceMinNoExemption(3)) return false;        // MSG3
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 8) Follow FED = Y
+  if (followFedWld === "Y") {
+    if (fedWh === 0) return hideStateWH();
+    if (!enforceMinOrZeroWithExemption(4)) return false; // MSG4
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 9) Plan Closure = Y
+  if (mandPlanCls === "Y" && isClose) {
+    if (!enforceMinOrZeroWithExemption(5)) return false; // MSG5
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 10) Premature Dist = Y
+  if (mandPremDist === "Y" && isUnder59_5) {
+    if (!enforceMinOrZeroWithExemption(6)) return false; // MSG6
+    if (!checkPrecision()) return false;
+    return true;
+  }
+
+  // 11) Nothing matched
+  return hideStateWH();
+}
+
+// =====================================================
+// SPECIAL CASE: JUST stateRegType === "M"
+// (Refines Premature Dist = Y to use MSG10 when >0 but < MIN)
+// =====================================================
+else if (stateRegType === "M") {
+  if (mandPremDist === "Y" && isUnder59_5) {
+    if (!enforceMinOrZeroWithExemption(6, 10)) return false; // MSG6 for 0, MSG10 for >0 but < MIN
+    if (!checkPrecision()) return false;
+    return true;
+  }
+  return hideStateWH();
+}
