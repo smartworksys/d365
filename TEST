@@ -1,6 +1,17 @@
-function toNumber(v) {
-  if (v == null) return 0;
-  return Number(String(v).replace(/[$,%\s]/g, "")) || 0;
+function fmtMin() {
+  return isPercentMode 
+    ? `${MIN_VALUE.toFixed(2)}%` 
+    : `$${MIN_VALUE.toFixed(2)}`;
 }
 
-const MIN_VALUE = isPercentMode ? toNumber(minRate) : toNumber(minAmt);
+function fmtZero() {
+  return isPercentMode 
+    ? `0.00%` 
+    : `$0.00`;
+}
+
+function fill(msg) {
+  return msg
+    .replaceAll("XX.XX", fmtMin())
+    .replaceAll("0.00", fmtZero());
+}
