@@ -37,7 +37,7 @@
   }
   .controls {
     display: grid;
-    grid-template-columns: 1fr repeat(3, minmax(140px, 180px));
+    grid-template-columns: 1fr repeat(4, minmax(140px, 180px));
     gap: 8px;
     align-items: center;
   }
@@ -71,6 +71,7 @@
     <div class="controls">
       <input id="search" type="search" placeholder="Search state, code, or form..." />
       <select id="filterState"><option value="">State: All</option></select>
+      <select id="filterRecType"><option value="">Rec Type: All</option></select>
       <select id="filterRegType"><option value="">Reg Type: All</option></select>
       <select id="filterFollowFed">
         <option value="">Follow Fed: All</option>
@@ -194,10 +195,12 @@ const searchInput = document.getElementById("search");
 const regSel = document.getElementById("filterRegType");
 const fedSel = document.getElementById("filterFollowFed");
 const stateSel = document.getElementById("filterState");
+const recSel = document.getElementById("filterRecType");
 
 function populateFilters() {
   const states = [...new Set(STATE_RATE_TABLE.map(r => r.stateCode))].filter(Boolean).sort();
   const regTypes = [...new Set(STATE_RATE_TABLE.map(r => r.stateRegType))].filter(Boolean).sort();
+  const recTypes = [...new Set(STATE_RATE_TABLE.map(r => r.recType))].filter(Boolean).sort();
 
   states.forEach(code => {
     const opt = document.createElement("option");
@@ -210,15 +213,22 @@ function populateFilters() {
     opt.value = rt; opt.textContent = rt;
     regSel.appendChild(opt);
   });
+
+  recTypes.forEach(rt => {
+    const opt = document.createElement("option");
+    opt.value = rt; opt.textContent = rt;
+    recSel.appendChild(opt);
+  });
 }
 
 /* Filter + Sort */
 function applyFilters() {
   const term = (searchInput.value || "").toLowerCase();
-  const reg = regSel.value, fed = fedSel.value, st = stateSel.value;
+  const reg = regSel.value, fed = fedSel.value, st = stateSel.value, rec = recSel.value;
 
   let filtered = STATE_RATE_TABLE.filter(r => {
     if (st && r.stateCode !== st) return false;
+    if (rec && r.recType !== rec) return false;
     if (reg && r.stateRegType !== reg) return false;
     if (fed && r.followFedWld !== fed) return false;
     if (!term) return true;
@@ -262,7 +272,7 @@ document.querySelectorAll("thead th").forEach(th => {
   });
 });
 
-[searchInput, regSel, fedSel, stateSel].forEach(el => el.addEventListener("input", applyFilters));
+[searchInput, regSel, fedSel, stateSel, recSel].forEach(el => el.addEventListener("input", applyFilters));
 
 /* Init */
 document.addEventListener("DOMContentLoaded", loadStateRateTable);
