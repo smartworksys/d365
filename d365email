@@ -11,6 +11,7 @@
     --fg: #1f2937;
     --muted: #6b7280;
     --line: #e5e7eb;
+    --accent: #2563eb;
   }
   body {
     margin: 0;
@@ -37,7 +38,7 @@
   }
   .controls {
     display: grid;
-    grid-template-columns: 1fr repeat(4, minmax(140px, 180px));
+    grid-template-columns: 1fr repeat(5, minmax(130px, 170px)) 110px;
     gap: 8px;
     align-items: center;
   }
@@ -47,6 +48,19 @@
     padding: 8px 10px;
     font-size: 13px;
     background: #fff;
+  }
+  button {
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #fff;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: 0.2s background;
+  }
+  button:hover {
+    background: #1d4ed8;
   }
   table { width: 100%; border-collapse: collapse; }
   th, td { padding: 6px 8px; border-bottom: 1px solid var(--line); }
@@ -79,6 +93,7 @@
         <option value="Y">Y</option>
         <option value="V">V</option>
       </select>
+      <button id="clearFilters">Clear Filters</button>
     </div>
     <div id="status" class="muted" style="margin-top:6px;">Loading data...</div>
   </div>
@@ -196,30 +211,24 @@ const regSel = document.getElementById("filterRegType");
 const fedSel = document.getElementById("filterFollowFed");
 const stateSel = document.getElementById("filterState");
 const recSel = document.getElementById("filterRecType");
+const clearBtn = document.getElementById("clearFilters");
 
 function populateFilters() {
   const states = [...new Set(STATE_RATE_TABLE.map(r => r.stateCode))].filter(Boolean).sort();
   const regTypes = [...new Set(STATE_RATE_TABLE.map(r => r.stateRegType))].filter(Boolean).sort();
   const recTypes = [...new Set(STATE_RATE_TABLE.map(r => r.recType))].filter(Boolean).sort();
 
-  states.forEach(code => {
-    const opt = document.createElement("option");
-    opt.value = code; opt.textContent = code;
-    stateSel.appendChild(opt);
-  });
-
-  regTypes.forEach(rt => {
-    const opt = document.createElement("option");
-    opt.value = rt; opt.textContent = rt;
-    regSel.appendChild(opt);
-  });
-
-  recTypes.forEach(rt => {
-    const opt = document.createElement("option");
-    opt.value = rt; opt.textContent = rt;
-    recSel.appendChild(opt);
-  });
+  states.forEach(code => stateSel.add(new Option(code, code)));
+  regTypes.forEach(rt => regSel.add(new Option(rt, rt)));
+  recTypes.forEach(rt => recSel.add(new Option(rt, rt)));
 }
+
+/* Clear all filters */
+clearBtn.addEventListener("click", () => {
+  searchInput.value = "";
+  [stateSel, recSel, regSel, fedSel].forEach(sel => sel.value = "");
+  applyFilters();
+});
 
 /* Filter + Sort */
 function applyFilters() {
@@ -262,6 +271,7 @@ function applyFilters() {
   statusEl.textContent = `Showing ${filtered.length} of ${STATE_RATE_TABLE.length}`;
 }
 
+/* Sorting logic */
 document.querySelectorAll("thead th").forEach(th => {
   th.addEventListener("click", () => {
     const key = th.getAttribute("data-key");
