@@ -1,13 +1,80 @@
-// Get calculated maturity option value from the form
-const calculatedMaturityOption = formContext.getAttribute(CONSTANTS.VARIABLES.CALCULATED_MATURITY_OPTION)?.getValue();
+function calculateMaturityOption(executionContext) {
+    const formContext = executionContext.getFormContext();
 
-// Helper: determine if option is Withdraw or Close
-const isWithdrawOrClose =
-    selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT ||
-    selectedMaturityOption === CONSTANTS.OPTION_SET_VALUES.CLOSE ||
-    calculatedMaturityOption === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT;
+    // Get all required field values
+    const amount = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.TRANSACTION_AMOUNT)?.getValue() || 0;
+    const affiliateBalanceAmount = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)?.getValue() || 0;
+    const certificateBalanceAmount = formContext.getAttribute("nf1pbm_certificatebalance")?.getValue() || 0;
+    const optionSetValue = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_OPTIONS)?.getValue();
+    const totalAmount = affiliateBalanceAmount + certificateBalanceAmount;
+    const affiliateAccType = CONSTANTS.ACCOUNT_DETAILS.AFFILIATE_ACCOUNT_TYPE;
 
-// Rule 1: Withdraw/Close cert IRA without affiliate IRA
-if (isWithdrawOrClose && !isAfflAcctIRA && isCertAcctIRA) {
-    shouldSetManualReview = true;
+    let calculatedOption = null;
+    let specificBalCheck = null;
+    let monetaryTranType = null;
+
+    console.log("🧮 Calculating Maturity Option with:", {
+        optionSetValue,
+        amount,
+        certificateBalanceAmount,
+        affiliateBalanceAmount,
+        totalAmount,
+        affiliateAccType
+    });
+
+    // ================================
+    // MAIN MATURITY CALCULATION LOGIC
+    // ================================
+
+    if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.ADD_TO_CERT) {
+        calculatedOption = CONSTANTS.OPTION_SET_VALUES.ADD_TO_CERT;
+        specificBalCheck = "Add";
+        monetaryTranType = "C"; // Credit
+    } 
+    else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT) {
+        calculatedOption = CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT;
+        specificBalCheck = "Withdraw";
+        monetaryTranType = "D"; // Debit
+    } 
+    else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.SPECIFIC_BALANCE) {
+        // Specific balance logic depends on certificate balance minus entered amount
+        const specificBalCheckValue = certificateBalanceAmount - amount;
+        if (specificBalCheckValue > 0) {
+            specificBalCheck = "Withdraw";
+            calculatedOption = CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT;
+            monetaryTranType = "D";
+        } else {
+            specificBalCheck = "Add";
+            calculatedOption = CONSTANTS.OPTION_SET_VALUES.ADD_TO_CERT;
+            monetaryTranType = "C";
+        }
+    } 
+    else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.CLOSE) {
+        calculatedOption = CONSTANTS.OPTION_SET_VALUES.CLOSE;
+        specificBalCheck = null;
+        monetaryTranType = "L"; // Close
+    }
+
+    // ================================
+    // UPDATE GLOBAL CONSTANTS
+    // ================================
+
+    CONSTANTS.VARIABLES.CALCULATED_MATURITY_OPTION = calculatedOption;
+    CONSTANTS.ACCOUNT_DETAILS.SPECIFIC_BAL_CHECK = specificBalCheck;
+    CONSTANTS.ATTRIBUTE_NAMES.MONETARY_TRAN_TYPE = monetaryTranType;
+
+    console.log("✅ CALCULATED_MATURITY_OPTION:", calculatedOption);
+    console.log("✅ SPECIFIC_BAL_CHECK:", specificBalCheck);
+    console.log("✅ MONETARY_TRAN_TYPE:", monetaryTranType);
+
+    // Return the values for optional chaining or testing
+    return {
+        calculatedOption,
+        specificBalCheck,
+        monetaryTranType,
+        amount,
+        affiliateBalanceAmount,
+        certificateBalanceAmount,
+        totalAmount
+    };
 }
