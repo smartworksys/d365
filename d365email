@@ -1,80 +1,71 @@
-function calculateMaturityOption(executionContext) {
-    const formContext = executionContext.getFormContext();
+using Azure.Identity;
+using Azure.Storage.Blobs;
+using Azure.Security.KeyVault.Secrets;
+using Azure.Extensions.AspNetCore.Configuration.Secrets;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-    // Get all required field values
-    const amount = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.TRANSACTION_AMOUNT)?.getValue() || 0;
-    const affiliateBalanceAmount = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.AFFILIATE_BALANCE_AMOUNT)?.getValue() || 0;
-    const certificateBalanceAmount = formContext.getAttribute("nf1pbm_certificatebalance")?.getValue() || 0;
-    const optionSetValue = formContext.getAttribute(CONSTANTS.ATTRIBUTE_NAMES.MATURITY_OPTIONS)?.getValue();
-    const totalAmount = affiliateBalanceAmount + certificateBalanceAmount;
-    const affiliateAccType = CONSTANTS.ACCOUNT_DETAILS.AFFILIATE_ACCOUNT_TYPE;
-
-    let calculatedOption = null;
-    let specificBalCheck = null;
-    let monetaryTranType = null;
-
-    console.log("🧮 Calculating Maturity Option with:", {
-        optionSetValue,
-        amount,
-        certificateBalanceAmount,
-        affiliateBalanceAmount,
-        totalAmount,
-        affiliateAccType
-    });
-
-    // ================================
-    // MAIN MATURITY CALCULATION LOGIC
-    // ================================
-
-    if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.ADD_TO_CERT) {
-        calculatedOption = CONSTANTS.OPTION_SET_VALUES.ADD_TO_CERT;
-        specificBalCheck = "Add";
-        monetaryTranType = "C"; // Credit
-    } 
-    else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT) {
-        calculatedOption = CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT;
-        specificBalCheck = "Withdraw";
-        monetaryTranType = "D"; // Debit
-    } 
-    else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.SPECIFIC_BALANCE) {
-        // Specific balance logic depends on certificate balance minus entered amount
-        const specificBalCheckValue = certificateBalanceAmount - amount;
-        if (specificBalCheckValue > 0) {
-            specificBalCheck = "Withdraw";
-            calculatedOption = CONSTANTS.OPTION_SET_VALUES.WITHDRAW_FROM_CERT;
-            monetaryTranType = "D";
-        } else {
-            specificBalCheck = "Add";
-            calculatedOption = CONSTANTS.OPTION_SET_VALUES.ADD_TO_CERT;
-            monetaryTranType = "C";
+var host = new HostBuilder()
+    .ConfigureFunctionsWorkerDefaults()
+    .ConfigureAppConfiguration((context, config) =>
+    {
+        // Add Key Vault configuration
+        var keyVaultUri = Environment.GetEnvironmentVariable("KeyVaultUri");
+        if (!string.IsNullOrEmpty(keyVaultUri))
+        {
+            var credential = new DefaultAzureCredential();
+            var secretClient = new SecretClient(new Uri(keyVaultUri), credential);
+            config.AddAzureKeyVault(secretClient, new AzureKeyVaultConfigurationOptions());
         }
-    } 
-    else if (optionSetValue === CONSTANTS.OPTION_SET_VALUES.CLOSE) {
-        calculatedOption = CONSTANTS.OPTION_SET_VALUES.CLOSE;
-        specificBalCheck = null;
-        monetaryTranType = "L"; // Close
-    }
+        
+        // Add local settings for development
+        if (context.HostingEnvironment.IsDevelopment())
+        {
+            config.AddJsonFile("local.settings.json", optional: true, reloadOnChange: true);
+        }
+    })
+    .ConfigureServices((context, services) =>
+    {
+        // Add logging
+        services.AddLogging();
+        
+        // Add BlobServiceClient
+        services.AddSingleton(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var connectionString = configuration["Blob--ConnectionString"];
+            
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                throw new InvalidOperationException("Blob--ConnectionString not found in configuration");
+            }
+            
+            return new BlobServiceClient(connectionString);
+        });
+        
+        // Add DataverseService
+        services.AddSingleton<DataverseService>(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var logger = provider.GetRequiredService<ILogger<DataverseService>>();
+            
+            var clientId = configuration["Dataverse--ClientId"];
+            var clientSecret = configuration["Dataverse--ClientSecret"];
+            var tenantId = configuration["Dataverse--TenantId"];
+            var dataverseUrl = configuration["Dataverse--Url"];
+            
+            if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret) || 
+                string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(dataverseUrl))
+            {
+                throw new InvalidOperationException("Required Dataverse configuration not found in Key Vault");
+            }
+            
+            return new DataverseService(clientId, clientSecret, tenantId, dataverseUrl, logger);
+        });
+    })
+    .Build();
 
-    // ================================
-    // UPDATE GLOBAL CONSTANTS
-    // ================================
-
-    CONSTANTS.VARIABLES.CALCULATED_MATURITY_OPTION = calculatedOption;
-    CONSTANTS.ACCOUNT_DETAILS.SPECIFIC_BAL_CHECK = specificBalCheck;
-    CONSTANTS.ATTRIBUTE_NAMES.MONETARY_TRAN_TYPE = monetaryTranType;
-
-    console.log("✅ CALCULATED_MATURITY_OPTION:", calculatedOption);
-    console.log("✅ SPECIFIC_BAL_CHECK:", specificBalCheck);
-    console.log("✅ MONETARY_TRAN_TYPE:", monetaryTranType);
-
-    // Return the values for optional chaining or testing
-    return {
-        calculatedOption,
-        specificBalCheck,
-        monetaryTranType,
-        amount,
-        affiliateBalanceAmount,
-        certificateBalanceAmount,
-        totalAmount
-    };
-}
+host.Run();
