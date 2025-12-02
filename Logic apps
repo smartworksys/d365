@@ -1,119 +1,38 @@
-# Azure Logic Apps and Pipeline Deployment for Dynamics CRM to Ingenium Integration
+- task: AzureCLI@2
+  displayName: 'Re-register Dataverse Logic App triggers'
+  inputs:
+    azureSubscription: $(serviceConnectionName)
+    scriptType: pscore
+    scriptLocation: inlineScript
+    inlineScript: |
+      $resourceGroup = "$(resourceGroupName)"
+      $dataverseUrl  = "$(dataverseUrl)"
 
-## Table of Contents
-1. [Project Overview](#project-overview)  
-2. [Prerequisites](#prerequisites)  
-3. [Setup Instructions](#setup-instructions)  
-4. [Workflow Details](#workflow-details)  
-5. [Pipeline Configuration](#pipeline-configuration)  
-6. [Usage Instructions](#usage-instructions)  
-7. [Contributing](#contributing)  
-8. [Release Notes](#release-notes)  
-9. [License](#license)  
+      Write-Host "Finding Logic Apps in RG: $resourceGroup"
 
----
+      $logicApps = az logicapp list --resource-group $resourceGroup | ConvertFrom-Json
 
-## Project Overview
-This project manages Azure Logic Apps workflows and an Azure Pipeline to facilitate the integration between Microsoft Dynamics CRM and Ingenium. It automates tasks such as creating, updating, and managing contact and address details, ensuring consistency across integrated platforms. The Azure Pipeline is configured to deploy these workflows across multiple environments (e.g., Development, Test, and Production), supporting robust, repeatable, and secure deployment processes.
+      foreach ($app in $logicApps) {
+          Write-Host "Processing Logic App: $($app.name)"
 
----
+          $definition = az logicapp show --resource-group $resourceGroup --name $app.name --query "definition" | ConvertFrom-Json
+          $triggers = $definition.triggers.PSObject.Properties.Name
 
-## Prerequisites
-- **Azure Subscription**: An active Azure subscription is required to create and manage Logic Apps, Functions, and other Azure resources.  
-- **Azure DevOps Access**: Permissions to create and manage pipelines, repositories, and other Azure DevOps services.  
-- **Azure Resource Management Permissions**: You must be able to deploy and manage Azure resources (e.g., Logic Apps, Service Bus, Key Vault).  
-- **Dynamics CRM Setup**: A configured instance of Microsoft Dynamics CRM with API connections for integration.  
+          foreach ($triggerName in $triggers) {
+              Write-Host "  Checking trigger: $triggerName"
 
----
+              $trigger = $definition.triggers.$triggerName
 
-## Setup Instructions
+              if ($trigger.type -eq "ApiConnection") {
+                  Write-Host "    Updating Dataverse trigger environment URL..."
 
-1. **Clone the Repository**  
-   - Clone the repository locally or in your Azure DevOps environment.  
-
-2. **Configure Azure Services**  
-   - Ensure Azure Logic Apps, Azure Functions, and any necessary connections (e.g., Dynamics CRM) are set up and properly configured.  
-   - If required, configure Azure Service Bus namespaces and topics for event-driven workflows.
-
-3. **Set Environment Variables**  
-   - Use Azure Key Vault to securely store and manage credentials, connection strings, and other sensitive information.  
-   - Update the pipeline and Logic App parameters to reference these secrets as needed.
-
----
-
-## Workflow Details
-Several Logic App workflows are included to manage data flows between Dynamics CRM and Ingenium:
-
-- **CRM-ASB-Address-Create**  
-  Manages the creation of new address records by sending details to Azure Service Bus.
-
-- **CRM-ASB-Address-Update**  
-  Handles the update of existing address records to ensure data consistency.
-
-- **CRM-ASB-Contact-Address-Update**  
-  Updates contact address details in Ingenium whenever a change occurs in CRM.
-
-- **CRM-ASB-Contact-Create**  
-  Automates the creation of new contact records in CRM and reflects those changes in Ingenium.
-
-- **CRM-ASB-Contact-Telephone-Update**  
-  Manages updates to a contact's telephone information across integrated systems.
-
-- **CRM-ASB-Contact-Update**  
-  General workflow for updating contact records, covering various CRM fields and maintaining data integrity in Ingenium.
-
----
-
-## Pipeline Configuration
-The Azure Pipeline (`azure-pipelines.yml`) is designed to simplify multi-environment deployments with these features:
-
-- **Parameterized Builds**  
-  Allows specifying the target environment (e.g., Development, Test, Production) and whether to deploy app connections and Logic App workflows.
-
-- **Deploy CRM Connection**  
-  Fetches secrets from Azure Key Vault and deploys necessary CRM connections before the main workflow deployment.
-
-- **Build Artifacts**  
-  Compiles or bundles any required files or templates in preparation for deployment.
-
-- **ARM Template Deploy**  
-  Deploys the Logic App workflows to Azure using ARM templates, enabling a consistent and repeatable deployment process.
-
----
-
-## Usage Instructions
-1. **Navigate to Azure DevOps**  
-   - Locate and open the pipeline in your Azure DevOps project.
-
-2. **Run the Pipeline**  
-   - Provide parameter values as prompted:
-     - **environment**: Choose the appropriate environment (e.g., Development, Test, or Production).
-     - **deploy_app_connections**: Boolean flag to decide if connection resources should be deployed.
-     - **deploy_logicapp_workflows**: Boolean flag to decide if the Logic App workflows should be deployed.
-
-3. **Monitor Deployment**  
-   - Track the pipeline’s progress and review any logs or output for potential errors.
-
----
-
-## Contributing
-1. **Fork the Repository**  
-   - Create your own copy of the repository to make isolated changes.
-
-2. **Create a New Branch**  
-   - Work on features or bug fixes in their own branches.
-
-3. **Submit a Pull Request**  
-   - Provide a clear description of changes and steps to replicate or test them.
-
----
-
-## Release Notes
-### Version 1.2 (March 2025)
-- Added support for multi-environment deployments using parameterized builds.
-- Enhanced security features with improved Azure Key Vault integration.
-
----
-
-## License
-This project is licensed under the **MIT License**. For full license text, see the [LICENSE](LICENSE) file in the repository.
+                  az logicapp update `
+                    --resource-group $resourceGroup `
+                    --name $app.name `
+                    --set "definition.triggers.$triggerName.inputs.parameters.environment='$dataverseUrl'"
+              }
+              else {
+                  Write-Host "    Skipping non-Dataverse trigger."
+              }
+          }
+      }
