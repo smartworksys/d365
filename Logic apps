@@ -166,53 +166,56 @@ stages:
           inlineScript: |
             $resourceGroup = "$(aspResourceGroup)"
             $dataverseUrl  = "$(CRMendpointUrl)"
+            $logicAppName  = "$(logicAppName)"
 
             Write-Host "Using az version:"
             az --version
 
-            Write-Host "Finding Logic Apps in resource group: $resourceGroup"
-            $logicApps = az logicapp list --resource-group $resourceGroup | ConvertFrom-Json
+            Write-Host "Updating Logic App '$logicAppName' in resource group '$resourceGroup'"
 
-            if (-not $logicApps) {
-                Write-Host "No Logic Apps returned for resource group $resourceGroup"
-                return
+            # Get the logic app definition (note: properties.definition)
+            $definitionJson = az logicapp show `
+              --resource-group $resourceGroup `
+              --name $logicAppName `
+              --query "properties.definition"
+
+            if (-not $definitionJson) {
+                Write-Host "No definition returned for Logic App '$logicAppName'. Nothing to update."
+                exit 0
             }
 
-            foreach ($app in $logicApps) {
-                Write-Host "Processing Logic App: $($app.name)"
+            $definition = $definitionJson | ConvertFrom-Json
+            $triggers = $definition.triggers.PSObject.Properties.Name
 
-                $definitionJson = az logicapp show --resource-group $resourceGroup --name $app.name --query "definition"
-                if (-not $definitionJson) {
-                    Write-Host "  Unable to get definition for $($app.name). Skipping."
-                    continue
+            if (-not $triggers -or $triggers.Count -eq 0) {
+                Write-Host "No triggers found on Logic App '$logicAppName'."
+                exit 0
+            }
+
+            foreach ($triggerName in $triggers) {
+                Write-Host "Checking trigger: $triggerName"
+                $trigger = $definition.triggers.$triggerName
+
+                if ($trigger.type -eq "ApiConnection") {
+                    Write-Host "  Updating Dataverse trigger environment URL for '$triggerName'..."
+
+                    # ARM path is properties.definition.triggers.<trigger>.inputs.parameters.environment
+                    $setExpression = "properties.definition.triggers.$triggerName.inputs.parameters.environment='$dataverseUrl'"
+
+                    az logicapp update `
+                      --resource-group $resourceGroup `
+                      --name $logicAppName `
+                      --set $setExpression
+
+                    Write-Host "  Enabling trigger '$triggerName'..."
+                    az logicapp trigger enable `
+                      --resource-group $resourceGroup `
+                      --name $logicAppName `
+                      --trigger-name $triggerName
                 }
-
-                $definition = $definitionJson | ConvertFrom-Json
-                $triggers = $definition.triggers.PSObject.Properties.Name
-
-                foreach ($triggerName in $triggers) {
-                    Write-Host "  Checking trigger: $triggerName"
-                    $trigger = $definition.triggers.$triggerName
-
-                    if ($trigger.type -eq "ApiConnection") {
-                        Write-Host "    Updating Dataverse trigger environment URL..."
-                        $setExpression = "definition.triggers.$triggerName.inputs.parameters.environment='$dataverseUrl'"
-
-                        az logicapp update `
-                          --resource-group $resourceGroup `
-                          --name $app.name `
-                          --set $setExpression
-
-                        Write-Host "    Enabling trigger..."
-                        az logicapp trigger enable `
-                          --resource-group $resourceGroup `
-                          --name $app.name `
-                          --trigger-name $triggerName
-                    }
-                    else {
-                        Write-Host "    Skipping non-Dataverse trigger of type $($trigger.type)."
-                    }
+                else {
+                    Write-Host "  Skipping non-ApiConnection trigger of type '$($trigger.type)'."
                 }
             }
 
-            Write-Host "Finished updating and enabling Dataverse Logic App triggers."
+            Write-Host "Finished updating and enabling Dataverse triggers for Logic App '$logicAppName'."
