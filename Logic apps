@@ -144,6 +144,9 @@ stages:
 # ------------------------------
 # Stage 4: Update Dataverse Webhooks
 # (only created if update_webhooks == true)
+# Handles:
+#   - Multi-tenant Logic Apps (Microsoft.Logic/workflows)
+#   - Logic Apps Standard (stateful workflows, Microsoft.Web/sites/workflows)
 # ------------------------------
 - ${{ if eq(parameters.update_webhooks, true) }}:
   - stage: update_webhooks
@@ -164,58 +167,111 @@ stages:
           scriptType: pscore
           scriptLocation: inlineScript
           inlineScript: |
-            $resourceGroup = "$(aspResourceGroup)"
-            $dataverseUrl  = "$(CRMendpointUrl)"
-            $logicAppName  = "$(logicAppName)"
+            $resourceGroup      = "$(aspResourceGroup)"
+            $dataverseUrl       = "$(CRMendpointUrl)"
+            $logicAppName       = "$(logicAppName)"
+            $apiVersionLogic    = "2019-05-01"
+            $apiVersionStandard = "2022-03-01"
 
             Write-Host "Using az version:"
             az --version
 
-            Write-Host "Updating Logic App '$logicAppName' in resource group '$resourceGroup'"
-
-            # Get the logic app definition (note: properties.definition)
-            $definitionJson = az logicapp show `
+            # ------------------------------------------------
+            # Try multi-tenant Logic Apps first (Microsoft.Logic/workflows)
+            # ------------------------------------------------
+            Write-Host "Searching for multi-tenant Logic App workflow named '$logicAppName' in '$resourceGroup'..."
+            $workflowsJson = az resource list `
               --resource-group $resourceGroup `
-              --name $logicAppName `
-              --query "properties.definition"
+              --resource-type "Microsoft.Logic/workflows" `
+              --query "[?name=='$logicAppName']"
 
-            if (-not $definitionJson) {
-                Write-Host "No definition returned for Logic App '$logicAppName'. Nothing to update."
-                exit 0
+            $useStandardType = $false
+
+            if (-not $workflowsJson -or $workflowsJson -eq "[]") {
+              Write-Host "No Microsoft.Logic/workflows named '$logicAppName' found. Assuming Logic App Standard (stateful workflows)."
+
+              # ------------------------------------------------
+              # Logic Apps Standard: workflows under Microsoft.Web/sites/workflows
+              # Filter by the Logic App Standard site name in the id
+              # ------------------------------------------------
+              $workflowsJson = az resource list `
+                --resource-group $resourceGroup `
+                --resource-type "Microsoft.Web/sites/workflows" `
+                --query "[?contains(id, '/sites/$logicAppName/')]"
+
+              $useStandardType = $true
             }
 
-            $definition = $definitionJson | ConvertFrom-Json
-            $triggers = $definition.triggers.PSObject.Properties.Name
-
-            if (-not $triggers -or $triggers.Count -eq 0) {
-                Write-Host "No triggers found on Logic App '$logicAppName'."
-                exit 0
+            if (-not $workflowsJson -or $workflowsJson -eq "[]") {
+              Write-Host "No workflow resources found for '$logicAppName' in resource group '$resourceGroup'. Nothing to update."
+              exit 0
             }
 
-            foreach ($triggerName in $triggers) {
-                Write-Host "Checking trigger: $triggerName"
+            $workflows = $workflowsJson | ConvertFrom-Json
+            if ($workflows -isnot [System.Collections.IEnumerable]) {
+              $workflows = @($workflows)
+            }
+
+            Write-Host "Found $($workflows.Count) workflow resource(s) to process."
+
+            foreach ($wf in $workflows) {
+              $wfId = $wf.id
+              Write-Host "Processing workflow resource id: $wfId"
+
+              $apiVersion = if ($useStandardType) { $apiVersionStandard } else { $apiVersionLogic }
+
+              $wfDetailJson = az resource show --ids $wfId --api-version $apiVersion
+              if (-not $wfDetailJson) {
+                Write-Host "  Unable to get details for workflow id '$wfId'. Skipping."
+                continue
+              }
+
+              $wfDetail   = $wfDetailJson | ConvertFrom-Json
+              $definition = $wfDetail.properties.definition
+
+              if (-not $definition) {
+                Write-Host "  No 'properties.definition' present on workflow '$($wf.name)'. Skipping."
+                continue
+              }
+
+              $triggers = $definition.triggers.PSObject.Properties.Name
+              if (-not $triggers -or $triggers.Count -eq 0) {
+                Write-Host "  No triggers found on workflow '$($wf.name)'."
+                continue
+              }
+
+              foreach ($triggerName in $triggers) {
+                Write-Host "  Checking trigger: $triggerName"
                 $trigger = $definition.triggers.$triggerName
 
                 if ($trigger.type -eq "ApiConnection") {
-                    Write-Host "  Updating Dataverse trigger environment URL for '$triggerName'..."
+                  Write-Host "    Updating Dataverse trigger environment URL for '$triggerName'..."
 
-                    # ARM path is properties.definition.triggers.<trigger>.inputs.parameters.environment
-                    $setExpression = "properties.definition.triggers.$triggerName.inputs.parameters.environment='$dataverseUrl'"
+                  # Path inside resource:
+                  #   properties.definition.triggers.<trigger>.inputs.parameters.environment
+                  $setExpression = "properties.definition.triggers.$triggerName.inputs.parameters.environment='$dataverseUrl'"
 
-                    az logicapp update `
-                      --resource-group $resourceGroup `
-                      --name $logicAppName `
-                      --set $setExpression
+                  az resource update `
+                    --ids $wfId `
+                    --api-version $apiVersion `
+                    --set $setExpression
 
-                    Write-Host "  Enabling trigger '$triggerName'..."
+                  # Enable trigger only for classic (multi-tenant) Logic Apps
+                  if (-not $useStandardType) {
+                    Write-Host "    Enabling trigger '$triggerName' on Logic App '$logicAppName'..."
                     az logicapp trigger enable `
                       --resource-group $resourceGroup `
                       --name $logicAppName `
                       --trigger-name $triggerName
+                  }
+                  else {
+                    Write-Host "    (Standard) Skipping 'az logicapp trigger enable' – workflows are hosted under Microsoft.Web/sites/workflows."
+                  }
                 }
                 else {
-                    Write-Host "  Skipping non-ApiConnection trigger of type '$($trigger.type)'."
+                  Write-Host "    Skipping non-ApiConnection trigger of type '$($trigger.type)'."
                 }
+              }
             }
 
-            Write-Host "Finished updating and enabling Dataverse triggers for Logic App '$logicAppName'."
+            Write-Host "Finished updating Dataverse triggers for Logic App '$logicAppName'."
