@@ -1,38 +1,240 @@
-- task: AzureCLI@2
-  displayName: 'Re-register Dataverse Logic App triggers'
-  inputs:
-    azureSubscription: $(serviceConnectionName)
-    scriptType: pscore
-    scriptLocation: inlineScript
-    inlineScript: |
-      $resourceGroup = "$(resourceGroupName)"
-      $dataverseUrl  = "$(dataverseUrl)"
+name: Infra_Deploy_$(BuildDefinitionName)_$(date:yyyyMMdd)$(rev:.r)
 
-      Write-Host "Finding Logic Apps in RG: $resourceGroup"
+trigger: none
 
-      $logicApps = az logicapp list --resource-group $resourceGroup | ConvertFrom-Json
+pool:
+  name: OneMemberWinPool
 
-      foreach ($app in $logicApps) {
-          Write-Host "Processing Logic App: $($app.name)"
+parameters:
+- name: environment
+  displayName: 'Deployment Environment'
+  type: string
+  default: 'QA'
+  values:
+  - DEV
+  - QA
+  - UAT
+  - PROD
 
-          $definition = az logicapp show --resource-group $resourceGroup --name $app.name --query "definition" | ConvertFrom-Json
-          $triggers = $definition.triggers.PSObject.Properties.Name
+- name: deploy_app_connections
+  displayName: 'Deploy Logic App Connections'
+  type: boolean
+  default: false
 
-          foreach ($triggerName in $triggers) {
-              Write-Host "  Checking trigger: $triggerName"
+- name: deploy_logicapp_workflows
+  displayName: 'Deploy Logic App Workflows'
+  type: boolean
+  default: false
 
-              $trigger = $definition.triggers.$triggerName
+- name: update_webhooks
+  displayName: 'Update Logic App Workflows Webhooks'
+  type: boolean
+  default: false
 
-              if ($trigger.type -eq "ApiConnection") {
-                  Write-Host "    Updating Dataverse trigger environment URL..."
+variables:
+- ${{ if eq(parameters.environment, 'DEV') }}:
+  - template: kofc-logicapp-variables/pipeline-vars-dev.yml
+- ${{ if eq(parameters.environment, 'QA') }}:
+  - template: kofc-logicapp-variables/pipeline-vars-test.yml
+- ${{ if eq(parameters.environment, 'UAT') }}:
+  - template: kofc-logicapp-variables/pipeline-vars-uat.yml
+- ${{ if eq(parameters.environment, 'PROD') }}:
+  - template: kofc-logicapp-variables/pipeline-vars-prod.yml
 
-                  az logicapp update `
-                    --resource-group $resourceGroup `
-                    --name $app.name `
-                    --set "definition.triggers.$triggerName.inputs.parameters.environment='$dataverseUrl'"
-              }
-              else {
-                  Write-Host "    Skipping non-Dataverse trigger."
-              }
-          }
-      }
+stages:
+# ------------------------------
+# Stage 1: Deploy CRM Connection
+# ------------------------------
+- stage: deploy_crm_connection
+  displayName: 'Deploy CRM Connection'
+  jobs:
+  - job: fetch_secrets_and_deploy_connections
+    displayName: 'Fetch secrets and deploy connections'
+    steps:
+    - task: AzureKeyVault@2
+      displayName: 'Download secrets from Key Vault'
+      inputs:
+        azureSubscription: $(serviceConnection)
+        KeyVaultName: '$(keyVaultName)'
+        SecretsFilter: '*'
+        RunAsPreJob: true
+
+    - task: AzureResourceManagerTemplateDeployment@3
+      displayName: 'Deploy Logic App connections ARM template'
+      # Only run when deploy_app_connections == true
+      condition: and(succeeded(), eq('${{ parameters.deploy_app_connections }}', 'true'))
+      inputs:
+        deploymentScope: 'Resource Group'
+        azureResourceManagerConnection: $(serviceConnection)
+        subscriptionId: $(aspSubscriptionId)
+        action: 'Create Or Update Resource Group'
+        resourceGroupName: $(aspResourceGroup)
+        location: $(Location)
+        templateLocation: 'Linked artifact'
+        csmFile: '$(System.DefaultWorkingDirectory)/kofc-logicapp-connections/logicappconnections.json'
+        overrideParameters: >-
+          -aspSubscriptionId $(aspSubscriptionId)
+          -connections_cds_name $(dataverseConnectionName)
+          -env $(env)
+          -dataverseclientId $(con-crm)
+          -dataverseclientSecret $(con-crm-key)
+        deploymentMode: 'Incremental'
+
+# ------------------------------
+# Stage 2: Build Logic App Artifacts
+# ------------------------------
+- stage: build_artifacts
+  displayName: 'Build Logic App Artifacts'
+  jobs:
+  - job: logic_app_build
+    displayName: 'Build and publish logic app'
+    steps:
+    - task: CopyFiles@2
+      displayName: 'Create project folder'
+      inputs:
+        SourceFolder: '$(System.DefaultWorkingDirectory)'
+        Contents: |
+          kofc-logicapp-workflows/**
+        TargetFolder: 'project_output'
+
+    - task: ArchiveFiles@2
+      displayName: 'Archive files'
+      inputs:
+        rootFolderOrFile: '$(System.DefaultWorkingDirectory)/project_output/kofc-logicapp-workflows'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(System.DefaultWorkingDirectory)/$(Build.BuildId).zip
+        replaceExistingArchive: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish build artifacts'
+      inputs:
+        PathtoPublish: '$(System.DefaultWorkingDirectory)/$(Build.BuildId).zip'
+        artifactName: 'drop'
+
+# ------------------------------
+# Stage 3: Deploy Logic App Workflows
+# ------------------------------
+- stage: arm_template_deploy
+  displayName: 'Deploy Logic App Workflows'
+  jobs:
+  - job: arm_template_deploy
+    displayName: 'Deploy Logic App Workflows'
+    steps:
+    - checkout: self
+
+    - task: DownloadBuildArtifacts@0
+      displayName: 'Download build artifacts'
+      condition: and(succeeded(), eq('${{ parameters.deploy_logicapp_workflows }}', 'true'))
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: 'drop'
+        downloadPath: '$(System.ArtifactsDirectory)'
+
+    - task: AzureFunctionApp@1
+      displayName: 'Deploy logic app workflows'
+      condition: and(succeeded(), eq('${{ parameters.deploy_logicapp_workflows }}', 'true'))
+      inputs:
+        azureSubscription: $(serviceConnection)
+        appType: 'functionApp'
+        appName: '$(logicAppName)'
+        package: '$(System.ArtifactsDirectory)/**/*.zip'
+
+# ------------------------------
+# Stage 4: Update Dataverse Webhooks
+# (only created if update_webhooks == true)
+# ------------------------------
+- ${{ if eq(parameters.update_webhooks, true) }}:
+  - stage: update_webhooks
+    displayName: 'Update Dataverse Webhooks'
+    jobs:
+    - job: enable_webhooks
+      displayName: 'Install Azure CLI and re-register Dataverse Logic App triggers'
+      steps:
+      - checkout: self
+
+      - task: PowerShell@2
+        displayName: 'Install Azure CLI (ZIP) and re-register Dataverse Logic App triggers'
+        inputs:
+          targetType: 'inline'
+          script: |
+            # --- Install Azure CLI via ZIP ---
+            $zipUrl     = "https://aka.ms/InstallAzureCliWindowsZip"
+            $zipPath    = "$(Build.SourcesDirectory)\azure-cli.zip"
+            $installDir = "$(Build.SourcesDirectory)\azure-cli"
+
+            Write-Host "Downloading Azure CLI ZIP from $zipUrl ..."
+            Invoke-WebRequest -Uri $zipUrl -OutFile $zipPath
+
+            Write-Host "Validating ZIP file..."
+            if ((Get-Item $zipPath).Length -lt 100000) {
+                Write-Error "Download failed or file too small. Check URL or network."
+                exit 1
+            }
+
+            Write-Host "Extracting Azure CLI..."
+            Expand-Archive -Path $zipPath -DestinationPath $installDir -Force
+
+            # Locate az.cmd inside the extracted folder
+            $azPath = Get-ChildItem -Path $installDir -Recurse -Filter "az.cmd" | Select-Object -First 1 -ExpandProperty FullName
+            if (-not $azPath) {
+                Write-Error "Could not find az.cmd under $installDir"
+                exit 1
+            }
+
+            Write-Host "Using Azure CLI at: $azPath"
+            & $azPath --version
+
+            # --- Re-register Dataverse Logic App triggers ---
+            $resourceGroup = "$(aspResourceGroup)"
+            $dataverseUrl  = "$(CRMendpointUrl)"
+
+            Write-Host "Finding Logic Apps in resource group: $resourceGroup"
+            $logicAppsJson = & $azPath logicapp list --resource-group $resourceGroup
+
+            if (-not $logicAppsJson) {
+                Write-Host "No Logic Apps returned for resource group $resourceGroup"
+                return
+            }
+
+            $logicApps = $logicAppsJson | ConvertFrom-Json
+
+            foreach ($app in $logicApps) {
+                Write-Host "Processing Logic App: $($app.name)"
+
+                $definitionJson = & $azPath logicapp show --resource-group $resourceGroup --name $app.name --query "definition"
+                if (-not $definitionJson) {
+                    Write-Host "  Unable to get definition for $($app.name). Skipping."
+                    continue
+                }
+
+                $definition = $definitionJson | ConvertFrom-Json
+                $triggers = $definition.triggers.PSObject.Properties.Name
+
+                foreach ($triggerName in $triggers) {
+                    Write-Host "  Checking trigger: $triggerName"
+                    $trigger = $definition.triggers.$triggerName
+
+                    if ($trigger.type -eq "ApiConnection") {
+                        Write-Host "    Updating Dataverse trigger environment URL..."
+                        $setExpression = "definition.triggers.$triggerName.inputs.parameters.environment='$dataverseUrl'"
+
+                        & $azPath logicapp update `
+                          --resource-group $resourceGroup `
+                          --name $app.name `
+                          --set $setExpression
+
+                        Write-Host "    Enabling trigger..."
+                        & $azPath logicapp trigger enable `
+                          --resource-group $resourceGroup `
+                          --name $app.name `
+                          --trigger-name $triggerName
+                    }
+                    else {
+                        Write-Host "    Skipping non-Dataverse trigger of type $($trigger.type)."
+                    }
+                }
+            }
+
+            Write-Host "Finished updating and enabling Dataverse Logic App triggers."
