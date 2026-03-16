@@ -4,8 +4,6 @@ function searchIframes(doc, level, path) {
         try {
             var iDoc = iframe.contentDocument || iframe.contentWindow.document;
             var currentPath = path + " > iframe[" + i + "]";
-            
-            // Check controls in this iframe
             var controls = iDoc.querySelectorAll("[data-control-name]");
             if (controls.length > 0) {
                 console.log("Controls at:", currentPath);
@@ -13,18 +11,10 @@ function searchIframes(doc, level, path) {
                     console.log("  --", c.getAttribute("data-control-name"));
                 });
             }
-
-            // Check for New button
             var buttons = iDoc.querySelectorAll("button[data-id*='AddNewStandard']");
             if (buttons.length > 0) {
                 console.log("NEW BUTTON FOUND at:", currentPath);
-                buttons.forEach(function(btn) {
-                    console.log("  Button dataId:", btn.getAttribute("data-id"));
-                    console.log("  Button label:", btn.getAttribute("aria-label"));
-                });
             }
-
-            // Search deeper
             searchIframes(iDoc, level + 1, currentPath);
         } catch(e) {
             console.log("Blocked:", currentPath, e.message);
