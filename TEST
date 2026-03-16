@@ -1,51 +1,19 @@
-// Check all documents including nested
-function searchAllDocuments() {
-    // Check main document
-    console.log("Main doc controls:", document.querySelectorAll("[data-control-name]").length);
-    
-    // Check all iframes including nested
-    function searchIframes(doc, level) {
-        var iframes = doc.querySelectorAll("iframe");
-        console.log("Level " + level + " iframes found:", iframes.length);
-        iframes.forEach(function(iframe, i) {
-            try {
-                var iDoc = iframe.contentDocument || iframe.contentWindow.document;
-                var controls = iDoc.querySelectorAll("[data-control-name]");
-                console.log("Iframe " + i + " level " + level + " controls:", controls.length);
-                controls.forEach(function(c) {
-                    console.log("  Control:", c.getAttribute("data-control-name"));
-                });
-                // Search nested iframes
-                searchIframes(iDoc, level + 1);
-            } catch(e) {
-                console.log("Iframe " + i + " error:", e.message);
-            }
-        });
-    }
-    searchIframes(document, 0);
-}
-
-searchAllDocuments();
-
-
-// Check if subgrid is in a web resource or custom control
 setTimeout(function() {
     function searchAllDocuments() {
-        console.log("Main doc controls:", document.querySelectorAll("[data-control-name]").length);
         function searchIframes(doc, level) {
             var iframes = doc.querySelectorAll("iframe");
-            console.log("Level " + level + " iframes:", iframes.length);
             iframes.forEach(function(iframe, i) {
                 try {
                     var iDoc = iframe.contentDocument || iframe.contentWindow.document;
                     var controls = iDoc.querySelectorAll("[data-control-name]");
-                    console.log("Iframe " + i + " controls:", controls.length);
+                    console.log("Iframe " + i + " level " + level + " controls:", controls.length);
                     controls.forEach(function(c) {
-                        console.log("  --", c.getAttribute("data-control-name"));
+                        console.log("  Control:", c.getAttribute("data-control-name"));
                     });
+                    // Search nested iframes
                     searchIframes(iDoc, level + 1);
                 } catch(e) {
-                    console.log("Iframe " + i + " blocked:", e.message);
+                    console.log("Iframe " + i + " level " + level + " blocked:", e.message);
                 }
             });
         }
