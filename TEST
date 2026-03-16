@@ -5,21 +5,25 @@
 // SCENARIO:
 //   Parent Entity: Change Requests (has kofc_status field)
 //   Child Entity:  Allocations (displayed in a subgrid)
-//   Goal:          Enable/disable the "New" button on the
-//                  Allocations subgrid based on the parent's status.
+//   Goal:          Enable/disable the "New" and "Add Existing"
+//                  buttons on the Allocations subgrid based on
+//                  the parent's status.
 //
 // HOW IT WORKS:
 //   - Ribbon Enable Rule handles initial form load and page refresh
 //     (reads saved value from server — fully supported).
 //   - DOM manipulation handles instant feedback when the user
 //     changes the status field before saving.
-//   - Both stay in sync via the same configuration values.
 //
 // ============================================================
 // SETUP IN RIBBON WORKBENCH:
 //   1. Open Ribbon Workbench → select the ALLOCATIONS entity.
-//   2. Find "AddNewStandard" and "New Record" in the SubGrid ribbon.
-//   3. Add an Enable Rule → Custom Rule to each:
+//   2. Go to the SubGrid ribbon.
+//   3. Add the SAME Enable Rule → Custom Rule to ALL of these buttons:
+//        - AddNewStandard          (the "+" / "New" button)
+//        - AddExistingStandard     (the "Add Existing" button for 1:N)
+//        - AddExistingAssoc        (the "Add Existing" button for N:N)
+//      Enable Rule settings:
 //        - Library:       kofc_SubgridButtonRules.js (this file)
 //        - Function Name: SubgridButtonRules.isNewAllocationEnabled
 //        - Parameters:    Add a CrmParameter → PrimaryControl
@@ -38,9 +42,14 @@ var SubgridButtonRules = (function () {
     var STATUS_FIELD = "kofc_status";
     var ALLOWED_STATUSES = [258510002];
     var SUBGRID_NAME = "Council_Change_Allocations";
+
+    // All button aria-labels to target on the subgrid.
+    // Inspect the buttons in DevTools (F12) to confirm exact labels.
     var BUTTON_ARIA_LABELS = [
-        "New Council Change Allocation",    // AddNewStandard button
-        "Add New"                           // Fallback label — adjust if needed
+        "New Council Change Allocation",        // AddNewStandard
+        "Add Existing Council Change Allocation", // AddExistingStandard / AddExistingAssoc
+        "Add New",                              // Fallback label for New
+        "Add Existing"                          // Fallback label for Add Existing
     ];
 
     var _buttonObserver = null;
@@ -51,7 +60,8 @@ var SubgridButtonRules = (function () {
 
     /**
      * Enable Rule — called by the Ribbon framework.
-     * Reads the saved/current form value and returns true/false.
+     * Apply the same rule to AddNewStandard, AddExistingStandard,
+     * and AddExistingAssoc in Ribbon Workbench.
      */
     function isNewAllocationEnabled(primaryControl) {
         var formContext = null;
@@ -87,7 +97,6 @@ var SubgridButtonRules = (function () {
 
     /**
      * Register on the parent form's OnLoad event.
-     * Sets up the onChange listener for instant DOM toggling.
      */
     function onFormLoad(executionContext) {
         var formContext = executionContext.getFormContext();
@@ -98,7 +107,7 @@ var SubgridButtonRules = (function () {
             return;
         }
 
-        // Apply on initial load (backup in case ribbon hasn't evaluated yet)
+        // Apply on initial load
         var statusValue = statusField.getValue();
         var isEnabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
         console.log("onFormLoad: kofc_status =", statusValue, "| enabled =", isEnabled);
@@ -110,7 +119,7 @@ var SubgridButtonRules = (function () {
             var enabled = ALLOWED_STATUSES.indexOf(newValue) !== -1;
             console.log("Status changed to:", newValue, "| enabled =", enabled);
 
-            // Instant DOM toggle — no save required
+            // Instant DOM toggle
             watchForButtons(enabled);
 
             // Also try refreshing the ribbon so it catches up after save
@@ -132,18 +141,15 @@ var SubgridButtonRules = (function () {
      * Waits for the subgrid buttons to appear, then toggles them.
      */
     function watchForButtons(isEnabled) {
-        // Clean up previous observer
         if (_buttonObserver) {
             _buttonObserver.disconnect();
             _buttonObserver = null;
         }
 
-        // Try immediately
         if (tryToggleButtons(isEnabled)) {
             return;
         }
 
-        // Observe for buttons to appear (subgrid loads async)
         _buttonObserver = new MutationObserver(function (mutations, obs) {
             if (tryToggleButtons(isEnabled)) {
                 console.log("Subgrid buttons toggled via observer.");
@@ -157,7 +163,6 @@ var SubgridButtonRules = (function () {
             subtree: true
         });
 
-        // Safety timeout
         setTimeout(function () {
             if (_buttonObserver) {
                 _buttonObserver.disconnect();
@@ -168,10 +173,10 @@ var SubgridButtonRules = (function () {
     }
 
     /**
-     * Finds and toggles all matching subgrid buttons.
+     * Finds and toggles all matching subgrid buttons (New + Add Existing).
      */
     function tryToggleButtons(isEnabled) {
-        var found = false;
+        var foundCount = 0;
 
         // Scope search to subgrid container if possible
         var searchRoot = document.querySelector(
@@ -182,20 +187,21 @@ var SubgridButtonRules = (function () {
         for (var i = 0; i < BUTTON_ARIA_LABELS.length; i++) {
             var label = BUTTON_ARIA_LABELS[i];
 
-            // Search in subgrid container first
-            var button = searchRoot.querySelector(
+            // Search in subgrid container first, then fallback to full document
+            var buttons = searchRoot.querySelectorAll(
                 "button[aria-label*='" + label + "']"
             );
 
-            // Fallback to full document
-            if (!button && searchRoot !== document.body) {
-                button = document.querySelector(
+            if (buttons.length === 0 && searchRoot !== document.body) {
+                buttons = document.querySelectorAll(
                     "button[aria-label*='" + label + "']"
                 );
             }
 
-            if (button) {
-                found = true;
+            for (var j = 0; j < buttons.length; j++) {
+                var button = buttons[j];
+                foundCount++;
+
                 if (isEnabled) {
                     button.removeAttribute("disabled");
                     button.style.opacity = "";
@@ -207,15 +213,15 @@ var SubgridButtonRules = (function () {
                     button.style.cursor = "not-allowed";
                     button.style.pointerEvents = "none";
                 }
-                console.log("Button '" + label + "' set enabled =", isEnabled);
+                console.log("Button '" + button.getAttribute("aria-label") + "' set enabled =", isEnabled);
             }
         }
 
-        if (!found) {
+        if (foundCount === 0) {
             console.log("Subgrid buttons not found yet...");
         }
 
-        return found;
+        return foundCount > 0;
     }
 
     return {
