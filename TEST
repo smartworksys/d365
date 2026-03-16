@@ -1,5 +1,5 @@
 // ============================================================
-// Ribbon Workbench Enable Rule
+// Combined Approach: Ribbon Enable Rule + DOM Manipulation
 // ============================================================
 //
 // SCENARIO:
@@ -7,10 +7,17 @@
 //   Child Entity:  Allocations (displayed in a subgrid)
 //   Goal:          Enable/disable the "New" button on the
 //                  Allocations subgrid based on the parent's status.
-//                  Button should update immediately on field change.
 //
+// HOW IT WORKS:
+//   - Ribbon Enable Rule handles initial form load and page refresh
+//     (reads saved value from server — fully supported).
+//   - DOM manipulation handles instant feedback when the user
+//     changes the status field before saving.
+//   - Both stay in sync via the same configuration values.
+//
+// ============================================================
 // SETUP IN RIBBON WORKBENCH:
-//   1. Open Ribbon Workbench and select the ALLOCATIONS entity.
+//   1. Open Ribbon Workbench → select the ALLOCATIONS entity.
 //   2. Find "AddNewStandard" and "New Record" in the SubGrid ribbon.
 //   3. Add an Enable Rule → Custom Rule to each:
 //        - Library:       kofc_SubgridButtonRules.js (this file)
@@ -18,10 +25,10 @@
 //        - Parameters:    Add a CrmParameter → PrimaryControl
 //   4. Publish the customization.
 //
-// REGISTER ON PARENT FORM:
-//   5. On the Change Requests form, add an OnLoad event:
+// REGISTER ON PARENT FORM (Change Requests):
+//   5. Add an OnLoad event:
 //        - Library:       kofc_SubgridButtonRules.js (this file)
-//        - Function Name: SubgridButtonRules.refreshRibbonOnStatusChange
+//        - Function Name: SubgridButtonRules.onFormLoad
 //        - Pass execution context as first parameter: YES
 // ============================================================
 
@@ -31,13 +38,20 @@ var SubgridButtonRules = (function () {
     var STATUS_FIELD = "kofc_status";
     var ALLOWED_STATUSES = [258510002];
     var SUBGRID_NAME = "Council_Change_Allocations";
+    var BUTTON_ARIA_LABELS = [
+        "New Council Change Allocation",    // AddNewStandard button
+        "Add New"                           // Fallback label — adjust if needed
+    ];
 
-    // Store the current enabled state globally so the Enable Rule
-    // can read it even if the ribbon framework caches the form context.
-    var _cachedIsEnabled = false;
+    var _buttonObserver = null;
+
+    // ================================================================
+    // PART 1: Ribbon Enable Rule (handles load and refresh)
+    // ================================================================
 
     /**
      * Enable Rule — called by the Ribbon framework.
+     * Reads the saved/current form value and returns true/false.
      */
     function isNewAllocationEnabled(primaryControl) {
         var formContext = null;
@@ -50,82 +64,162 @@ var SubgridButtonRules = (function () {
             formContext = typeof Xrm !== "undefined" && Xrm.Page ? Xrm.Page : null;
         }
 
-        if (formContext && formContext.getAttribute) {
-            var statusField = formContext.getAttribute(STATUS_FIELD);
-            if (statusField) {
-                var statusValue = statusField.getValue();
-                _cachedIsEnabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
-                console.log("Enable Rule: kofc_status =", statusValue, "| enabled =", _cachedIsEnabled);
-            } else {
-                console.log("Enable Rule: Field '" + STATUS_FIELD + "' not found.");
-                _cachedIsEnabled = false;
-            }
-        } else {
-            console.log("Enable Rule: Using cached value =", _cachedIsEnabled);
+        if (!formContext || !formContext.getAttribute) {
+            console.log("Enable Rule: Could not resolve parent form context.");
+            return false;
         }
 
-        return _cachedIsEnabled;
+        var statusField = formContext.getAttribute(STATUS_FIELD);
+        if (!statusField) {
+            console.log("Enable Rule: Field '" + STATUS_FIELD + "' not found.");
+            return false;
+        }
+
+        var statusValue = statusField.getValue();
+        var enabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
+        console.log("Enable Rule: kofc_status =", statusValue, "| enabled =", enabled);
+        return enabled;
     }
 
+    // ================================================================
+    // PART 2: DOM Manipulation (handles instant field-change feedback)
+    // ================================================================
+
     /**
-     * Register on the PARENT form's (Change Requests) OnLoad event.
+     * Register on the parent form's OnLoad event.
+     * Sets up the onChange listener for instant DOM toggling.
      */
-    function refreshRibbonOnStatusChange(executionContext) {
+    function onFormLoad(executionContext) {
         var formContext = executionContext.getFormContext();
         var statusField = formContext.getAttribute(STATUS_FIELD);
 
         if (!statusField) {
-            console.log("Ribbon refresh: Field '" + STATUS_FIELD + "' not found.");
+            console.log("onFormLoad: Field '" + STATUS_FIELD + "' not found.");
             return;
         }
 
+        // Apply on initial load (backup in case ribbon hasn't evaluated yet)
+        var statusValue = statusField.getValue();
+        var isEnabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
+        console.log("onFormLoad: kofc_status =", statusValue, "| enabled =", isEnabled);
+        watchForButtons(isEnabled);
+
+        // Listen for field changes — toggle buttons instantly via DOM
         statusField.addOnChange(function () {
             var newValue = statusField.getValue();
-            console.log("Parent status changed to:", newValue, "— refreshing ribbon...");
+            var enabled = ALLOWED_STATUSES.indexOf(newValue) !== -1;
+            console.log("Status changed to:", newValue, "| enabled =", enabled);
 
-            // Update cached value immediately
-            _cachedIsEnabled = ALLOWED_STATUSES.indexOf(newValue) !== -1;
+            // Instant DOM toggle — no save required
+            watchForButtons(enabled);
 
-            // Strategy 1: Refresh the subgrid ribbon directly
-            var subgridControl = formContext.getControl(SUBGRID_NAME);
-            if (subgridControl && subgridControl.refreshRibbon) {
-                subgridControl.refreshRibbon();
-                console.log("Called subgridControl.refreshRibbon()");
-            }
-
-            // Strategy 2: Refresh the entire form ribbon
-            if (formContext.ui && formContext.ui.refreshRibbon) {
-                formContext.ui.refreshRibbon();
-                console.log("Called formContext.ui.refreshRibbon()");
-            }
-
-            // Strategy 3: Delayed retry — sometimes the ribbon framework
-            // needs a moment to pick up changes in Unified Interface
-            setTimeout(function () {
-                console.log("Delayed ribbon refresh...");
-
-                var subgrid = formContext.getControl(SUBGRID_NAME);
-                if (subgrid && subgrid.refreshRibbon) {
-                    subgrid.refreshRibbon();
+            // Also try refreshing the ribbon so it catches up after save
+            try {
+                var subgridControl = formContext.getControl(SUBGRID_NAME);
+                if (subgridControl && subgridControl.refreshRibbon) {
+                    subgridControl.refreshRibbon();
                 }
-
                 if (formContext.ui && formContext.ui.refreshRibbon) {
                     formContext.ui.refreshRibbon();
                 }
-
-                // Strategy 4: Xrm.CommandBar if available (UCI)
-                if (typeof Xrm !== "undefined" &&
-                    Xrm.CommandBar &&
-                    Xrm.CommandBar.requestRender) {
-                    Xrm.CommandBar.requestRender();
-                    console.log("Called Xrm.CommandBar.requestRender()");
-                }
-            }, 500);
+            } catch (e) {
+                console.log("Ribbon refresh error (non-critical):", e);
+            }
         });
+    }
+
+    /**
+     * Waits for the subgrid buttons to appear, then toggles them.
+     */
+    function watchForButtons(isEnabled) {
+        // Clean up previous observer
+        if (_buttonObserver) {
+            _buttonObserver.disconnect();
+            _buttonObserver = null;
+        }
+
+        // Try immediately
+        if (tryToggleButtons(isEnabled)) {
+            return;
+        }
+
+        // Observe for buttons to appear (subgrid loads async)
+        _buttonObserver = new MutationObserver(function (mutations, obs) {
+            if (tryToggleButtons(isEnabled)) {
+                console.log("Subgrid buttons toggled via observer.");
+                obs.disconnect();
+                _buttonObserver = null;
+            }
+        });
+
+        _buttonObserver.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+
+        // Safety timeout
+        setTimeout(function () {
+            if (_buttonObserver) {
+                _buttonObserver.disconnect();
+                _buttonObserver = null;
+                console.log("Observer stopped after 30 seconds.");
+            }
+        }, 30000);
+    }
+
+    /**
+     * Finds and toggles all matching subgrid buttons.
+     */
+    function tryToggleButtons(isEnabled) {
+        var found = false;
+
+        // Scope search to subgrid container if possible
+        var searchRoot = document.querySelector(
+            "[data-id='" + SUBGRID_NAME + "'], " +
+            "[id*='" + SUBGRID_NAME + "']"
+        ) || document.body;
+
+        for (var i = 0; i < BUTTON_ARIA_LABELS.length; i++) {
+            var label = BUTTON_ARIA_LABELS[i];
+
+            // Search in subgrid container first
+            var button = searchRoot.querySelector(
+                "button[aria-label*='" + label + "']"
+            );
+
+            // Fallback to full document
+            if (!button && searchRoot !== document.body) {
+                button = document.querySelector(
+                    "button[aria-label*='" + label + "']"
+                );
+            }
+
+            if (button) {
+                found = true;
+                if (isEnabled) {
+                    button.removeAttribute("disabled");
+                    button.style.opacity = "";
+                    button.style.cursor = "";
+                    button.style.pointerEvents = "";
+                } else {
+                    button.setAttribute("disabled", "disabled");
+                    button.style.opacity = "0.5";
+                    button.style.cursor = "not-allowed";
+                    button.style.pointerEvents = "none";
+                }
+                console.log("Button '" + label + "' set enabled =", isEnabled);
+            }
+        }
+
+        if (!found) {
+            console.log("Subgrid buttons not found yet...");
+        }
+
+        return found;
     }
 
     return {
         isNewAllocationEnabled: isNewAllocationEnabled,
-        refreshRibbonOnStatusChange: refreshRibbonOnStatusChange
+        onFormLoad: onFormLoad
     };
 })();
