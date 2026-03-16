@@ -1,18 +1,22 @@
-// Test 1 - direct query
-var test1 = document.querySelector("[data-control-name='Subgrid_councilAllocations']");
-console.log("Test 1 direct query:", test1);
-
-// Test 2 - check all control names
-var test2 = document.querySelectorAll("[data-control-name]");
-console.log("Test 2 total controls found:", test2.length);
-test2.forEach(function(el) {
-    console.log("Control:", el.getAttribute("data-control-name"));
+// Check all iframes on the page
+var iframes = document.querySelectorAll("iframe");
+console.log("Total iframes found:", iframes.length);
+iframes.forEach(function(iframe, i) {
+    console.log("Iframe " + i + ":", iframe.id, iframe.name, iframe.src);
 });
 
-// Test 3 - check by partial match
-var test3 = document.querySelector("[data-control-name*='council']");
-console.log("Test 3 partial match:", test3);
-
-// Test 4 - check by partial match case insensitive
-var test4 = document.querySelector("[data-control-name*='Council']");
-console.log("Test 4 partial match capital:", test4);
+// Search inside each iframe for the subgrid
+var iframes = document.querySelectorAll("iframe");
+iframes.forEach(function(iframe, i) {
+    try {
+        var iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+        var sg = iframeDoc.querySelector("[data-control-name*='council']");
+        if (sg) {
+            console.log("Found in iframe " + i + ":", sg.getAttribute("data-control-name"));
+        } else {
+            console.log("Iframe " + i + ": subgrid not found");
+        }
+    } catch(e) {
+        console.log("Iframe " + i + " access error:", e.message);
+    }
+});
