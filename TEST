@@ -1,231 +1,93 @@
 // ============================================================
-// Combined Approach: Ribbon Enable Rule + DOM Manipulation
+// Lock Allocation Form Fields Based on Parent Change Request Status
 // ============================================================
 //
 // SCENARIO:
 //   Parent Entity: Change Requests (has kofc_status field)
-//   Child Entity:  Allocations (displayed in a subgrid)
-//   Goal:          Enable/disable the "New" and "Add Existing"
-//                  buttons on the Allocations subgrid based on
-//                  the parent's status.
+//   Child Entity:  Allocations (has kofc_changerequestid lookup)
+//   Goal:          Lock ALL fields on the Allocation form when
+//                  the parent Change Request's status is NOT 258510002.
 //
-// HOW IT WORKS:
-//   - Ribbon Enable Rule handles initial form load and page refresh
-//     (reads saved value from server — fully supported).
-//   - DOM manipulation handles instant feedback when the user
-//     changes the status field before saving.
-//
-// ============================================================
-// SETUP IN RIBBON WORKBENCH:
-//   1. Open Ribbon Workbench → select the ALLOCATIONS entity.
-//   2. Go to the SubGrid ribbon.
-//   3. Add the SAME Enable Rule → Custom Rule to ALL of these buttons:
-//        - AddNewStandard          (the "+" / "New" button)
-//        - AddExistingStandard     (the "Add Existing" button for 1:N)
-//        - AddExistingAssoc        (the "Add Existing" button for N:N)
-//      Enable Rule settings:
-//        - Library:       kofc_SubgridButtonRules.js (this file)
-//        - Function Name: SubgridButtonRules.isNewAllocationEnabled
-//        - Parameters:    Add a CrmParameter → PrimaryControl
-//   4. Publish the customization.
-//
-// REGISTER ON PARENT FORM (Change Requests):
-//   5. Add an OnLoad event:
-//        - Library:       kofc_SubgridButtonRules.js (this file)
-//        - Function Name: SubgridButtonRules.onFormLoad
+// REGISTER ON ALLOCATION FORM:
+//   1. Add an OnLoad event:
+//        - Library:       kofc_LockAllocationFields.js (this file)
+//        - Function Name: LockAllocationFields.onFormLoad
 //        - Pass execution context as first parameter: YES
 // ============================================================
 
-var SubgridButtonRules = (function () {
+var LockAllocationFields = (function () {
 
     // ---- Configuration ----
-    var STATUS_FIELD = "kofc_status";
-    var ALLOWED_STATUSES = [258510002];
-    var SUBGRID_NAME = "Council_Change_Allocations";
-
-    // All button aria-labels to target on the subgrid.
-    // Inspect the buttons in DevTools (F12) to confirm exact labels.
-    var BUTTON_ARIA_LABELS = [
-        "New Council Change Allocation",        // AddNewStandard
-        "Add Existing Council Change Allocation", // AddExistingStandard / AddExistingAssoc
-        "Add New",                              // Fallback label for New
-        "Add Existing"                          // Fallback label for Add Existing
-    ];
-
-    var _buttonObserver = null;
-
-    // ================================================================
-    // PART 1: Ribbon Enable Rule (handles load and refresh)
-    // ================================================================
+    var PARENT_LOOKUP_FIELD = "kofc_changerequestid";   // Lookup to Change Request on the Allocation form
+    var PARENT_ENTITY_NAME = "kofc_changerequest";      // Logical name of the Change Request entity
+    var PARENT_STATUS_FIELD = "kofc_status";             // Status field on the Change Request
+    var ALLOWED_STATUSES = [258510002];                  // Unlock fields when parent status is one of these
 
     /**
-     * Enable Rule — called by the Ribbon framework.
-     * Apply the same rule to AddNewStandard, AddExistingStandard,
-     * and AddExistingAssoc in Ribbon Workbench.
-     */
-    function isNewAllocationEnabled(primaryControl) {
-        var formContext = null;
-
-        if (primaryControl && primaryControl.getAttribute) {
-            formContext = primaryControl;
-        } else if (primaryControl && primaryControl.getFormContext) {
-            formContext = primaryControl.getFormContext();
-        } else {
-            formContext = typeof Xrm !== "undefined" && Xrm.Page ? Xrm.Page : null;
-        }
-
-        if (!formContext || !formContext.getAttribute) {
-            console.log("Enable Rule: Could not resolve parent form context.");
-            return false;
-        }
-
-        var statusField = formContext.getAttribute(STATUS_FIELD);
-        if (!statusField) {
-            console.log("Enable Rule: Field '" + STATUS_FIELD + "' not found.");
-            return false;
-        }
-
-        var statusValue = statusField.getValue();
-        var enabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
-        console.log("Enable Rule: kofc_status =", statusValue, "| enabled =", enabled);
-        return enabled;
-    }
-
-    // ================================================================
-    // PART 2: DOM Manipulation (handles instant field-change feedback)
-    // ================================================================
-
-    /**
-     * Register on the parent form's OnLoad event.
+     * OnLoad handler for the Allocation form.
      */
     function onFormLoad(executionContext) {
         var formContext = executionContext.getFormContext();
-        var statusField = formContext.getAttribute(STATUS_FIELD);
 
-        if (!statusField) {
-            console.log("onFormLoad: Field '" + STATUS_FIELD + "' not found.");
+        // Get the parent Change Request lookup
+        var lookupField = formContext.getAttribute(PARENT_LOOKUP_FIELD);
+        if (!lookupField) {
+            console.log("LockFields: Lookup field '" + PARENT_LOOKUP_FIELD + "' not found.");
             return;
         }
 
-        // Apply on initial load
-        var statusValue = statusField.getValue();
-        var isEnabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
-        console.log("onFormLoad: kofc_status =", statusValue, "| enabled =", isEnabled);
-        watchForButtons(isEnabled);
-
-        // Listen for field changes — toggle buttons instantly via DOM
-        statusField.addOnChange(function () {
-            var newValue = statusField.getValue();
-            var enabled = ALLOWED_STATUSES.indexOf(newValue) !== -1;
-            console.log("Status changed to:", newValue, "| enabled =", enabled);
-
-            // Instant DOM toggle
-            watchForButtons(enabled);
-
-            // Also try refreshing the ribbon so it catches up after save
-            try {
-                var subgridControl = formContext.getControl(SUBGRID_NAME);
-                if (subgridControl && subgridControl.refreshRibbon) {
-                    subgridControl.refreshRibbon();
-                }
-                if (formContext.ui && formContext.ui.refreshRibbon) {
-                    formContext.ui.refreshRibbon();
-                }
-            } catch (e) {
-                console.log("Ribbon refresh error (non-critical):", e);
-            }
-        });
-    }
-
-    /**
-     * Waits for the subgrid buttons to appear, then toggles them.
-     */
-    function watchForButtons(isEnabled) {
-        if (_buttonObserver) {
-            _buttonObserver.disconnect();
-            _buttonObserver = null;
-        }
-
-        if (tryToggleButtons(isEnabled)) {
+        var lookupValue = lookupField.getValue();
+        if (!lookupValue || lookupValue.length === 0) {
+            console.log("LockFields: No parent Change Request linked. Locking all fields.");
+            lockAllFields(formContext, true);
             return;
         }
 
-        _buttonObserver = new MutationObserver(function (mutations, obs) {
-            if (tryToggleButtons(isEnabled)) {
-                console.log("Subgrid buttons toggled via observer.");
-                obs.disconnect();
-                _buttonObserver = null;
-            }
-        });
+        var parentId = lookupValue[0].id.replace("{", "").replace("}", "");
+        var parentEntityType = lookupValue[0].entityType || PARENT_ENTITY_NAME;
 
-        _buttonObserver.observe(document.body, {
-            childList: true,
-            subtree: true
-        });
+        console.log("LockFields: Fetching parent status for Change Request:", parentId);
 
-        setTimeout(function () {
-            if (_buttonObserver) {
-                _buttonObserver.disconnect();
-                _buttonObserver = null;
-                console.log("Observer stopped after 30 seconds.");
+        // Retrieve the parent's status field
+        Xrm.WebApi.retrieveRecord(parentEntityType, parentId, "?$select=" + PARENT_STATUS_FIELD).then(
+            function (result) {
+                var parentStatus = result[PARENT_STATUS_FIELD];
+                var shouldUnlock = ALLOWED_STATUSES.indexOf(parentStatus) !== -1;
+
+                console.log("LockFields: Parent kofc_status =", parentStatus, "| Fields unlocked =", shouldUnlock);
+                lockAllFields(formContext, !shouldUnlock);
+            },
+            function (error) {
+                console.log("LockFields: Error fetching parent record:", error.message);
+                // Default to locked on error for safety
+                lockAllFields(formContext, true);
             }
-        }, 30000);
+        );
     }
 
     /**
-     * Finds and toggles all matching subgrid buttons (New + Add Existing).
+     * Locks or unlocks ALL fields on the form.
+     * @param {object} formContext - The form context.
+     * @param {boolean} lock - true to lock, false to unlock.
      */
-    function tryToggleButtons(isEnabled) {
-        var foundCount = 0;
+    function lockAllFields(formContext, lock) {
+        var controls = formContext.ui.controls.get();
 
-        // Scope search to subgrid container if possible
-        var searchRoot = document.querySelector(
-            "[data-id='" + SUBGRID_NAME + "'], " +
-            "[id*='" + SUBGRID_NAME + "']"
-        ) || document.body;
+        for (var i = 0; i < controls.length; i++) {
+            var control = controls[i];
 
-        for (var i = 0; i < BUTTON_ARIA_LABELS.length; i++) {
-            var label = BUTTON_ARIA_LABELS[i];
-
-            // Search in subgrid container first, then fallback to full document
-            var buttons = searchRoot.querySelectorAll(
-                "button[aria-label*='" + label + "']"
-            );
-
-            if (buttons.length === 0 && searchRoot !== document.body) {
-                buttons = document.querySelectorAll(
-                    "button[aria-label*='" + label + "']"
-                );
-            }
-
-            for (var j = 0; j < buttons.length; j++) {
-                var button = buttons[j];
-                foundCount++;
-
-                if (isEnabled) {
-                    button.removeAttribute("disabled");
-                    button.style.opacity = "";
-                    button.style.cursor = "";
-                    button.style.pointerEvents = "";
-                } else {
-                    button.setAttribute("disabled", "disabled");
-                    button.style.opacity = "0.5";
-                    button.style.cursor = "not-allowed";
-                    button.style.pointerEvents = "none";
-                }
-                console.log("Button '" + button.getAttribute("aria-label") + "' set enabled =", isEnabled);
+            // Only lock controls that have the setDisabled method
+            // (skips subgrids, web resources, iframes, etc.)
+            if (typeof control.setDisabled === "function") {
+                control.setDisabled(lock);
             }
         }
 
-        if (foundCount === 0) {
-            console.log("Subgrid buttons not found yet...");
-        }
-
-        return foundCount > 0;
+        console.log("LockFields: All fields " + (lock ? "LOCKED" : "UNLOCKED") +
+                     " (" + controls.length + " controls processed).");
     }
 
     return {
-        isNewAllocationEnabled: isNewAllocationEnabled,
         onFormLoad: onFormLoad
     };
 })();
