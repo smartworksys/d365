@@ -1,85 +1,109 @@
-function enableDisableNewButton(executionContext) {
-    var formContext = executionContext.getFormContext();
+// ============================================================
+// APPROACH 1: Ribbon Workbench Enable Rule (Supported)
+// ============================================================
+//
+// SCENARIO:
+//   Parent Entity: Change Requests (has kofc_status field)
+//   Child Entity:  Allocations (displayed in a subgrid)
+//   Goal:          Enable/disable the "New" button on the
+//                  Allocations subgrid based on the parent's status.
+//
+// SETUP IN RIBBON WORKBENCH:
+//   1. Open Ribbon Workbench and select the ALLOCATIONS entity
+//      (the child entity shown in the subgrid).
+//   2. Find the "New" / "Add New" button in the SubGrid ribbon.
+//   3. Add an Enable Rule → Custom Rule:
+//        - Library:       kofc_SubgridButtonRules.js (this file)
+//        - Function Name: SubgridButtonRules.isNewAllocationEnabled
+//        - Parameters:    Add a CrmParameter → PrimaryControl
+//   4. Publish the customization.
+//
+// REGISTER ON PARENT FORM:
+//   5. On the Change Requests form, add an OnLoad event:
+//        - Library:       kofc_SubgridButtonRules.js (this file)
+//        - Function Name: SubgridButtonRules.refreshRibbonOnStatusChange
+//        - Pass execution context as first parameter: YES
+// ============================================================
 
-    var statusFieldName = "kofc_status";
-    var allowedStatuses = [258510002];
+var SubgridButtonRules = (function () {
 
-    var statusField = formContext.getAttribute(statusFieldName);
-    if (statusField == null) {
-        console.log("Status field not found: " + statusFieldName);
-        return;
-    }
+    // ---- Configuration ----
+    var STATUS_FIELD = "kofc_status";               // Field on the PARENT form (Change Requests)
+    var ALLOWED_STATUSES = [258510002];              // Status values that allow creating new Allocations
+    var SUBGRID_NAME = "Council_Change_Allocations"; // Logical name of the subgrid control on the parent form
 
-    var statusValue = statusField.getValue();
-    console.log("Status value on load:", statusValue);
+    /**
+     * Enable Rule — called by the Ribbon framework.
+     * Returns true if the "New" button should be enabled.
+     *
+     * When used on a subgrid ribbon in Unified Interface,
+     * PrimaryControl can be either the parent form context
+     * or the grid control depending on configuration.
+     * This function handles both cases.
+     */
+    function isNewAllocationEnabled(primaryControl) {
+        var formContext = null;
 
-    var isEnabled = allowedStatuses.indexOf(statusValue) !== -1;
-    console.log("Button should be enabled:", isEnabled);
-
-    // Handle on form load
-    watchForButton(isEnabled);
-
-    // Handle when status field changes
-    statusField.addOnChange(function () {
-        var newValue = statusField.getValue();
-        console.log("Status changed to:", newValue);
-        var enabled = allowedStatuses.indexOf(newValue) !== -1;
-        watchForButton(enabled);
-    });
-}
-
-function watchForButton(isEnabled) {
-    // Try immediately first
-    var result = tryToggleButton(isEnabled);
-    if (result) return;
-
-    // If not found use MutationObserver
-    var observer = new MutationObserver(function (mutations, obs) {
-        var result = tryToggleButton(isEnabled);
-        if (result) {
-            console.log("Button found and toggled, stopping observer.");
-            obs.disconnect();
+        // Determine if we received the form context or the grid control
+        if (primaryControl && primaryControl.getAttribute) {
+            // We received the parent form context directly
+            formContext = primaryControl;
+        } else if (primaryControl && primaryControl.getFormContext) {
+            // We received the grid control — get the parent form from it
+            formContext = primaryControl.getFormContext();
+        } else {
+            // Fallback to Xrm.Page (deprecated but still available)
+            formContext = typeof Xrm !== "undefined" && Xrm.Page ? Xrm.Page : null;
         }
-    });
 
-    observer.observe(document.body, {
-        childList: true,
-        subtree: true
-    });
+        if (!formContext || !formContext.getAttribute) {
+            console.log("Enable Rule: Could not resolve parent form context.");
+            return false;
+        }
 
-    // Stop after 30 seconds
-    setTimeout(function () {
-        observer.disconnect();
-        console.log("Observer stopped after 30 seconds.");
-    }, 30000);
-}
+        var statusField = formContext.getAttribute(STATUS_FIELD);
+        if (!statusField) {
+            console.log("Enable Rule: Field '" + STATUS_FIELD + "' not found on parent form.");
+            return false;
+        }
 
-function tryToggleButton(isEnabled) {
-    // Use exact aria-label from your form
-    var newButton = document.querySelector(
-        "button[aria-label*='New Council Change Allocation']"
-    );
+        var statusValue = statusField.getValue();
+        var enabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
+        console.log("Enable Rule: kofc_status =", statusValue, "| Button enabled =", enabled);
 
-    if (!newButton) {
-        console.log("Button not found yet...");
-        return false;
+        return enabled;
     }
 
-    console.log("Button found, toggling...");
+    /**
+     * Register on the PARENT form's (Change Requests) OnLoad event.
+     * Listens for status changes and refreshes the subgrid ribbon
+     * so the enable rule re-evaluates immediately.
+     */
+    function refreshRibbonOnStatusChange(executionContext) {
+        var formContext = executionContext.getFormContext();
+        var statusField = formContext.getAttribute(STATUS_FIELD);
 
-    if (isEnabled) {
-        console.log("Enabling New button");
-        newButton.disabled = false;
-        newButton.style.opacity = "1";
-        newButton.style.cursor = "pointer";
-        newButton.style.pointerEvents = "auto";
-    } else {
-        console.log("Disabling New button");
-        newButton.disabled = true;
-        newButton.style.opacity = "0.5";
-        newButton.style.cursor = "not-allowed";
-        newButton.style.pointerEvents = "none";
+        if (!statusField) {
+            console.log("Ribbon refresh: Field '" + STATUS_FIELD + "' not found.");
+            return;
+        }
+
+        statusField.addOnChange(function () {
+            var newValue = statusField.getValue();
+            console.log("Parent status changed to:", newValue, "— refreshing subgrid ribbon...");
+
+            var subgridControl = formContext.getControl(SUBGRID_NAME);
+            if (subgridControl && subgridControl.refreshRibbon) {
+                subgridControl.refreshRibbon();
+            } else {
+                // Fallback: refresh the entire form's ribbon
+                formContext.ui.refreshRibbon();
+            }
+        });
     }
 
-    return true;
-}
+    return {
+        isNewAllocationEnabled: isNewAllocationEnabled,
+        refreshRibbonOnStatusChange: refreshRibbonOnStatusChange
+    };
+})();
