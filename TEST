@@ -1,22 +1,85 @@
-// Search by button id which we now know exactly
-var btn = document.querySelector("button[aria-label*='New Council Change Allocation']");
-console.log("Button found in main doc:", btn != null);
+function enableDisableNewButton(executionContext) {
+    var formContext = executionContext.getFormContext();
 
-// Search in iframes
-function findButton(doc, path) {
-    var btn = doc.querySelector("button[aria-label*='New Council Change Allocation']");
-    if (btn) {
-        console.log("Button found at:", path);
+    var statusFieldName = "kofc_status";
+    var allowedStatuses = [258510002];
+
+    var statusField = formContext.getAttribute(statusFieldName);
+    if (statusField == null) {
+        console.log("Status field not found: " + statusFieldName);
         return;
     }
-    var iframes = doc.querySelectorAll("iframe");
-    iframes.forEach(function(iframe, i) {
-        try {
-            var iDoc = iframe.contentDocument || iframe.contentWindow.document;
-            findButton(iDoc, path + " > iframe[" + i + "]");
-        } catch(e) {
-            console.log("Blocked:", path + " > iframe[" + i + "]");
-        }
+
+    var statusValue = statusField.getValue();
+    console.log("Status value on load:", statusValue);
+
+    var isEnabled = allowedStatuses.indexOf(statusValue) !== -1;
+    console.log("Button should be enabled:", isEnabled);
+
+    // Handle on form load
+    watchForButton(isEnabled);
+
+    // Handle when status field changes
+    statusField.addOnChange(function () {
+        var newValue = statusField.getValue();
+        console.log("Status changed to:", newValue);
+        var enabled = allowedStatuses.indexOf(newValue) !== -1;
+        watchForButton(enabled);
     });
 }
-findButton(document, "document");
+
+function watchForButton(isEnabled) {
+    // Try immediately first
+    var result = tryToggleButton(isEnabled);
+    if (result) return;
+
+    // If not found use MutationObserver
+    var observer = new MutationObserver(function (mutations, obs) {
+        var result = tryToggleButton(isEnabled);
+        if (result) {
+            console.log("Button found and toggled, stopping observer.");
+            obs.disconnect();
+        }
+    });
+
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    // Stop after 30 seconds
+    setTimeout(function () {
+        observer.disconnect();
+        console.log("Observer stopped after 30 seconds.");
+    }, 30000);
+}
+
+function tryToggleButton(isEnabled) {
+    // Use exact aria-label from your form
+    var newButton = document.querySelector(
+        "button[aria-label*='New Council Change Allocation']"
+    );
+
+    if (!newButton) {
+        console.log("Button not found yet...");
+        return false;
+    }
+
+    console.log("Button found, toggling...");
+
+    if (isEnabled) {
+        console.log("Enabling New button");
+        newButton.disabled = false;
+        newButton.style.opacity = "1";
+        newButton.style.cursor = "pointer";
+        newButton.style.pointerEvents = "auto";
+    } else {
+        console.log("Disabling New button");
+        newButton.disabled = true;
+        newButton.style.opacity = "0.5";
+        newButton.style.cursor = "not-allowed";
+        newButton.style.pointerEvents = "none";
+    }
+
+    return true;
+}
