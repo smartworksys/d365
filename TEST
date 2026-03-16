@@ -1,23 +1,35 @@
 setTimeout(function() {
-    function searchAllDocuments() {
-        function searchIframes(doc, level) {
-            var iframes = doc.querySelectorAll("iframe");
-            iframes.forEach(function(iframe, i) {
-                try {
-                    var iDoc = iframe.contentDocument || iframe.contentWindow.document;
-                    var controls = iDoc.querySelectorAll("[data-control-name]");
-                    console.log("Iframe " + i + " level " + level + " controls:", controls.length);
+    function searchIframes(doc, level, path) {
+        var iframes = doc.querySelectorAll("iframe");
+        iframes.forEach(function(iframe, i) {
+            try {
+                var iDoc = iframe.contentDocument || iframe.contentWindow.document;
+                var currentPath = path + " > iframe[" + i + "]";
+                
+                // Check controls in this iframe
+                var controls = iDoc.querySelectorAll("[data-control-name]");
+                if (controls.length > 0) {
+                    console.log("Found controls at path:", currentPath);
                     controls.forEach(function(c) {
                         console.log("  Control:", c.getAttribute("data-control-name"));
                     });
-                    // Search nested iframes
-                    searchIframes(iDoc, level + 1);
-                } catch(e) {
-                    console.log("Iframe " + i + " level " + level + " blocked:", e.message);
                 }
-            });
-        }
-        searchIframes(document, 0);
+
+                // Check buttons
+                var buttons = iDoc.querySelectorAll("button[data-id*='AddNewStandard']");
+                if (buttons.length > 0) {
+                    console.log("Found New button at path:", currentPath);
+                    buttons.forEach(function(btn) {
+                        console.log("  Button:", btn.getAttribute("data-id"));
+                    });
+                }
+
+                // Search deeper
+                searchIframes(iDoc, level + 1, currentPath);
+            } catch(e) {
+                console.log("Blocked at level:", level, e.message);
+            }
+        });
     }
-    searchAllDocuments();
+    searchIframes(document, 0, "document");
 }, 5000);
