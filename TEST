@@ -1,97 +1,18 @@
-function enableDisableNewButton(executionContext) {
-    var formContext = executionContext.getFormContext();
+// Test 1 - direct query
+var test1 = document.querySelector("[data-control-name='Subgrid_councilAllocations']");
+console.log("Test 1 direct query:", test1);
 
-    // =============================================
-    var statusFieldName = "kofc_status";
-    var subgridControlName = "Subgrid_councilAllocations";
-    var allowedStatuses = [258510002];
-    // =============================================
+// Test 2 - check all control names
+var test2 = document.querySelectorAll("[data-control-name]");
+console.log("Test 2 total controls found:", test2.length);
+test2.forEach(function(el) {
+    console.log("Control:", el.getAttribute("data-control-name"));
+});
 
-    var statusField = formContext.getAttribute(statusFieldName);
-    if (statusField == null) {
-        console.log("Status field not found: " + statusFieldName);
-        return;
-    }
+// Test 3 - check by partial match
+var test3 = document.querySelector("[data-control-name*='council']");
+console.log("Test 3 partial match:", test3);
 
-    var statusValue = statusField.getValue();
-    console.log("Status value on load:", statusValue);
-
-    var isEnabled = allowedStatuses.indexOf(statusValue) !== -1;
-    console.log("Button should be enabled:", isEnabled);
-
-    // Handle on form load
-    waitAndToggle(formContext, subgridControlName, isEnabled);
-
-    // Handle when status field changes
-    statusField.addOnChange(function () {
-        var newValue = statusField.getValue();
-        console.log("Status changed to:", newValue);
-        var enabled = allowedStatuses.indexOf(newValue) !== -1;
-        toggleButton(subgridControlName, enabled);
-    });
-}
-
-function waitAndToggle(formContext, subgridControlName, isEnabled) {
-    var subgrid = formContext.getControl(subgridControlName);
-    if (subgrid) {
-        console.log("Subgrid control found:", subgridControlName);
-        subgrid.addOnLoad(function () {
-            console.log("Subgrid loaded, toggling button...");
-            toggleButton(subgridControlName, isEnabled);
-        });
-        toggleButton(subgridControlName, isEnabled);
-    } else {
-        console.log("Waiting for subgrid:", subgridControlName);
-        setTimeout(function () {
-            waitAndToggle(formContext, subgridControlName, isEnabled);
-        }, 500);
-    }
-}
-
-function toggleButton(subgridControlName, isEnabled) {
-    setTimeout(function () {
-
-        // Use data-control-name to find subgrid
-        var subgridEl = document.querySelector("[data-control-name='" + subgridControlName + "']");
-
-        console.log("Subgrid DOM element found:", subgridEl != null);
-
-        if (subgridEl) {
-
-            // Use exact data-id from your form
-            var newButton = subgridEl.querySelector(
-                "button[data-id*='AddNewStandard']"
-            );
-
-            console.log("New button found:", newButton != null);
-
-            if (newButton == null) {
-                console.log("New button not found yet, retrying...");
-                setTimeout(function () {
-                    toggleButton(subgridControlName, isEnabled);
-                }, 500);
-                return;
-            }
-
-            if (isEnabled) {
-                console.log("Enabling New button");
-                newButton.disabled = false;
-                newButton.style.opacity = "1";
-                newButton.style.cursor = "pointer";
-                newButton.style.pointerEvents = "auto";
-            } else {
-                console.log("Disabling New button");
-                newButton.disabled = true;
-                newButton.style.opacity = "0.5";
-                newButton.style.cursor = "not-allowed";
-                newButton.style.pointerEvents = "none";
-            }
-
-        } else {
-            console.log("Subgrid DOM not found, retrying...");
-            setTimeout(function () {
-                toggleButton(subgridControlName, isEnabled);
-            }, 500);
-        }
-    }, 1500);
-}
+// Test 4 - check by partial match case insensitive
+var test4 = document.querySelector("[data-control-name*='Council']");
+console.log("Test 4 partial match capital:", test4);
