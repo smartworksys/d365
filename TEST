@@ -1,1 +1,116 @@
-https://YOUR-FUNCTION-APP.azurewebsites.net/api/GetSaasBlobUrl?path=D%3A%5CKOFCExt%20Extractions%5C09272024%5C000554%5Ctest.xlsx&contactId=12345678-1234-1234-1234-123456789012
+function enableDisableNewButton(executionContext) {
+    var formContext = executionContext.getFormContext();
+
+    // =============================================
+    var statusFieldName = "kofc_status";
+    var subgridName = "subgrid_councilAllocations";
+    var allowedStatuses = [
+        258510002   // your enabled status value
+        // add more values here if needed
+        // e.g. 258510000, 258510001
+    ];
+    // =============================================
+
+    var statusField = formContext.getAttribute(statusFieldName);
+    if (statusField == null) {
+        console.log("Status field not found: " + statusFieldName);
+        return;
+    }
+
+    // Check on form load
+    var statusValue = statusField.getValue();
+    var isEnabled = allowedStatuses.indexOf(statusValue) !== -1;
+    waitAndToggle(formContext, subgridName, isEnabled);
+
+    // Check when status field changes
+    statusField.addOnChange(function () {
+        var newValue = statusField.getValue();
+        var enabled = allowedStatuses.indexOf(newValue) !== -1;
+        toggleButton(subgridName, enabled);
+    });
+}
+
+function waitAndToggle(formContext, subgridName, isEnabled) {
+    var subgrid = formContext.getControl(subgridName);
+    if (subgrid) {
+        subgrid.addOnLoad(function () {
+            toggleButton(subgridName, isEnabled);
+        });
+        toggleButton(subgridName, isEnabled);
+    } else {
+        setTimeout(function () {
+            waitAndToggle(formContext, subgridName, isEnabled);
+        }, 500);
+    }
+}
+
+function toggleButton(subgridName, isEnabled) {
+    setTimeout(function () {
+        var subgridEl = document.getElementById(subgridName);
+        if (subgridEl) {
+            var buttons = subgridEl.querySelectorAll(
+                "button[data-id*='new'], button[aria-label='New'], button[title='New']"
+            );
+
+            if (buttons.length === 0) {
+                // Button not found yet, retry
+                setTimeout(function () {
+                    toggleButton(subgridName, isEnabled);
+                }, 500);
+                return;
+            }
+
+            buttons.forEach(function (btn) {
+                if (isEnabled) {
+                    // Enable button
+                    btn.disabled = false;
+                    btn.style.opacity = "1";
+                    btn.style.cursor = "pointer";
+                    btn.style.pointerEvents = "auto";
+                } else {
+                    // Disable button
+                    btn.disabled = true;
+                    btn.style.opacity = "0.5";
+                    btn.style.cursor = "not-allowed";
+                    btn.style.pointerEvents = "none";
+                }
+            });
+        } else {
+            // Subgrid element not found yet, retry
+            setTimeout(function () {
+                toggleButton(subgridName, isEnabled);
+            }, 500);
+        }
+    }, 1000);
+}
+```
+
+---
+
+## Step 1 — Create Web Resource
+
+1. Go to **make.powerapps.com**
+2. **Solutions** → your solution
+3. Click **"+ New"** → **"Web Resource"**
+4. Fill in:
+```
+Display Name:  kofc_EnableDisableNewButton
+Name:          kofc_EnableDisableNewButton
+Type:          JavaScript (JS)
+```
+5. Click **"Open text editor"**
+6. Paste the code above
+7. Click **Save → Publish** ✅
+
+---
+
+## Step 2 — Add to Change Request Form OnLoad
+
+1. Open **Change Request form** in form editor
+2. Click **"Form Properties"** in top toolbar
+3. Click **"Event Handlers"** tab
+4. Under **OnLoad** event → click **"+ Add"**
+5. Fill in:
+```
+Library:   kofc_EnableDisableNewButton
+Function:  enableDisableNewButton
