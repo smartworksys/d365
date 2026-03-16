@@ -1,5 +1,5 @@
 // ============================================================
-// APPROACH 1: Ribbon Workbench Enable Rule (Supported)
+// Ribbon Workbench Enable Rule
 // ============================================================
 //
 // SCENARIO:
@@ -7,12 +7,12 @@
 //   Child Entity:  Allocations (displayed in a subgrid)
 //   Goal:          Enable/disable the "New" button on the
 //                  Allocations subgrid based on the parent's status.
+//                  Button should update immediately on field change.
 //
 // SETUP IN RIBBON WORKBENCH:
-//   1. Open Ribbon Workbench and select the ALLOCATIONS entity
-//      (the child entity shown in the subgrid).
-//   2. Find the "New" / "Add New" button in the SubGrid ribbon.
-//   3. Add an Enable Rule → Custom Rule:
+//   1. Open Ribbon Workbench and select the ALLOCATIONS entity.
+//   2. Find "AddNewStandard" and "New Record" in the SubGrid ribbon.
+//   3. Add an Enable Rule → Custom Rule to each:
 //        - Library:       kofc_SubgridButtonRules.js (this file)
 //        - Function Name: SubgridButtonRules.isNewAllocationEnabled
 //        - Parameters:    Add a CrmParameter → PrimaryControl
@@ -28,56 +28,47 @@
 var SubgridButtonRules = (function () {
 
     // ---- Configuration ----
-    var STATUS_FIELD = "kofc_status";               // Field on the PARENT form (Change Requests)
-    var ALLOWED_STATUSES = [258510002];              // Status values that allow creating new Allocations
-    var SUBGRID_NAME = "Council_Change_Allocations"; // Logical name of the subgrid control on the parent form
+    var STATUS_FIELD = "kofc_status";
+    var ALLOWED_STATUSES = [258510002];
+    var SUBGRID_NAME = "Council_Change_Allocations";
+
+    // Store the current enabled state globally so the Enable Rule
+    // can read it even if the ribbon framework caches the form context.
+    var _cachedIsEnabled = false;
 
     /**
      * Enable Rule — called by the Ribbon framework.
-     * Returns true if the "New" button should be enabled.
-     *
-     * When used on a subgrid ribbon in Unified Interface,
-     * PrimaryControl can be either the parent form context
-     * or the grid control depending on configuration.
-     * This function handles both cases.
      */
     function isNewAllocationEnabled(primaryControl) {
         var formContext = null;
 
-        // Determine if we received the form context or the grid control
         if (primaryControl && primaryControl.getAttribute) {
-            // We received the parent form context directly
             formContext = primaryControl;
         } else if (primaryControl && primaryControl.getFormContext) {
-            // We received the grid control — get the parent form from it
             formContext = primaryControl.getFormContext();
         } else {
-            // Fallback to Xrm.Page (deprecated but still available)
             formContext = typeof Xrm !== "undefined" && Xrm.Page ? Xrm.Page : null;
         }
 
-        if (!formContext || !formContext.getAttribute) {
-            console.log("Enable Rule: Could not resolve parent form context.");
-            return false;
+        if (formContext && formContext.getAttribute) {
+            var statusField = formContext.getAttribute(STATUS_FIELD);
+            if (statusField) {
+                var statusValue = statusField.getValue();
+                _cachedIsEnabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
+                console.log("Enable Rule: kofc_status =", statusValue, "| enabled =", _cachedIsEnabled);
+            } else {
+                console.log("Enable Rule: Field '" + STATUS_FIELD + "' not found.");
+                _cachedIsEnabled = false;
+            }
+        } else {
+            console.log("Enable Rule: Using cached value =", _cachedIsEnabled);
         }
 
-        var statusField = formContext.getAttribute(STATUS_FIELD);
-        if (!statusField) {
-            console.log("Enable Rule: Field '" + STATUS_FIELD + "' not found on parent form.");
-            return false;
-        }
-
-        var statusValue = statusField.getValue();
-        var enabled = ALLOWED_STATUSES.indexOf(statusValue) !== -1;
-        console.log("Enable Rule: kofc_status =", statusValue, "| Button enabled =", enabled);
-
-        return enabled;
+        return _cachedIsEnabled;
     }
 
     /**
      * Register on the PARENT form's (Change Requests) OnLoad event.
-     * Listens for status changes and refreshes the subgrid ribbon
-     * so the enable rule re-evaluates immediately.
      */
     function refreshRibbonOnStatusChange(executionContext) {
         var formContext = executionContext.getFormContext();
@@ -90,15 +81,46 @@ var SubgridButtonRules = (function () {
 
         statusField.addOnChange(function () {
             var newValue = statusField.getValue();
-            console.log("Parent status changed to:", newValue, "— refreshing subgrid ribbon...");
+            console.log("Parent status changed to:", newValue, "— refreshing ribbon...");
 
+            // Update cached value immediately
+            _cachedIsEnabled = ALLOWED_STATUSES.indexOf(newValue) !== -1;
+
+            // Strategy 1: Refresh the subgrid ribbon directly
             var subgridControl = formContext.getControl(SUBGRID_NAME);
             if (subgridControl && subgridControl.refreshRibbon) {
                 subgridControl.refreshRibbon();
-            } else {
-                // Fallback: refresh the entire form's ribbon
-                formContext.ui.refreshRibbon();
+                console.log("Called subgridControl.refreshRibbon()");
             }
+
+            // Strategy 2: Refresh the entire form ribbon
+            if (formContext.ui && formContext.ui.refreshRibbon) {
+                formContext.ui.refreshRibbon();
+                console.log("Called formContext.ui.refreshRibbon()");
+            }
+
+            // Strategy 3: Delayed retry — sometimes the ribbon framework
+            // needs a moment to pick up changes in Unified Interface
+            setTimeout(function () {
+                console.log("Delayed ribbon refresh...");
+
+                var subgrid = formContext.getControl(SUBGRID_NAME);
+                if (subgrid && subgrid.refreshRibbon) {
+                    subgrid.refreshRibbon();
+                }
+
+                if (formContext.ui && formContext.ui.refreshRibbon) {
+                    formContext.ui.refreshRibbon();
+                }
+
+                // Strategy 4: Xrm.CommandBar if available (UCI)
+                if (typeof Xrm !== "undefined" &&
+                    Xrm.CommandBar &&
+                    Xrm.CommandBar.requestRender) {
+                    Xrm.CommandBar.requestRender();
+                    console.log("Called Xrm.CommandBar.requestRender()");
+                }
+            }, 500);
         });
     }
 
