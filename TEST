@@ -1,20 +1,97 @@
-// Find the exact element and its real ID
-var sg = document.querySelector("[data-control-name='Subgrid_councilAllocations']");
-console.log("Element found:", sg);
-console.log("Element ID:", sg ? sg.id : "null");
-console.log("Element tag:", sg ? sg.tagName : "null");
-console.log("Parent ID:", sg ? sg.parentElement.id : "null");
+function enableDisableNewButton(executionContext) {
+    var formContext = executionContext.getFormContext();
 
-// Find all buttons inside it
-if (sg) {
-    var buttons = sg.querySelectorAll("button");
-    console.log("Total buttons inside:", buttons.length);
-    buttons.forEach(function(btn, i) {
-        console.log("Button " + i + ":", {
-            label: btn.getAttribute("aria-label"),
-            title: btn.title,
-            dataId: btn.getAttribute("data-id"),
-            id: btn.id
-        });
+    // =============================================
+    var statusFieldName = "kofc_status";
+    var subgridControlName = "Subgrid_councilAllocations";
+    var allowedStatuses = [258510002];
+    // =============================================
+
+    var statusField = formContext.getAttribute(statusFieldName);
+    if (statusField == null) {
+        console.log("Status field not found: " + statusFieldName);
+        return;
+    }
+
+    var statusValue = statusField.getValue();
+    console.log("Status value on load:", statusValue);
+
+    var isEnabled = allowedStatuses.indexOf(statusValue) !== -1;
+    console.log("Button should be enabled:", isEnabled);
+
+    // Handle on form load
+    waitAndToggle(formContext, subgridControlName, isEnabled);
+
+    // Handle when status field changes
+    statusField.addOnChange(function () {
+        var newValue = statusField.getValue();
+        console.log("Status changed to:", newValue);
+        var enabled = allowedStatuses.indexOf(newValue) !== -1;
+        toggleButton(subgridControlName, enabled);
     });
+}
+
+function waitAndToggle(formContext, subgridControlName, isEnabled) {
+    var subgrid = formContext.getControl(subgridControlName);
+    if (subgrid) {
+        console.log("Subgrid control found:", subgridControlName);
+        subgrid.addOnLoad(function () {
+            console.log("Subgrid loaded, toggling button...");
+            toggleButton(subgridControlName, isEnabled);
+        });
+        toggleButton(subgridControlName, isEnabled);
+    } else {
+        console.log("Waiting for subgrid:", subgridControlName);
+        setTimeout(function () {
+            waitAndToggle(formContext, subgridControlName, isEnabled);
+        }, 500);
+    }
+}
+
+function toggleButton(subgridControlName, isEnabled) {
+    setTimeout(function () {
+
+        // Use data-control-name to find subgrid
+        var subgridEl = document.querySelector("[data-control-name='" + subgridControlName + "']");
+
+        console.log("Subgrid DOM element found:", subgridEl != null);
+
+        if (subgridEl) {
+
+            // Use exact data-id from your form
+            var newButton = subgridEl.querySelector(
+                "button[data-id*='AddNewStandard']"
+            );
+
+            console.log("New button found:", newButton != null);
+
+            if (newButton == null) {
+                console.log("New button not found yet, retrying...");
+                setTimeout(function () {
+                    toggleButton(subgridControlName, isEnabled);
+                }, 500);
+                return;
+            }
+
+            if (isEnabled) {
+                console.log("Enabling New button");
+                newButton.disabled = false;
+                newButton.style.opacity = "1";
+                newButton.style.cursor = "pointer";
+                newButton.style.pointerEvents = "auto";
+            } else {
+                console.log("Disabling New button");
+                newButton.disabled = true;
+                newButton.style.opacity = "0.5";
+                newButton.style.cursor = "not-allowed";
+                newButton.style.pointerEvents = "none";
+            }
+
+        } else {
+            console.log("Subgrid DOM not found, retrying...");
+            setTimeout(function () {
+                toggleButton(subgridControlName, isEnabled);
+            }, 500);
+        }
+    }, 1500);
 }
