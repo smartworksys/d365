@@ -4,9 +4,16 @@
 //
 // SCENARIO:
 //   Parent Entity: Change Requests (has kofc_status field)
-//   Child Entity:  Allocations (has kofc_changerequestid lookup)
+//   Child Entity:  Allocations (has kofc_changerequestid lookup
+//                  on the ENTITY but NOT on the form)
 //   Goal:          Lock ALL fields on the Allocation form when
 //                  the parent Change Request's status is NOT 258510002.
+//
+// APPROACH:
+//   Since kofc_changerequestid is not on the form, we use two
+//   Web API calls:
+//     1. Retrieve the current Allocation record to get the parent ID
+//     2. Retrieve the parent Change Request to get its status
 //
 // REGISTER ON ALLOCATION FORM:
 //   1. Add an OnLoad event:
@@ -18,10 +25,11 @@
 var LockAllocationFields = (function () {
 
     // ---- Configuration ----
-    var PARENT_LOOKUP_FIELD = "kofc_changerequestid";   // Lookup to Change Request on the Allocation form
-    var PARENT_ENTITY_NAME = "kofc_changerequest";      // Logical name of the Change Request entity
-    var PARENT_STATUS_FIELD = "kofc_status";             // Status field on the Change Request
-    var ALLOWED_STATUSES = [258510002];                  // Unlock fields when parent status is one of these
+    var ALLOCATION_ENTITY_NAME = "kofc_councilchangeallocation"; // Logical name of the Allocation entity (update if different)
+    var PARENT_LOOKUP_FIELD = "_kofc_changerequestid_value";     // OData format of the lookup field
+    var PARENT_ENTITY_NAME = "kofc_changerequest";               // Logical name of the Change Request entity
+    var PARENT_STATUS_FIELD = "kofc_status";                     // Status field on the Change Request
+    var ALLOWED_STATUSES = [258510002];                           // Unlock fields when parent status is one of these
 
     /**
      * OnLoad handler for the Allocation form.
@@ -29,37 +37,52 @@ var LockAllocationFields = (function () {
     function onFormLoad(executionContext) {
         var formContext = executionContext.getFormContext();
 
-        // Get the parent Change Request lookup
-        var lookupField = formContext.getAttribute(PARENT_LOOKUP_FIELD);
-        if (!lookupField) {
-            console.log("LockFields: Lookup field '" + PARENT_LOOKUP_FIELD + "' not found.");
+        // Only run on existing records (not on create)
+        var formType = formContext.ui.getFormType();
+        if (formType === 1) {
+            console.log("LockFields: New record — skipping lock check.");
             return;
         }
 
-        var lookupValue = lookupField.getValue();
-        if (!lookupValue || lookupValue.length === 0) {
-            console.log("LockFields: No parent Change Request linked. Locking all fields.");
-            lockAllFields(formContext, true);
+        // Get the current Allocation record ID
+        var recordId = formContext.data.entity.getId().replace("{", "").replace("}", "");
+        if (!recordId) {
+            console.log("LockFields: Could not get record ID.");
             return;
         }
 
-        var parentId = lookupValue[0].id.replace("{", "").replace("}", "");
-        var parentEntityType = lookupValue[0].entityType || PARENT_ENTITY_NAME;
+        console.log("LockFields: Retrieving parent lookup for Allocation:", recordId);
 
-        console.log("LockFields: Fetching parent status for Change Request:", parentId);
+        // Step 1: Retrieve the Allocation record to get the parent Change Request ID
+        Xrm.WebApi.retrieveRecord(ALLOCATION_ENTITY_NAME, recordId, "?$select=" + PARENT_LOOKUP_FIELD).then(
+            function (allocation) {
+                var parentId = allocation[PARENT_LOOKUP_FIELD];
 
-        // Retrieve the parent's status field
-        Xrm.WebApi.retrieveRecord(parentEntityType, parentId, "?$select=" + PARENT_STATUS_FIELD).then(
-            function (result) {
-                var parentStatus = result[PARENT_STATUS_FIELD];
-                var shouldUnlock = ALLOWED_STATUSES.indexOf(parentStatus) !== -1;
+                if (!parentId) {
+                    console.log("LockFields: No parent Change Request linked. Locking all fields.");
+                    lockAllFields(formContext, true);
+                    return;
+                }
 
-                console.log("LockFields: Parent kofc_status =", parentStatus, "| Fields unlocked =", shouldUnlock);
-                lockAllFields(formContext, !shouldUnlock);
+                console.log("LockFields: Parent Change Request ID:", parentId);
+
+                // Step 2: Retrieve the parent Change Request's status
+                Xrm.WebApi.retrieveRecord(PARENT_ENTITY_NAME, parentId, "?$select=" + PARENT_STATUS_FIELD).then(
+                    function (changeRequest) {
+                        var parentStatus = changeRequest[PARENT_STATUS_FIELD];
+                        var shouldUnlock = ALLOWED_STATUSES.indexOf(parentStatus) !== -1;
+
+                        console.log("LockFields: Parent kofc_status =", parentStatus, "| Fields unlocked =", shouldUnlock);
+                        lockAllFields(formContext, !shouldUnlock);
+                    },
+                    function (error) {
+                        console.log("LockFields: Error fetching Change Request:", error.message);
+                        lockAllFields(formContext, true);
+                    }
+                );
             },
             function (error) {
-                console.log("LockFields: Error fetching parent record:", error.message);
-                // Default to locked on error for safety
+                console.log("LockFields: Error fetching Allocation record:", error.message);
                 lockAllFields(formContext, true);
             }
         );
@@ -72,19 +95,18 @@ var LockAllocationFields = (function () {
      */
     function lockAllFields(formContext, lock) {
         var controls = formContext.ui.controls.get();
+        var count = 0;
 
         for (var i = 0; i < controls.length; i++) {
             var control = controls[i];
 
-            // Only lock controls that have the setDisabled method
-            // (skips subgrids, web resources, iframes, etc.)
             if (typeof control.setDisabled === "function") {
                 control.setDisabled(lock);
+                count++;
             }
         }
 
-        console.log("LockFields: All fields " + (lock ? "LOCKED" : "UNLOCKED") +
-                     " (" + controls.length + " controls processed).");
+        console.log("LockFields: " + count + " fields " + (lock ? "LOCKED" : "UNLOCKED") + ".");
     }
 
     return {
