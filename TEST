@@ -1,21 +1,126 @@
-// Wait 3 seconds then check
 setTimeout(function() {
     var all = document.querySelectorAll("[data-control-name]");
-    console.log("Total controls found:", all.length);
     all.forEach(function(el) {
-        console.log("Control:", el.getAttribute("data-control-name"));
+        console.log("Control name:", el.getAttribute("data-control-name"));
     });
 }, 3000);
 
-// Search entire DOM for anything with 'council' or 'allocation'
 setTimeout(function() {
-    var all = document.querySelectorAll("*");
-    all.forEach(function(el) {
-        var attrs = el.attributes;
-        for (var i = 0; i < attrs.length; i++) {
-            if (attrs[i].value && attrs[i].value.toLowerCase().includes("council")) {
-                console.log("Found:", el.tagName, attrs[i].name + "=" + attrs[i].value);
-            }
-        }
-    });
+    var sg = document.querySelector("[data-control-name='Subgrid_councilAllocations']");
+    console.log("Subgrid found:", sg != null);
+    if (sg) {
+        var btns = sg.querySelectorAll("button");
+        console.log("Total buttons:", btns.length);
+        btns.forEach(function(btn, i) {
+            console.log("Button " + i + ":", {
+                dataId: btn.getAttribute("data-id"),
+                label: btn.getAttribute("aria-label")
+            });
+        });
+    }
 }, 3000);
+
+
+function enableDisableNewButton(executionContext) {
+    var formContext = executionContext.getFormContext();
+
+    var statusFieldName = "kofc_status";
+    var subgridControlName = "Subgrid_councilAllocations";
+    var allowedStatuses = [258510002];
+
+    var statusField = formContext.getAttribute(statusFieldName);
+    if (statusField == null) {
+        console.log("Status field not found: " + statusFieldName);
+        return;
+    }
+
+    var statusValue = statusField.getValue();
+    console.log("Status value on load:", statusValue);
+
+    var isEnabled = allowedStatuses.indexOf(statusValue) !== -1;
+    console.log("Button should be enabled:", isEnabled);
+
+    // Handle on form load — wait longer for DOM to be ready
+    setTimeout(function() {
+        waitAndToggle(formContext, subgridControlName, isEnabled);
+    }, 3000);
+
+    // Handle when status field changes
+    statusField.addOnChange(function () {
+        var newValue = statusField.getValue();
+        console.log("Status changed to:", newValue);
+        var enabled = allowedStatuses.indexOf(newValue) !== -1;
+        // Wait for DOM to update after field change
+        setTimeout(function() {
+            toggleButton(subgridControlName, enabled);
+        }, 1000);
+    });
+}
+
+function waitAndToggle(formContext, subgridControlName, isEnabled) {
+    var subgrid = formContext.getControl(subgridControlName);
+    if (subgrid) {
+        console.log("Subgrid control found:", subgridControlName);
+        subgrid.addOnLoad(function () {
+            console.log("Subgrid loaded, toggling button...");
+            toggleButton(subgridControlName, isEnabled);
+        });
+        toggleButton(subgridControlName, isEnabled);
+    } else {
+        console.log("Waiting for subgrid control:", subgridControlName);
+        setTimeout(function () {
+            waitAndToggle(formContext, subgridControlName, isEnabled);
+        }, 1000);
+    }
+}
+
+function toggleButton(subgridControlName, isEnabled) {
+    setTimeout(function () {
+
+        var subgridEl = document.querySelector("[data-control-name='" + subgridControlName + "']");
+
+        console.log("Subgrid DOM element found:", subgridEl != null);
+
+        if (subgridEl) {
+            var newButton = subgridEl.querySelector("button[data-id*='AddNewStandard']");
+
+            console.log("New button found:", newButton != null);
+
+            if (newButton == null) {
+                console.log("New button not found yet, retrying...");
+                var allBtns = subgridEl.querySelectorAll("button");
+                console.log("All buttons in subgrid:", allBtns.length);
+                allBtns.forEach(function(btn, i) {
+                    console.log("Button " + i + ":", {
+                        dataId: btn.getAttribute("data-id"),
+                        label: btn.getAttribute("aria-label")
+                    });
+                });
+                setTimeout(function () {
+                    toggleButton(subgridControlName, isEnabled);
+                }, 1000);
+                return;
+            }
+
+            if (isEnabled) {
+                console.log("Enabling New button");
+                newButton.disabled = false;
+                newButton.style.opacity = "1";
+                newButton.style.cursor = "pointer";
+                newButton.style.pointerEvents = "auto";
+            } else {
+                console.log("Disabling New button");
+                newButton.disabled = true;
+                newButton.style.opacity = "0.5";
+                newButton.style.cursor = "not-allowed";
+                newButton.style.pointerEvents = "none";
+            }
+
+        } else {
+            console.log("Subgrid DOM not found, retrying...");
+            setTimeout(function () {
+                toggleButton(subgridControlName, isEnabled);
+            }, 1000);
+        }
+    }, 2000);
+}
