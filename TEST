@@ -1,115 +1,87 @@
-// ============================================================
-// Lock Allocation Form Fields Based on Parent Change Request Status
-// ============================================================
-//
-// SCENARIO:
-//   Parent Entity: Change Requests (has kofc_status field)
-//   Child Entity:  Allocations (has kofc_changerequestid lookup
-//                  on the ENTITY but NOT on the form)
-//   Goal:          Lock ALL fields on the Allocation form when
-//                  the parent Change Request's status is NOT 258510002.
-//
-// APPROACH:
-//   Since kofc_changerequestid is not on the form, we use two
-//   Web API calls:
-//     1. Retrieve the current Allocation record to get the parent ID
-//     2. Retrieve the parent Change Request to get its status
-//
-// REGISTER ON ALLOCATION FORM:
-//   1. Add an OnLoad event:
-//        - Library:       kofc_LockAllocationFields.js (this file)
-//        - Function Name: LockAllocationFields.onFormLoad
-//        - Pass execution context as first parameter: YES
-// ============================================================
+using System.IO;
+using System.Windows;
+using D365EnvAnalyzer.Views;
+using Serilog;
 
-var LockAllocationFields = (function () {
+namespace D365EnvAnalyzer;
 
-    // ---- Configuration ----
-    var ALLOCATION_ENTITY_NAME = "kofc_councilchangeallocation"; // Logical name of the Allocation entity (update if different)
-    var PARENT_LOOKUP_FIELD = "_kofc_changerequestid_value";     // OData format of the lookup field
-    var PARENT_ENTITY_NAME = "kofc_changerequest";               // Logical name of the Change Request entity
-    var PARENT_STATUS_FIELD = "kofc_status";                     // Status field on the Change Request
-    var ALLOWED_STATUSES = [258510002];                           // Unlock fields when parent status is one of these
+public partial class App : Application
+{
+    protected override void OnStartup(StartupEventArgs e)
+    {
+        var logDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "D365EnvAnalyzer", "logs");
 
-    /**
-     * OnLoad handler for the Allocation form.
-     */
-    function onFormLoad(executionContext) {
-        var formContext = executionContext.getFormContext();
+        Directory.CreateDirectory(logDir);
 
-        // Only run on existing records (not on create)
-        var formType = formContext.ui.getFormType();
-        if (formType === 1) {
-            console.log("LockFields: New record — skipping lock check.");
-            return;
-        }
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.File(
+                Path.Combine(logDir, "log-.txt"),
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 14)
+            .WriteTo.Console()using System.Windows;
+using System.Windows.Controls;
+using D365EnvAnalyzer.Services;
+using D365EnvAnalyzer.ViewModels;
 
-        // Get the current Allocation record ID
-        var recordId = formContext.data.entity.getId().replace("{", "").replace("}", "");
-        if (!recordId) {
-            console.log("LockFields: Could not get record ID.");
-            return;
-        }
+namespace D365EnvAnalyzer.Views;
 
-        console.log("LockFields: Retrieving parent lookup for Allocation:", recordId);
+public partial class ConnectWindow : Window
+{
+    private readonly ConnectViewModel _vm;
+    private readonly DataverseService _service;
 
-        // Step 1: Retrieve the Allocation record to get the parent Change Request ID
-        Xrm.WebApi.retrieveRecord(ALLOCATION_ENTITY_NAME, recordId, "?$select=" + PARENT_LOOKUP_FIELD).then(
-            function (allocation) {
-                var parentId = allocation[PARENT_LOOKUP_FIELD];
+    public ConnectWindow()
+    {
+        InitializeComponent();
 
-                if (!parentId) {
-                    console.log("LockFields: No parent Change Request linked. Locking all fields.");
-                    lockAllFields(formContext, true);
-                    return;
-                }
+        _service = new DataverseService();
+        _vm = new ConnectViewModel(_service);
+        DataContext = _vm;
 
-                console.log("LockFields: Parent Change Request ID:", parentId);
-
-                // Step 2: Retrieve the parent Change Request's status
-                Xrm.WebApi.retrieveRecord(PARENT_ENTITY_NAME, parentId, "?$select=" + PARENT_STATUS_FIELD).then(
-                    function (changeRequest) {
-                        var parentStatus = changeRequest[PARENT_STATUS_FIELD];
-                        var shouldUnlock = ALLOWED_STATUSES.indexOf(parentStatus) !== -1;
-
-                        console.log("LockFields: Parent kofc_status =", parentStatus, "| Fields unlocked =", shouldUnlock);
-                        lockAllFields(formContext, !shouldUnlock);
-                    },
-                    function (error) {
-                        console.log("LockFields: Error fetching Change Request:", error.message);
-                        lockAllFields(formContext, true);
-                    }
-                );
-            },
-            function (error) {
-                console.log("LockFields: Error fetching Allocation record:", error.message);
-                lockAllFields(formContext, true);
-            }
-        );
+        Closed += OnClosed;
     }
 
-    /**
-     * Locks or unlocks ALL fields on the form.
-     * @param {object} formContext - The form context.
-     * @param {boolean} lock - true to lock, false to unlock.
-     */
-    function lockAllFields(formContext, lock) {
-        var controls = formContext.ui.controls.get();
-        var count = 0;
-
-        for (var i = 0; i < controls.length; i++) {
-            var control = controls[i];
-
-            if (typeof control.setDisabled === "function") {
-                control.setDisabled(lock);
-                count++;
-            }
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (DialogResult == true)
+        {
+            var mainWindow = new MainWindow(_service);
+            Application.Current.MainWindow = mainWindow;
+            mainWindow.Show();
         }
-
-        console.log("LockFields: " + count + " fields " + (lock ? "LOCKED" : "UNLOCKED") + ".");
     }
 
-    return {
-        onFormLoad: onFormLoad
-    };
-})();
+    private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is PasswordBox pb)
+            _vm.ClientSecret = pb.Password;
+    }
+}
+
+            .CreateLogger();
+
+        Log.Information("D365 Env Variables Analyzer starting");
+
+        base.OnStartup(e);
+
+        var connectWindow = new ConnectWindow();
+        var result = connectWindow.ShowDialog();
+
+        if (result != true)
+            Shutdown();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        Log.Information("Application shutting down");
+        Log.CloseAndFlush();
+        base.OnExit(e);
+    }
+}
+
+
+
+
