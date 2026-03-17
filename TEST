@@ -1,788 +1,180 @@
-using System.Collections.Concurrent;
-using System.Diagnostics;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
-using D365EnvAnalyzer.Models;
-using SolutionInfo = D365EnvAnalyzer.Models.SolutionInfo;
-using Microsoft.PowerPlatform.Dataverse.Client;
-using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Query;
-using Serilog;
-
-namespace D365EnvAnalyzer.Services;
-
-public sealed class DataverseService : IDataverseService, IDisposable
-{
-    private ServiceClient? _client;
-    private readonly SemaphoreSlim _throttle = new(5, 5);
-    private readonly List<string> _componentErrors = new();
-    private readonly ConcurrentDictionary<string, string> _scanStatus = new();
-
-    public ServiceClient? Client => _client;
-    public string EnvironmentUrl { get; private set; } = string.Empty;
-    public IReadOnlyList<string> ComponentErrors => _componentErrors;
-
-    public async Task<ServiceClient> ConnectAsync(ConnectionSettings settings, CancellationToken ct)
-    {
-        return await Task.Run(() =>
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var connectionString =
-                $"AuthType=ClientSecret;" +
-                $"Url={settings.EnvironmentUrl};" +
-                $"ClientId={settings.ClientId};" +
-                $"ClientSecret={settings.ClientSecret};" +
-                $"TenantId={settings.TenantId}";
-
-            var client = new ServiceClient(connectionString);
-
-            if (!client.IsReady)
-                throw new InvalidOperationException(
-                    client.LastError ?? "Unknown connection error");
-
-            _client = client;
-            EnvironmentUrl = settings.EnvironmentUrl.TrimEnd('/');
-            return client;
-        }, ct);
-    }
-
-    public void Disconnect()
-    {
-        _client?.Dispose();
-        _client = null;
-        EnvironmentUrl = string.Empty;
-    }
-
-    // ──────────────────────────────────────────────
-    //  Solutions
-    // ──────────────────────────────────────────────
-
-    public async Task<List<SolutionInfo>> GetSolutionsAsync(CancellationToken ct)
-    {
-        if (_client is null)
-            throw new InvalidOperationException("Not connected to Dataverse.");
-
-        var query = new QueryExpression("solution")
-        {
-            ColumnSet = new ColumnSet(
-                "solutionid", "uniquename", "friendlyname", "version", "ismanaged"),
-            Criteria = new FilterExpression(LogicalOperator.And),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-        // Exclude the internal "Default" and "Active" solutions — they contain everything
-        query.Criteria.AddCondition("uniquename", ConditionOperator.NotEqual, "Default");
-        query.Criteria.AddCondition("uniquename", ConditionOperator.NotEqual, "Active");
-        query.Criteria.AddCondition("uniquename", ConditionOperator.NotEqual, "Basic");
-
-        var link = query.AddLink("publisher", "publisherid", "publisherid", JoinOperator.LeftOuter);
-        link.Columns = new ColumnSet("friendlyname");
-        link.EntityAlias = "pub";
-
-        var entities = await ExecuteWithThrottleAsync(
-            () => RetrieveAllPagesAsync(query, ct), ct);
-
-        return entities.Entities.Select(e => new SolutionInfo
-        {
-            SolutionId = e.Id,
-            UniqueName = e.GetAttributeValue<string>("uniquename") ?? "",
-            FriendlyName = e.GetAttributeValue<string>("friendlyname") ?? "",
-            Version = e.GetAttributeValue<string>("version") ?? "",
-            IsManaged = e.GetAttributeValue<bool>("ismanaged"),
-            PublisherName = (e.GetAttributeValue<AliasedValue>("pub.friendlyname")?.Value as string) ?? ""
-        })
-        .OrderBy(s => s.FriendlyName)
-        .ToList();
-    }
-
-    public async Task<SolutionScope> BuildSolutionScopeAsync(
-        List<Guid> solutionIds, IProgress<string>? progress, CancellationToken ct)
-    {
-        var scope = new SolutionScope();
-        if (solutionIds.Count == 0) return scope;
-
-        progress?.Report("Loading solution components…");
-
-        var relevantTypes = new[]
-        {
-            SolutionScope.Types.Workflow,
-            SolutionScope.Types.WebResource,
-            SolutionScope.Types.SdkMessageProcessingStep,
-            SolutionScope.Types.CanvasApp,
-            SolutionScope.Types.Sitemap,
-            SolutionScope.Types.ConnectionReference,
-            SolutionScope.Types.EnvironmentVariableDefinition,
-            SolutionScope.Types.EnvironmentVariableValue,
-        };
-
-        foreach (var solId in solutionIds)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var query = new QueryExpression("solutioncomponent")
-            {
-                ColumnSet = new ColumnSet("objectid", "componenttype"),
-                Criteria = new FilterExpression(LogicalOperator.And),
-                PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-            };
-            query.Criteria.AddCondition("solutionid", ConditionOperator.Equal, solId);
-
-            var entities = await ExecuteWithThrottleAsync(
-                () => RetrieveAllPagesAsync(query, ct), ct);
-
-            foreach (var entity in entities.Entities)
-            {
-                var compType = entity.GetAttributeValue<OptionSetValue>("componenttype")?.Value ?? 0;
-                var objectId = entity.GetAttributeValue<Guid>("objectid");
-
-                if (objectId == Guid.Empty || !relevantTypes.Contains(compType))
-                    continue;
-
-                if (!scope.ComponentIdsByType.ContainsKey(compType))
-                    scope.ComponentIdsByType[compType] = new HashSet<Guid>();
-                scope.ComponentIdsByType[compType].Add(objectId);
-            }
-        }
-
-        var total = scope.ComponentIdsByType.Values.Sum(s => s.Count);
-        progress?.Report($"Solution scope built: {total} components across {solutionIds.Count} solution(s).");
-        Log.Information("Solution scope: {Count} components from {Solutions} solutions",
-            total, solutionIds.Count);
-
-        return scope;
-    }
-
-    // ──────────────────────────────────────────────
-    //  Analysis
-    // ──────────────────────────────────────────────
-
-    public async Task<List<EnvVarAnalysisRow>> AnalyzeAsync(
-        SolutionScope? scope, ScanOptions? scanOptions,
-        IProgress<string>? progress, CancellationToken ct)
-    {
-        if (_client is null)
-            throw new InvalidOperationException("Not connected to Dataverse.");
-
-        scope ??= new SolutionScope();
-        scanOptions ??= new ScanOptions();
-        _componentErrors.Clear();
-        _scanStatus.Clear();
-
-        progress?.Report("Loading environment variable definitions…");
-        var definitions = await ExecuteWithThrottleAsync(
-            () => LoadDefinitionsAsync(ct), ct);
-
-        var filteredDefs = scope.IsScoped
-            ? definitions.Entities
-                .Where(d => scope.Contains(SolutionScope.Types.EnvironmentVariableDefinition, d.Id))
-                .ToList()
-            : definitions.Entities.ToList();
-
-        progress?.Report($"Found {filteredDefs.Count} environment variable definitions…");
-
-        progress?.Report("Loading environment variable values…");
-        var values = await ExecuteWithThrottleAsync(
-            () => LoadValuesAsync(ct), ct);
-
-        var valuesByDefId = values.Entities
-            .GroupBy(v => v.GetAttributeValue<EntityReference>(
-                "environmentvariabledefinitionid")?.Id ?? Guid.Empty)
-            .ToDictionary(g => g.Key, g => g.First());
-
-        var schemaNames = filteredDefs
-            .Select(d => d.GetAttributeValue<string>("schemaname") ?? "")
-            .Where(s => !string.IsNullOrEmpty(s))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var enabledCount = scanOptions.EnabledComponentTypes.Count;
-        progress?.Report($"Scanning {enabledCount} component type(s) for {schemaNames.Count} variables…");
-        var referenceMap = await ScanAllComponentsAsync(schemaNames, scope, scanOptions, progress, ct);
-
-        progress?.Report("Building analysis results…");
-        var results = new List<EnvVarAnalysisRow>();
-
-        foreach (var def in filteredDefs)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var schemaName = def.GetAttributeValue<string>("schemaname") ?? "";
-            var displayName = def.GetAttributeValue<string>("displayname") ?? schemaName;
-            var type = MapType(def.GetAttributeValue<OptionSetValue>("type")?.Value);
-            var defaultValue = def.GetAttributeValue<string>("defaultvalue") ?? "";
-
-            string currentValue = "";
-            var defId = def.GetAttributeValue<Guid>("environmentvariabledefinitionid");
-            if (defId == Guid.Empty)
-                defId = def.Id;
-
-            if (valuesByDefId.TryGetValue(defId, out var valEntity))
-                currentValue = valEntity.GetAttributeValue<string>("value") ?? "";
-
-            var delta = DetermineStatus(defaultValue, currentValue,
-                valuesByDefId.ContainsKey(defId));
-
-            referenceMap.TryGetValue(schemaName, out var refs);
-
-            results.Add(new EnvVarAnalysisRow(
-                schemaName, displayName, type,
-                defaultValue, currentValue, delta,
-                refs ?? new List<ComponentReference>()));
-        }
-
-        return results.OrderBy(r => r.DisplayName).ToList();
-    }
-
-    private static DeltaStatus DetermineStatus(
-        string defaultVal, string currentVal, bool hasValueRow)
-    {
-        if (!hasValueRow && string.IsNullOrEmpty(defaultVal))
-            return DeltaStatus.NoDefault;
-        if (!hasValueRow)
-            return DeltaStatus.Missing;
-        if (string.Equals(defaultVal, currentVal, StringComparison.Ordinal))
-            return DeltaStatus.Same;
-        return DeltaStatus.Changed;
-    }
-
-    private static string MapType(int? typeCode) => typeCode switch
-    {
-        100000000 => "String",
-        100000001 => "Number",
-        100000002 => "Boolean",
-        100000003 => "JSON",
-        100000004 => "Data Source",
-        _ => "Unknown"
-    };
-
-    private async Task<EntityCollection> LoadDefinitionsAsync(CancellationToken ct)
-    {
-        var query = new QueryExpression("environmentvariabledefinition")
-        {
-            ColumnSet = new ColumnSet(
-                "environmentvariabledefinitionid", "schemaname", "displayname",
-                "description", "type", "defaultvalue", "introducedversion"),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-        return await RetrieveAllPagesAsync(query, ct);
-    }
-
-    private async Task<EntityCollection> LoadValuesAsync(CancellationToken ct)
-    {
-        var query = new QueryExpression("environmentvariablevalue")
-        {
-            ColumnSet = new ColumnSet(
-                "environmentvariablevalueid", "environmentvariabledefinitionid",
-                "value"),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-        return await RetrieveAllPagesAsync(query, ct);
-    }
-
-    // ──────────────────────────────────────────────
-    //  Aggregated parallel scan (solution-aware)
-    // ──────────────────────────────────────────────
-
-    private async Task<Dictionary<string, List<ComponentReference>>> ScanAllComponentsAsync(
-        HashSet<string> schemaNames, SolutionScope scope, ScanOptions scanOptions,
-        IProgress<string>? progress, CancellationToken ct)
-    {
-        var map = new ConcurrentDictionary<string, List<ComponentReference>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        void Merge(Dictionary<string, List<ComponentReference>> partial)
-        {
-            foreach (var (key, refs) in partial)
-                map.AddOrUpdate(key, _ => new List<ComponentReference>(refs),
-                    (_, existing) => { lock (existing) { existing.AddRange(refs); } return existing; });
-        }
-
-        var allScans = new (string Key, string Label, Func<Task<Dictionary<string, List<ComponentReference>>>> Scanner)[]
-        {
-            ("Flows",        "Flows",        () => ScanFlowsAsync(schemaNames, scope, ct)),
-            ("CanvasApps",   "Canvas Apps",  () => ScanCanvasAppsAsync(schemaNames, scope, progress, ct)),
-            ("WebResources", "Web Resources",() => ScanWebResourcesAsync(schemaNames, scope, ct)),
-            ("BusinessRules","Business Rules",() => ScanBusinessRulesAsync(schemaNames, scope, ct)),
-            ("Plugins",      "Plugins",      () => ScanPluginsAsync(schemaNames, scope, ct)),
-            ("Sitemaps",     "Sitemaps",     () => ScanSitemapsAsync(schemaNames, scope, ct)),
-            ("ConnRefs",     "Conn. Refs",   () => ScanConnectionReferencesAsync(schemaNames, scope, ct)),
-        };
-
-        var enabledScans = allScans
-            .Where(s => scanOptions.IsComponentEnabled(s.Key))
-            .ToList();
-
-        var skipped = allScans.Length - enabledScans.Count;
-        if (skipped > 0)
-            Log.Information("Skipping {Count} disabled component type(s)", skipped);
-
-        var sw = Stopwatch.StartNew();
-        var completedCount = 0;
-        var totalScans = enabledScans.Count;
-
-        void ReportAggregateProgress(string scanName, string status)
-        {
-            _scanStatus[scanName] = status;
-            var pending = _scanStatus.Where(kv => kv.Value != "done").Select(kv => kv.Key).ToList();
-            if (pending.Count == 0)
-                progress?.Report("All component scans complete.");
-            else
-                progress?.Report($"[{completedCount}/{totalScans}] Scanning: {string.Join(", ", pending)} ({sw.Elapsed.TotalSeconds:F0}s)");
-        }
-
-        async Task RunScan(string label, Func<Task<Dictionary<string, List<ComponentReference>>>> scanner)
-        {
-            try
-            {
-                ReportAggregateProgress(label, "running");
-                var partial = await scanner();
-                Merge(partial);
-            }
-            catch (Exception ex)
-            {
-                _componentErrors.Add($"{label}: {ex.Message}");
-                Log.Warning(ex, "Component scan failed for {ComponentType}", label);
-            }
-            finally
-            {
-                Interlocked.Increment(ref completedCount);
-                ReportAggregateProgress(label, "done");
-            }
-        }
-
-        var tasks = enabledScans
-            .Select(s => RunScan(s.Label, s.Scanner))
-            .ToArray();
-
-        await Task.WhenAll(tasks);
-        sw.Stop();
-        Log.Information("Component scans completed in {Elapsed}s ({Enabled}/{Total} types enabled)",
-            sw.Elapsed.TotalSeconds, enabledScans.Count, allScans.Length);
-
-        return map.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
-    }
-
-    // ──────────────────────────────────────────────
-    //  Server-side scope filtering helper
-    // ──────────────────────────────────────────────
-
-    /// <summary>
-    /// When scoped, adds an IN condition on the primary key so Dataverse only
-    /// returns the rows that belong to the selected solutions.
-    /// Returns false if scoped but no IDs exist for this component type (nothing to scan).
-    /// </summary>
-    private static bool ApplyScopeFilter(
-        QueryExpression query, string primaryKeyField,
-        SolutionScope scope, int componentType)
-    {
-        if (!scope.IsScoped) return true;
-
-        if (!scope.ComponentIdsByType.TryGetValue(componentType, out var ids) || ids.Count == 0)
-            return false;
-
-        var idValues = ids.Cast<object>().ToArray();
-        query.Criteria.AddCondition(primaryKeyField, ConditionOperator.In, idValues);
-        return true;
-    }
-
-    // ──────────────────────────────────────────────
-    //  Individual scanners (solution-scoped, server-filtered)
-    // ──────────────────────────────────────────────
-
-    private async Task<Dictionary<string, List<ComponentReference>>> ScanFlowsAsync(
-        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
-    {
-        var results = new Dictionary<string, List<ComponentReference>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        var query = new QueryExpression("workflow")
-        {
-            ColumnSet = new ColumnSet("workflowid", "name", "clientdata"),
-            Criteria = new FilterExpression(LogicalOperator.And),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-        query.Criteria.AddCondition("category", ConditionOperator.Equal, 5);
-        query.Criteria.AddCondition("type", ConditionOperator.Equal, 1);
-
-        if (!ApplyScopeFilter(query, "workflowid", scope, SolutionScope.Types.Workflow))
-            return results;
-
-        var entities = await ExecuteWithThrottleAsync(
-            () => RetrieveAllPagesAsync(query, ct), ct);
-
-        foreach (var entity in entities.Entities)
-        {
-            var name = entity.GetAttributeValue<string>("name") ?? "";
-            var clientData = entity.GetAttributeValue<string>("clientdata") ?? "";
-
-            if (string.IsNullOrEmpty(clientData)) continue;
-
-            foreach (var schema in schemaNames)
-            {
-                if (clientData.Contains(schema, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Cloud Flow", name, entity.Id));
-                }
-            }
-        }
-
-        return results;
-    }
-
-    private async Task<Dictionary<string, List<ComponentReference>>> ScanCanvasAppsAsync(
-        HashSet<string> schemaNames, SolutionScope scope,
-        IProgress<string>? progress, CancellationToken ct)
-    {
-        var results = new ConcurrentDictionary<string, List<ComponentReference>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        var query = new QueryExpression("canvasapp")
-        {
-            ColumnSet = new ColumnSet("canvasappid", "displayname"),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-
-        if (!ApplyScopeFilter(query, "canvasappid", scope, SolutionScope.Types.CanvasApp))
-            return new Dictionary<string, List<ComponentReference>>();
-
-        var entities = await ExecuteWithThrottleAsync(
-            () => RetrieveAllPagesAsync(query, ct), ct);
-
-        var apps = entities.Entities.ToList();
-        if (apps.Count == 0) return new Dictionary<string, List<ComponentReference>>();
-
-        var processedCount = 0;
-
-        await Parallel.ForEachAsync(apps,
-            new ParallelOptions { MaxDegreeOfParallelism = 3, CancellationToken = ct },
-            async (entity, token) =>
-        {
-            var name = entity.GetAttributeValue<string>("displayname") ?? "";
-            var id = entity.Id;
-
-            string json;
-            try
-            {
-                json = await FetchCanvasAppDefinitionAsync(id, token);
-            }
-            catch
-            {
-                return;
-            }
-
-            if (string.IsNullOrEmpty(json)) return;
-
-            foreach (var schema in schemaNames)
-            {
-                if (json.Contains(schema, StringComparison.OrdinalIgnoreCase))
-                {
-                    results.AddOrUpdate(schema,
-                        _ => new List<ComponentReference> { new("Canvas App", name, id) },
-                        (_, list) => { lock (list) { list.Add(new("Canvas App", name, id)); } return list; });
-                }
-            }
-
-            var done = Interlocked.Increment(ref processedCount);
-            if (done % 5 == 0 || done == apps.Count)
-                progress?.Report($"Canvas Apps: {done}/{apps.Count} scanned…");
-        });
-
-        return results.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private async Task<string> FetchCanvasAppDefinitionAsync(Guid appId, CancellationToken ct)
-    {
-        await _throttle.WaitAsync(ct);
-        try
-        {
-            using var httpClient = new HttpClient();
-            httpClient.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", _client!.CurrentAccessToken);
-            httpClient.Timeout = TimeSpan.FromSeconds(30);
-
-            var url = $"{EnvironmentUrl}/api/data/v9.2/canvasapps({appId})/content";
-            var response = await httpClient.GetAsync(url, ct);
-
-            if (response.IsSuccessStatusCode)
-                return await response.Content.ReadAsStringAsync(ct);
-
-            return string.Empty;
-        }
-        finally
-        {
-            _throttle.Release();
-        }
-    }
-
-    private async Task<Dictionary<string, List<ComponentReference>>> ScanWebResourcesAsync(
-        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
-    {
-        var results = new Dictionary<string, List<ComponentReference>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        var query = new QueryExpression("webresource")
-        {
-            ColumnSet = new ColumnSet("webresourceid", "name", "displayname", "content"),
-            PageInfo = new PagingInfo { Count = 500, PageNumber = 1 }
-        };
-
-        // Type filter must be AND-ed with the scope IN filter,
-        // so wrap the type conditions in a child filter
-        var typeFilter = new FilterExpression(LogicalOperator.Or);
-        typeFilter.AddCondition("webresourcetype", ConditionOperator.Equal, 1);
-        typeFilter.AddCondition("webresourcetype", ConditionOperator.Equal, 3);
-        typeFilter.AddCondition("webresourcetype", ConditionOperator.Equal, 4);
-        query.Criteria.FilterOperator = LogicalOperator.And;
-        query.Criteria.AddFilter(typeFilter);
-
-        if (!ApplyScopeFilter(query, "webresourceid", scope, SolutionScope.Types.WebResource))
-            return results;
-
-        var entities = await ExecuteWithThrottleAsync(
-            () => RetrieveAllPagesAsync(query, ct), ct);
-
-        foreach (var entity in entities.Entities)
-        {
-            var name = entity.GetAttributeValue<string>("name")
-                ?? entity.GetAttributeValue<string>("displayname") ?? "";
-            var contentB64 = entity.GetAttributeValue<string>("content") ?? "";
-
-            if (string.IsNullOrEmpty(contentB64)) continue;
-
-            string decoded;
-            try { decoded = Encoding.UTF8.GetString(Convert.FromBase64String(contentB64)); }
-            catch { continue; }
-
-            foreach (var schema in schemaNames)
-            {
-                if (decoded.Contains(schema, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Web Resource", name, entity.Id));
-                }
-            }
-        }
-
-        return results;
-    }
-
-    private async Task<Dictionary<string, List<ComponentReference>>> ScanBusinessRulesAsync(
-        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
-    {
-        var results = new Dictionary<string, List<ComponentReference>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        var query = new QueryExpression("workflow")
-        {
-            ColumnSet = new ColumnSet("workflowid", "name", "xaml"),
-            Criteria = new FilterExpression(LogicalOperator.And),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-        query.Criteria.AddCondition("category", ConditionOperator.Equal, 2);
-
-        if (!ApplyScopeFilter(query, "workflowid", scope, SolutionScope.Types.Workflow))
-            return results;
-
-        var entities = await ExecuteWithThrottleAsync(
-            () => RetrieveAllPagesAsync(query, ct), ct);
-
-        foreach (var entity in entities.Entities)
-        {
-            var name = entity.GetAttributeValue<string>("name") ?? "";
-            var xaml = entity.GetAttributeValue<string>("xaml") ?? "";
-
-            if (string.IsNullOrEmpty(xaml)) continue;
-
-            foreach (var schema in schemaNames)
-            {
-                if (xaml.Contains(schema, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Business Rule", name, entity.Id));
-                }
-            }
-        }
-
-        return results;
-    }
-
-    private async Task<Dictionary<string, List<ComponentReference>>> ScanPluginsAsync(
-        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
-    {
-        var results = new Dictionary<string, List<ComponentReference>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        var query = new QueryExpression("sdkmessageprocessingstep")
-        {
-            ColumnSet = new ColumnSet(
-                "sdkmessageprocessingstepid", "name", "configuration"),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-
-        if (!ApplyScopeFilter(query, "sdkmessageprocessingstepid", scope,
-            SolutionScope.Types.SdkMessageProcessingStep))
-            return results;
-
-        var entities = await ExecuteWithThrottleAsync(
-            () => RetrieveAllPagesAsync(query, ct), ct);
-
-        foreach (var entity in entities.Entities)
-        {
-            var name = entity.GetAttributeValue<string>("name") ?? "";
-            var config = entity.GetAttributeValue<string>("configuration") ?? "";
-
-            if (string.IsNullOrEmpty(config)) continue;
-
-            foreach (var schema in schemaNames)
-            {
-                if (config.Contains(schema, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Plugin Step", name, entity.Id));
-                }
-            }
-        }
-
-        return results;
-    }
-
-    private async Task<Dictionary<string, List<ComponentReference>>> ScanSitemapsAsync(
-        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
-    {
-        var results = new Dictionary<string, List<ComponentReference>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        var query = new QueryExpression("sitemap")
-        {
-            ColumnSet = new ColumnSet("sitemapid", "sitemapname", "sitemapxml"),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-
-        if (!ApplyScopeFilter(query, "sitemapid", scope, SolutionScope.Types.Sitemap))
-            return results;
-
-        var entities = await ExecuteWithThrottleAsync(
-            () => RetrieveAllPagesAsync(query, ct), ct);
-
-        foreach (var entity in entities.Entities)
-        {
-            var name = entity.GetAttributeValue<string>("sitemapname") ?? "";
-            var xml = entity.GetAttributeValue<string>("sitemapxml") ?? "";
-
-            if (string.IsNullOrEmpty(xml)) continue;
-
-            foreach (var schema in schemaNames)
-            {
-                if (xml.Contains(schema, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Sitemap", name, entity.Id));
-                }
-            }
-        }
-
-        return results;
-    }
-
-    private async Task<Dictionary<string, List<ComponentReference>>> ScanConnectionReferencesAsync(
-        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
-    {
-        var results = new Dictionary<string, List<ComponentReference>>(
-            StringComparer.OrdinalIgnoreCase);
-
-        var query = new QueryExpression("connectionreference")
-        {
-            ColumnSet = new ColumnSet(
-                "connectionreferenceid", "connectionreferencelogicalname",
-                "connectorid", "description"),
-            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
-        };
-
-        if (!ApplyScopeFilter(query, "connectionreferenceid", scope,
-            SolutionScope.Types.ConnectionReference))
-            return results;
-
-        var entities = await ExecuteWithThrottleAsync(
-            () => RetrieveAllPagesAsync(query, ct), ct);
-
-        foreach (var entity in entities.Entities)
-        {
-            var name = entity.GetAttributeValue<string>("connectionreferencelogicalname") ?? "";
-            var desc = entity.GetAttributeValue<string>("description") ?? "";
-            var connectorId = entity.GetAttributeValue<string>("connectorid") ?? "";
-            var searchable = $"{name}|{desc}|{connectorId}";
-
-            foreach (var schema in schemaNames)
-            {
-                if (searchable.Contains(schema, StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Connection Reference", name, entity.Id));
-                }
-            }
-        }
-
-        return results;
-    }
-
-    // ──────────────────────────────────────────────
-    //  Infrastructure
-    // ──────────────────────────────────────────────
-
-    private async Task<EntityCollection> RetrieveAllPagesAsync(
-        QueryExpression query, CancellationToken ct)
-    {
-        var allEntities = new EntityCollection();
-        EntityCollection page;
-
-        do
-        {
-            ct.ThrowIfCancellationRequested();
-            page = await Task.Run(() => _client!.RetrieveMultiple(query), ct);
-
-            allEntities.Entities.AddRange(page.Entities);
-
-            query.PageInfo.PageNumber++;
-            query.PageInfo.PagingCookie = page.PagingCookie;
-        }
-        while (page.MoreRecords);
-
-        return allEntities;
-    }
-
-    private async Task<T> ExecuteWithThrottleAsync<T>(
-        Func<Task<T>> action, CancellationToken ct)
-    {
-        await _throttle.WaitAsync(ct);
-        try
-        {
-            const int maxRetries = 3;
-            for (int attempt = 0; attempt < maxRetries; attempt++)
-            {
-                try
-                {
-                    return await action();
-                }
-                catch (HttpRequestException ex) when (
-                    ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
-                {
-                    var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
-                    Log.Warning("Throttled (429), retrying after {Delay}s", delay.TotalSeconds);
-                    await Task.Delay(delay, ct);
-                }
-            }
-            return await action();
-        }
-        finally
-        {
-            _throttle.Release();
-        }
-    }
-
-    public void Dispose()
-    {
-        _client?.Dispose();
-        _throttle.Dispose();
-    }
-}
+<Window x:Class="D365EnvAnalyzer.Views.SolutionPickerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:md="http://materialdesigninxaml.net/winfx/xaml/themes"
+        Title="Scan Configuration"
+        Width="920" Height="640"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource MaterialDesign.Brush.Background}"
+        FontFamily="{md:MaterialDesignFont}"
+        TextElement.Foreground="{DynamicResource MaterialDesign.Brush.Foreground}">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <TextBlock Grid.Row="0" Text="Scan Configuration"
+                   Style="{StaticResource MaterialDesignHeadline5TextBlock}"
+                   Margin="0,0,0,4"/>
+
+        <TextBlock Grid.Row="1"
+                   Text="Pick solutions to scope the scan and choose which component types to analyze."
+                   Style="{StaticResource MaterialDesignBody2TextBlock}"
+                   Foreground="{DynamicResource MaterialDesign.Brush.Foreground.Light}"
+                   TextWrapping="Wrap" Margin="0,0,0,12"/>
+
+        <!-- Two-column layout: Solutions | Component Types -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="2*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- ═══ LEFT: Solutions ═══ -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <DockPanel Grid.Row="0">
+                    <TextBlock Text="Solutions" DockPanel.Dock="Left"
+                               Style="{StaticResource MaterialDesignSubtitle1TextBlock}"
+                               VerticalAlignment="Center"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="All" Click="SelectAll_Click"
+                                Style="{StaticResource MaterialDesignFlatButton}"
+                                Padding="8,2" Height="28" FontSize="12"/>
+                        <Button Content="None" Click="ClearAll_Click"
+                                Style="{StaticResource MaterialDesignFlatButton}"
+                                Padding="8,2" Height="28" FontSize="12"/>
+                    </StackPanel>
+                </DockPanel>
+
+                <TextBox Grid.Row="1" x:Name="SearchBox"
+                         md:HintAssist.Hint="Search solutions…"
+                         md:TextFieldAssist.HasClearButton="True"
+                         TextChanged="SearchBox_TextChanged"
+                         Margin="0,6,0,8"
+                         Padding="8,6"
+                         FontSize="13"
+                         md:HintAssist.IsFloating="False"
+                         Style="{StaticResource MaterialDesignOutlinedTextBox}"/>
+
+                <ListView Grid.Row="3" x:Name="SolutionList"
+                          BorderThickness="1"
+                          BorderBrush="{DynamicResource MaterialDesign.Brush.TextBox.HoverBackground}">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="2,4">
+                                <CheckBox DockPanel.Dock="Left"
+                                          IsChecked="{Binding IsSelected}"
+                                          VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <StackPanel>
+                                    <TextBlock FontWeight="SemiBold" FontSize="13">
+                                        <Run Text="{Binding FriendlyName, Mode=OneWay}"/>
+                                        <Run Text=" " />
+                                        <Run Text="{Binding Version, Mode=OneWay}"
+                                             Foreground="{DynamicResource MaterialDesign.Brush.Foreground.Light}"
+                                             FontSize="11"/>
+                                    </TextBlock>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding UniqueName}"
+                                                   FontFamily="Cascadia Code,Consolas"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource MaterialDesign.Brush.Foreground.Light}"/>
+                                        <TextBlock Text="  ·  " Foreground="Gray"/>
+                                        <TextBlock Text="{Binding PublisherName}"
+                                                   FontSize="11"
+                                                   Foreground="{DynamicResource MaterialDesign.Brush.Foreground.Light}"/>
+                                        <TextBlock Margin="6,0,0,0" FontSize="10"
+                                                   Foreground="#FFA726"
+                                                   Visibility="{Binding IsManaged, Converter={StaticResource BoolToVis}}"
+                                                   Text="managed"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+
+            <!-- ═══ RIGHT: Component Types ═══ -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="Component Types to Scan"
+                           Style="{StaticResource MaterialDesignSubtitle1TextBlock}"
+                           Margin="0,0,0,6"/>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button Content="All" Click="SelectAllComponents_Click"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            Padding="8,2" Height="28" FontSize="12"/>
+                    <Button Content="None" Click="ClearAllComponents_Click"
+                            Style="{StaticResource MaterialDesignFlatButton}"
+                            Padding="8,2" Height="28" FontSize="12"/>
+                </StackPanel>
+
+                <ListView Grid.Row="2" x:Name="ComponentTypeList"
+                          BorderThickness="1"
+                          BorderBrush="{DynamicResource MaterialDesign.Brush.TextBox.HoverBackground}">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <DockPanel Margin="4,6">
+                                <CheckBox DockPanel.Dock="Left"
+                                          IsChecked="{Binding IsSelected}"
+                                          VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Label}"
+                                               FontWeight="SemiBold" FontSize="13"/>
+                                    <TextBlock Text="{Binding Description}"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource MaterialDesign.Brush.Foreground.Light}"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Grid>
+
+        <!-- Loading / status -->
+        <StackPanel Grid.Row="3" Margin="0,10,0,0">
+            <ProgressBar x:Name="LoadingBar" IsIndeterminate="True" Height="4"
+                         Visibility="Collapsed"/>
+            <TextBlock x:Name="StatusText" Margin="0,4,0,0"
+                       Foreground="{DynamicResource MaterialDesign.Brush.Foreground.Light}"/>
+        </StackPanel>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="4" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Scan All (no filter)"
+                    Click="ScanAll_Click"
+                    Style="{StaticResource MaterialDesignOutlinedButton}"
+                    Height="38" Margin="0,0,8,0"/>
+            <Button Content="Scan Selected"
+                    Click="ScanSelected_Click"
+                    Style="{StaticResource MaterialDesignRaisedButton}"
+                    Height="38" MinWidth="140"/>
+        </StackPanel>
+    </Grid>
+</Window>
