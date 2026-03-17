@@ -21,46 +21,7 @@ public partial class App : Application
                 Path.Combine(logDir, "log-.txt"),
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 14)
-            .WriteTo.Console()using System.Windows;
-using System.Windows.Controls;
-using D365EnvAnalyzer.Services;
-using D365EnvAnalyzer.ViewModels;
-
-namespace D365EnvAnalyzer.Views;
-
-public partial class ConnectWindow : Window
-{
-    private readonly ConnectViewModel _vm;
-    private readonly DataverseService _service;
-
-    public ConnectWindow()
-    {
-        InitializeComponent();
-
-        _service = new DataverseService();
-        _vm = new ConnectViewModel(_service);
-        DataContext = _vm;
-
-        Closed += OnClosed;
-    }
-
-    private void OnClosed(object? sender, EventArgs e)
-    {
-        if (DialogResult == true)
-        {
-            var mainWindow = new MainWindow(_service);
-            Application.Current.MainWindow = mainWindow;
-            mainWindow.Show();
-        }
-    }
-
-    private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
-    {
-        if (sender is PasswordBox pb)
-            _vm.ClientSecret = pb.Password;
-    }
-}
-
+            .WriteTo.Console()
             .CreateLogger();
 
         Log.Information("D365 Env Variables Analyzer starting");
@@ -81,7 +42,3 @@ public partial class ConnectWindow : Window
         base.OnExit(e);
     }
 }
-
-
-
-
