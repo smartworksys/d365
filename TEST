@@ -1,44 +1,39 @@
-using System.IO;
 using System.Windows;
-using D365EnvAnalyzer.Views;
-using Serilog;
+using System.Windows.Controls;
+using D365EnvAnalyzer.Services;
+using D365EnvAnalyzer.ViewModels;
 
-namespace D365EnvAnalyzer;
+namespace D365EnvAnalyzer.Views;
 
-public partial class App : Application
+public partial class ConnectWindow : Window
 {
-    protected override void OnStartup(StartupEventArgs e)
+    private readonly ConnectViewModel _vm;
+    private readonly DataverseService _service;
+
+    public ConnectWindow()
     {
-        var logDir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "D365EnvAnalyzer", "logs");
+        InitializeComponent();
 
-        Directory.CreateDirectory(logDir);
+        _service = new DataverseService();
+        _vm = new ConnectViewModel(_service);
+        DataContext = _vm;
 
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
-            .WriteTo.File(
-                Path.Combine(logDir, "log-.txt"),
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 14)
-            .WriteTo.Console()
-            .CreateLogger();
-
-        Log.Information("D365 Env Variables Analyzer starting");
-
-        base.OnStartup(e);
-
-        var connectWindow = new ConnectWindow();
-        var result = connectWindow.ShowDialog();
-
-        if (result != true)
-            Shutdown();
+        Closed += OnClosed;
     }
 
-    protected override void OnExit(ExitEventArgs e)
+    private void OnClosed(object? sender, EventArgs e)
     {
-        Log.Information("Application shutting down");
-        Log.CloseAndFlush();
-        base.OnExit(e);
+        if (DialogResult == true)
+        {
+            var mainWindow = new MainWindow(_service);
+            Application.Current.MainWindow = mainWindow;
+            mainWindow.Show();
+        }
+    }
+
+    private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is PasswordBox pb)
+            _vm.ClientSecret = pb.Password;
     }
 }
