@@ -1,39 +1,613 @@
-using System.Windows;
-using System.Windows.Controls;
-using D365EnvAnalyzer.Services;
-using D365EnvAnalyzer.ViewModels;
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using D365EnvAnalyzer.Models;
+using Microsoft.PowerPlatform.Dataverse.Client;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+using Serilog;
 
-namespace D365EnvAnalyzer.Views;
+namespace D365EnvAnalyzer.Services;
 
-public partial class ConnectWindow : Window
+public sealed class DataverseService : IDataverseService, IDisposable
 {
-    private readonly ConnectViewModel _vm;
-    private readonly DataverseService _service;
+    private ServiceClient? _client;
+    private readonly SemaphoreSlim _throttle = new(5, 5);
+    private readonly List<string> _componentErrors = new();
+    private readonly ConcurrentDictionary<string, string> _scanStatus = new();
 
-    public ConnectWindow()
+    public ServiceClient? Client => _client;
+    public string EnvironmentUrl { get; private set; } = string.Empty;
+    public IReadOnlyList<string> ComponentErrors => _componentErrors;
+
+    public async Task<ServiceClient> ConnectAsync(ConnectionSettings settings, CancellationToken ct)
     {
-        InitializeComponent();
+        return await Task.Run(() =>
+        {
+            ct.ThrowIfCancellationRequested();
 
-        _service = new DataverseService();
-        _vm = new ConnectViewModel(_service);
-        DataContext = _vm;
+            var connectionString =
+                $"AuthType=ClientSecret;" +
+                $"Url={settings.EnvironmentUrl};" +
+                $"ClientId={settings.ClientId};" +
+                $"ClientSecret={settings.ClientSecret};" +
+                $"TenantId={settings.TenantId}";
 
-        Closed += OnClosed;
+            var client = new ServiceClient(connectionString);
+
+            if (!client.IsReady)
+                throw new InvalidOperationException(
+                    client.LastError ?? "Unknown connection error");
+
+            _client = client;
+            EnvironmentUrl = settings.EnvironmentUrl.TrimEnd('/');
+            return client;
+        }, ct);
     }
 
-    private void OnClosed(object? sender, EventArgs e)
+    public void Disconnect()
     {
-        if (DialogResult == true)
+        _client?.Dispose();
+        _client = null;
+        EnvironmentUrl = string.Empty;
+    }
+
+    public async Task<List<EnvVarAnalysisRow>> AnalyzeAsync(
+        IProgress<string>? progress, CancellationToken ct)
+    {
+        if (_client is null)
+            throw new InvalidOperationException("Not connected to Dataverse.");
+
+        _componentErrors.Clear();
+        _scanStatus.Clear();
+
+        progress?.Report("Loading environment variable definitions…");
+        var definitions = await ExecuteWithThrottleAsync(
+            () => LoadDefinitionsAsync(ct), ct);
+
+        progress?.Report("Loading environment variable values…");
+        var values = await ExecuteWithThrottleAsync(
+            () => LoadValuesAsync(ct), ct);
+
+        var valuesByDefId = values.Entities
+            .GroupBy(v => v.GetAttributeValue<EntityReference>(
+                "environmentvariabledefinitionid")?.Id ?? Guid.Empty)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var schemaNames = definitions.Entities
+            .Select(d => d.GetAttributeValue<string>("schemaname") ?? "")
+            .Where(s => !string.IsNullOrEmpty(s))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        progress?.Report($"Scanning 7 component types for {schemaNames.Count} variables…");
+        var referenceMap = await ScanAllComponentsAsync(schemaNames, progress, ct);
+
+        progress?.Report("Building analysis results…");
+        var results = new List<EnvVarAnalysisRow>();
+
+        foreach (var def in definitions.Entities)
         {
-            var mainWindow = new MainWindow(_service);
-            Application.Current.MainWindow = mainWindow;
-            mainWindow.Show();
+            ct.ThrowIfCancellationRequested();
+
+            var schemaName = def.GetAttributeValue<string>("schemaname") ?? "";
+            var displayName = def.GetAttributeValue<string>("displayname") ?? schemaName;
+            var type = MapType(def.GetAttributeValue<OptionSetValue>("type")?.Value);
+            var defaultValue = def.GetAttributeValue<string>("defaultvalue") ?? "";
+
+            string currentValue = "";
+            var defId = def.GetAttributeValue<Guid>("environmentvariabledefinitionid");
+            if (defId == Guid.Empty)
+                defId = def.Id;
+
+            if (valuesByDefId.TryGetValue(defId, out var valEntity))
+                currentValue = valEntity.GetAttributeValue<string>("value") ?? "";
+
+            var delta = DetermineStatus(defaultValue, currentValue,
+                valuesByDefId.ContainsKey(defId));
+
+            referenceMap.TryGetValue(schemaName, out var refs);
+
+            results.Add(new EnvVarAnalysisRow(
+                schemaName, displayName, type,
+                defaultValue, currentValue, delta,
+                refs ?? new List<ComponentReference>()));
+        }
+
+        return results.OrderBy(r => r.DisplayName).ToList();
+    }
+
+    private static DeltaStatus DetermineStatus(
+        string defaultVal, string currentVal, bool hasValueRow)
+    {
+        if (!hasValueRow && string.IsNullOrEmpty(defaultVal))
+            return DeltaStatus.NoDefault;
+        if (!hasValueRow)
+            return DeltaStatus.Missing;
+        if (string.Equals(defaultVal, currentVal, StringComparison.Ordinal))
+            return DeltaStatus.Same;
+        return DeltaStatus.Changed;
+    }
+
+    private static string MapType(int? typeCode) => typeCode switch
+    {
+        100000000 => "String",
+        100000001 => "Number",
+        100000002 => "Boolean",
+        100000003 => "JSON",
+        100000004 => "Data Source",
+        _ => "Unknown"
+    };
+
+    private async Task<EntityCollection> LoadDefinitionsAsync(CancellationToken ct)
+    {
+        var query = new QueryExpression("environmentvariabledefinition")
+        {
+            ColumnSet = new ColumnSet(
+                "environmentvariabledefinitionid", "schemaname", "displayname",
+                "description", "type", "defaultvalue", "introducedversion"),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+        return await RetrieveAllPagesAsync(query, ct);
+    }
+
+    private async Task<EntityCollection> LoadValuesAsync(CancellationToken ct)
+    {
+        var query = new QueryExpression("environmentvariablevalue")
+        {
+            ColumnSet = new ColumnSet(
+                "environmentvariablevalueid", "environmentvariabledefinitionid",
+                "value"),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+        return await RetrieveAllPagesAsync(query, ct);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Aggregated parallel scan
+    // ──────────────────────────────────────────────
+
+    private async Task<Dictionary<string, List<ComponentReference>>> ScanAllComponentsAsync(
+        HashSet<string> schemaNames, IProgress<string>? progress, CancellationToken ct)
+    {
+        var map = new ConcurrentDictionary<string, List<ComponentReference>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        void Merge(Dictionary<string, List<ComponentReference>> partial)
+        {
+            foreach (var (key, refs) in partial)
+                map.AddOrUpdate(key, _ => new List<ComponentReference>(refs),
+                    (_, existing) => { lock (existing) { existing.AddRange(refs); } return existing; });
+        }
+
+        var sw = Stopwatch.StartNew();
+        var completedCount = 0;
+        const int totalScans = 7;
+
+        void ReportAggregateProgress(string scanName, string status)
+        {
+            _scanStatus[scanName] = status;
+            var pending = _scanStatus.Where(kv => kv.Value != "done").Select(kv => kv.Key).ToList();
+            if (pending.Count == 0)
+                progress?.Report("All component scans complete.");
+            else
+                progress?.Report($"[{completedCount}/{totalScans}] Scanning: {string.Join(", ", pending)} ({sw.Elapsed.TotalSeconds:F0}s)");
+        }
+
+        async Task RunScan(string name, Func<Task<Dictionary<string, List<ComponentReference>>>> scanner)
+        {
+            try
+            {
+                ReportAggregateProgress(name, "running");
+                var partial = await scanner();
+                Merge(partial);
+            }
+            catch (Exception ex)
+            {
+                _componentErrors.Add($"{name}: {ex.Message}");
+                Log.Warning(ex, "Component scan failed for {ComponentType}", name);
+            }
+            finally
+            {
+                Interlocked.Increment(ref completedCount);
+                ReportAggregateProgress(name, "done");
+            }
+        }
+
+        var tasks = new[]
+        {
+            RunScan("Flows", () => ScanFlowsAsync(schemaNames, ct)),
+            RunScan("Canvas Apps", () => ScanCanvasAppsAsync(schemaNames, progress, ct)),
+            RunScan("Web Resources", () => ScanWebResourcesAsync(schemaNames, ct)),
+            RunScan("Business Rules", () => ScanBusinessRulesAsync(schemaNames, ct)),
+            RunScan("Plugins", () => ScanPluginsAsync(schemaNames, ct)),
+            RunScan("Sitemaps", () => ScanSitemapsAsync(schemaNames, ct)),
+            RunScan("Conn. Refs", () => ScanConnectionReferencesAsync(schemaNames, ct)),
+        };
+
+        await Task.WhenAll(tasks);
+        sw.Stop();
+        Log.Information("All component scans completed in {Elapsed}s", sw.Elapsed.TotalSeconds);
+
+        return map.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    // ──────────────────────────────────────────────
+    //  Individual scanners
+    // ──────────────────────────────────────────────
+
+    private async Task<Dictionary<string, List<ComponentReference>>> ScanFlowsAsync(
+        HashSet<string> schemaNames, CancellationToken ct)
+    {
+        var results = new Dictionary<string, List<ComponentReference>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        var query = new QueryExpression("workflow")
+        {
+            ColumnSet = new ColumnSet("workflowid", "name", "clientdata"),
+            Criteria = new FilterExpression(LogicalOperator.And),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+        query.Criteria.AddCondition("category", ConditionOperator.Equal, 5);
+        query.Criteria.AddCondition("type", ConditionOperator.Equal, 1);
+
+        var entities = await ExecuteWithThrottleAsync(
+            () => RetrieveAllPagesAsync(query, ct), ct);
+
+        foreach (var entity in entities.Entities)
+        {
+            var name = entity.GetAttributeValue<string>("name") ?? "";
+            var clientData = entity.GetAttributeValue<string>("clientdata") ?? "";
+            var id = entity.Id;
+
+            if (string.IsNullOrEmpty(clientData)) continue;
+
+            foreach (var schema in schemaNames)
+            {
+                if (clientData.Contains(schema, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!results.ContainsKey(schema)) results[schema] = new();
+                    results[schema].Add(new ComponentReference("Cloud Flow", name, id));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<Dictionary<string, List<ComponentReference>>> ScanCanvasAppsAsync(
+        HashSet<string> schemaNames, IProgress<string>? progress, CancellationToken ct)
+    {
+        var results = new ConcurrentDictionary<string, List<ComponentReference>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        var query = new QueryExpression("canvasapp")
+        {
+            ColumnSet = new ColumnSet("canvasappid", "displayname"),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+
+        var entities = await ExecuteWithThrottleAsync(
+            () => RetrieveAllPagesAsync(query, ct), ct);
+
+        var apps = entities.Entities.ToList();
+        if (apps.Count == 0) return new Dictionary<string, List<ComponentReference>>();
+
+        var processedCount = 0;
+
+        await Parallel.ForEachAsync(apps,
+            new ParallelOptions { MaxDegreeOfParallelism = 3, CancellationToken = ct },
+            async (entity, token) =>
+        {
+            var name = entity.GetAttributeValue<string>("displayname") ?? "";
+            var id = entity.Id;
+
+            string json;
+            try
+            {
+                json = await FetchCanvasAppDefinitionAsync(id, token);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (string.IsNullOrEmpty(json)) return;
+
+            foreach (var schema in schemaNames)
+            {
+                if (json.Contains(schema, StringComparison.OrdinalIgnoreCase))
+                {
+                    results.AddOrUpdate(schema,
+                        _ => new List<ComponentReference> { new("Canvas App", name, id) },
+                        (_, list) => { lock (list) { list.Add(new("Canvas App", name, id)); } return list; });
+                }
+            }
+
+            var done = Interlocked.Increment(ref processedCount);
+            if (done % 5 == 0)
+                progress?.Report($"Canvas Apps: {done}/{apps.Count} scanned…");
+        });
+
+        return results.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private async Task<string> FetchCanvasAppDefinitionAsync(Guid appId, CancellationToken ct)
+    {
+        await _throttle.WaitAsync(ct);
+        try
+        {
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", _client!.CurrentAccessToken);
+            httpClient.Timeout = TimeSpan.FromSeconds(30);
+
+            var url = $"{EnvironmentUrl}/api/data/v9.2/canvasapps({appId})/content";
+            var response = await httpClient.GetAsync(url, ct);
+
+            if (response.IsSuccessStatusCode)
+                return await response.Content.ReadAsStringAsync(ct);
+
+            return string.Empty;
+        }
+        finally
+        {
+            _throttle.Release();
         }
     }
 
-    private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e)
+    private async Task<Dictionary<string, List<ComponentReference>>> ScanWebResourcesAsync(
+        HashSet<string> schemaNames, CancellationToken ct)
     {
-        if (sender is PasswordBox pb)
-            _vm.ClientSecret = pb.Password;
+        var results = new Dictionary<string, List<ComponentReference>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        var query = new QueryExpression("webresource")
+        {
+            ColumnSet = new ColumnSet("webresourceid", "name", "displayname", "content"),
+            Criteria = new FilterExpression(LogicalOperator.Or),
+            PageInfo = new PagingInfo { Count = 500, PageNumber = 1 }
+        };
+        query.Criteria.AddCondition("webresourcetype", ConditionOperator.Equal, 1);
+        query.Criteria.AddCondition("webresourcetype", ConditionOperator.Equal, 3);
+        query.Criteria.AddCondition("webresourcetype", ConditionOperator.Equal, 4);
+
+        var entities = await ExecuteWithThrottleAsync(
+            () => RetrieveAllPagesAsync(query, ct), ct);
+
+        foreach (var entity in entities.Entities)
+        {
+            var name = entity.GetAttributeValue<string>("name")
+                ?? entity.GetAttributeValue<string>("displayname") ?? "";
+            var contentB64 = entity.GetAttributeValue<string>("content") ?? "";
+            var id = entity.Id;
+
+            if (string.IsNullOrEmpty(contentB64)) continue;
+
+            string decoded;
+            try { decoded = Encoding.UTF8.GetString(Convert.FromBase64String(contentB64)); }
+            catch { continue; }
+
+            foreach (var schema in schemaNames)
+            {
+                if (decoded.Contains(schema, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!results.ContainsKey(schema)) results[schema] = new();
+                    results[schema].Add(new ComponentReference("Web Resource", name, id));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<Dictionary<string, List<ComponentReference>>> ScanBusinessRulesAsync(
+        HashSet<string> schemaNames, CancellationToken ct)
+    {
+        var results = new Dictionary<string, List<ComponentReference>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        var query = new QueryExpression("workflow")
+        {
+            ColumnSet = new ColumnSet("workflowid", "name", "xaml"),
+            Criteria = new FilterExpression(LogicalOperator.And),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+        query.Criteria.AddCondition("category", ConditionOperator.Equal, 2);
+
+        var entities = await ExecuteWithThrottleAsync(
+            () => RetrieveAllPagesAsync(query, ct), ct);
+
+        foreach (var entity in entities.Entities)
+        {
+            var name = entity.GetAttributeValue<string>("name") ?? "";
+            var xaml = entity.GetAttributeValue<string>("xaml") ?? "";
+            var id = entity.Id;
+
+            if (string.IsNullOrEmpty(xaml)) continue;
+
+            foreach (var schema in schemaNames)
+            {
+                if (xaml.Contains(schema, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!results.ContainsKey(schema)) results[schema] = new();
+                    results[schema].Add(new ComponentReference("Business Rule", name, id));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<Dictionary<string, List<ComponentReference>>> ScanPluginsAsync(
+        HashSet<string> schemaNames, CancellationToken ct)
+    {
+        var results = new Dictionary<string, List<ComponentReference>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        var query = new QueryExpression("sdkmessageprocessingstep")
+        {
+            ColumnSet = new ColumnSet(
+                "sdkmessageprocessingstepid", "name", "configuration"),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+
+        var entities = await ExecuteWithThrottleAsync(
+            () => RetrieveAllPagesAsync(query, ct), ct);
+
+        foreach (var entity in entities.Entities)
+        {
+            var name = entity.GetAttributeValue<string>("name") ?? "";
+            var config = entity.GetAttributeValue<string>("configuration") ?? "";
+            var id = entity.Id;
+
+            if (string.IsNullOrEmpty(config)) continue;
+
+            foreach (var schema in schemaNames)
+            {
+                if (config.Contains(schema, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!results.ContainsKey(schema)) results[schema] = new();
+                    results[schema].Add(new ComponentReference("Plugin Step", name, id));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<Dictionary<string, List<ComponentReference>>> ScanSitemapsAsync(
+        HashSet<string> schemaNames, CancellationToken ct)
+    {
+        var results = new Dictionary<string, List<ComponentReference>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        var query = new QueryExpression("sitemap")
+        {
+            ColumnSet = new ColumnSet("sitemapid", "sitemapname", "sitemapxml"),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+
+        var entities = await ExecuteWithThrottleAsync(
+            () => RetrieveAllPagesAsync(query, ct), ct);
+
+        foreach (var entity in entities.Entities)
+        {
+            var name = entity.GetAttributeValue<string>("sitemapname") ?? "";
+            var xml = entity.GetAttributeValue<string>("sitemapxml") ?? "";
+            var id = entity.Id;
+
+            if (string.IsNullOrEmpty(xml)) continue;
+
+            foreach (var schema in schemaNames)
+            {
+                if (xml.Contains(schema, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!results.ContainsKey(schema)) results[schema] = new();
+                    results[schema].Add(new ComponentReference("Sitemap", name, id));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private async Task<Dictionary<string, List<ComponentReference>>> ScanConnectionReferencesAsync(
+        HashSet<string> schemaNames, CancellationToken ct)
+    {
+        var results = new Dictionary<string, List<ComponentReference>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        var query = new QueryExpression("connectionreference")
+        {
+            ColumnSet = new ColumnSet(
+                "connectionreferenceid", "connectionreferencelogicalname",
+                "connectorid", "description"),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+
+        var entities = await ExecuteWithThrottleAsync(
+            () => RetrieveAllPagesAsync(query, ct), ct);
+
+        foreach (var entity in entities.Entities)
+        {
+            var name = entity.GetAttributeValue<string>("connectionreferencelogicalname") ?? "";
+            var desc = entity.GetAttributeValue<string>("description") ?? "";
+            var connectorId = entity.GetAttributeValue<string>("connectorid") ?? "";
+            var id = entity.Id;
+            var searchable = $"{name}|{desc}|{connectorId}";
+
+            foreach (var schema in schemaNames)
+            {
+                if (searchable.Contains(schema, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!results.ContainsKey(schema)) results[schema] = new();
+                    results[schema].Add(new ComponentReference("Connection Reference", name, id));
+                }
+            }
+        }
+
+        return results;
+    }
+
+    // ──────────────────────────────────────────────
+    //  Infrastructure
+    // ──────────────────────────────────────────────
+
+    private async Task<EntityCollection> RetrieveAllPagesAsync(
+        QueryExpression query, CancellationToken ct)
+    {
+        var allEntities = new EntityCollection();
+        EntityCollection page;
+
+        do
+        {
+            ct.ThrowIfCancellationRequested();
+            page = await Task.Run(() => _client!.RetrieveMultiple(query), ct);
+
+            allEntities.Entities.AddRange(page.Entities);
+
+            query.PageInfo.PageNumber++;
+            query.PageInfo.PagingCookie = page.PagingCookie;
+        }
+        while (page.MoreRecords);
+
+        return allEntities;
+    }
+
+    private async Task<T> ExecuteWithThrottleAsync<T>(
+        Func<Task<T>> action, CancellationToken ct)
+    {
+        await _throttle.WaitAsync(ct);
+        try
+        {
+            const int maxRetries = 3;
+            for (int attempt = 0; attempt < maxRetries; attempt++)
+            {
+                try
+                {
+                    return await action();
+                }
+                catch (HttpRequestException ex) when (
+                    ex.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt + 1));
+                    Log.Warning("Throttled (429), retrying after {Delay}s", delay.TotalSeconds);
+                    await Task.Delay(delay, ct);
+                }
+            }
+            return await action();
+        }
+        finally
+        {
+            _throttle.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        _client?.Dispose();
+        _throttle.Dispose();
     }
 }
