@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using D365EnvAnalyzer.Models;
+using SolutionInfo = D365EnvAnalyzer.Models.SolutionInfo;
 using Microsoft.PowerPlatform.Dataverse.Client;
 using Microsoft.Xrm.Sdk;
 using Microsoft.Xrm.Sdk.Query;
@@ -54,18 +55,131 @@ public sealed class DataverseService : IDataverseService, IDisposable
         EnvironmentUrl = string.Empty;
     }
 
+    // ──────────────────────────────────────────────
+    //  Solutions
+    // ──────────────────────────────────────────────
+
+    public async Task<List<SolutionInfo>> GetSolutionsAsync(CancellationToken ct)
+    {
+        if (_client is null)
+            throw new InvalidOperationException("Not connected to Dataverse.");
+
+        var query = new QueryExpression("solution")
+        {
+            ColumnSet = new ColumnSet(
+                "solutionid", "uniquename", "friendlyname", "version", "ismanaged"),
+            Criteria = new FilterExpression(LogicalOperator.And),
+            PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+        };
+        // Exclude the internal "Default" and "Active" solutions — they contain everything
+        query.Criteria.AddCondition("uniquename", ConditionOperator.NotEqual, "Default");
+        query.Criteria.AddCondition("uniquename", ConditionOperator.NotEqual, "Active");
+        query.Criteria.AddCondition("uniquename", ConditionOperator.NotEqual, "Basic");
+
+        var link = query.AddLink("publisher", "publisherid", "publisherid", JoinOperator.LeftOuter);
+        link.Columns = new ColumnSet("friendlyname");
+        link.EntityAlias = "pub";
+
+        var entities = await ExecuteWithThrottleAsync(
+            () => RetrieveAllPagesAsync(query, ct), ct);
+
+        return entities.Entities.Select(e => new SolutionInfo
+        {
+            SolutionId = e.Id,
+            UniqueName = e.GetAttributeValue<string>("uniquename") ?? "",
+            FriendlyName = e.GetAttributeValue<string>("friendlyname") ?? "",
+            Version = e.GetAttributeValue<string>("version") ?? "",
+            IsManaged = e.GetAttributeValue<bool>("ismanaged"),
+            PublisherName = (e.GetAttributeValue<AliasedValue>("pub.friendlyname")?.Value as string) ?? ""
+        })
+        .OrderBy(s => s.FriendlyName)
+        .ToList();
+    }
+
+    public async Task<SolutionScope> BuildSolutionScopeAsync(
+        List<Guid> solutionIds, IProgress<string>? progress, CancellationToken ct)
+    {
+        var scope = new SolutionScope();
+        if (solutionIds.Count == 0) return scope;
+
+        progress?.Report("Loading solution components…");
+
+        var relevantTypes = new[]
+        {
+            SolutionScope.Types.Workflow,
+            SolutionScope.Types.WebResource,
+            SolutionScope.Types.SdkMessageProcessingStep,
+            SolutionScope.Types.CanvasApp,
+            SolutionScope.Types.Sitemap,
+            SolutionScope.Types.ConnectionReference,
+            SolutionScope.Types.EnvironmentVariableDefinition,
+            SolutionScope.Types.EnvironmentVariableValue,
+        };
+
+        foreach (var solId in solutionIds)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var query = new QueryExpression("solutioncomponent")
+            {
+                ColumnSet = new ColumnSet("objectid", "componenttype"),
+                Criteria = new FilterExpression(LogicalOperator.And),
+                PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
+            };
+            query.Criteria.AddCondition("solutionid", ConditionOperator.Equal, solId);
+
+            var entities = await ExecuteWithThrottleAsync(
+                () => RetrieveAllPagesAsync(query, ct), ct);
+
+            foreach (var entity in entities.Entities)
+            {
+                var compType = entity.GetAttributeValue<OptionSetValue>("componenttype")?.Value ?? 0;
+                var objectId = entity.GetAttributeValue<Guid>("objectid");
+
+                if (objectId == Guid.Empty || !relevantTypes.Contains(compType))
+                    continue;
+
+                if (!scope.ComponentIdsByType.ContainsKey(compType))
+                    scope.ComponentIdsByType[compType] = new HashSet<Guid>();
+                scope.ComponentIdsByType[compType].Add(objectId);
+            }
+        }
+
+        var total = scope.ComponentIdsByType.Values.Sum(s => s.Count);
+        progress?.Report($"Solution scope built: {total} components across {solutionIds.Count} solution(s).");
+        Log.Information("Solution scope: {Count} components from {Solutions} solutions",
+            total, solutionIds.Count);
+
+        return scope;
+    }
+
+    // ──────────────────────────────────────────────
+    //  Analysis
+    // ──────────────────────────────────────────────
+
     public async Task<List<EnvVarAnalysisRow>> AnalyzeAsync(
+        SolutionScope? scope, ScanOptions? scanOptions,
         IProgress<string>? progress, CancellationToken ct)
     {
         if (_client is null)
             throw new InvalidOperationException("Not connected to Dataverse.");
 
+        scope ??= new SolutionScope();
+        scanOptions ??= new ScanOptions();
         _componentErrors.Clear();
         _scanStatus.Clear();
 
         progress?.Report("Loading environment variable definitions…");
         var definitions = await ExecuteWithThrottleAsync(
             () => LoadDefinitionsAsync(ct), ct);
+
+        var filteredDefs = scope.IsScoped
+            ? definitions.Entities
+                .Where(d => scope.Contains(SolutionScope.Types.EnvironmentVariableDefinition, d.Id))
+                .ToList()
+            : definitions.Entities.ToList();
+
+        progress?.Report($"Found {filteredDefs.Count} environment variable definitions…");
 
         progress?.Report("Loading environment variable values…");
         var values = await ExecuteWithThrottleAsync(
@@ -76,18 +190,19 @@ public sealed class DataverseService : IDataverseService, IDisposable
                 "environmentvariabledefinitionid")?.Id ?? Guid.Empty)
             .ToDictionary(g => g.Key, g => g.First());
 
-        var schemaNames = definitions.Entities
+        var schemaNames = filteredDefs
             .Select(d => d.GetAttributeValue<string>("schemaname") ?? "")
             .Where(s => !string.IsNullOrEmpty(s))
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        progress?.Report($"Scanning 7 component types for {schemaNames.Count} variables…");
-        var referenceMap = await ScanAllComponentsAsync(schemaNames, progress, ct);
+        var enabledCount = scanOptions.EnabledComponentTypes.Count;
+        progress?.Report($"Scanning {enabledCount} component type(s) for {schemaNames.Count} variables…");
+        var referenceMap = await ScanAllComponentsAsync(schemaNames, scope, scanOptions, progress, ct);
 
         progress?.Report("Building analysis results…");
         var results = new List<EnvVarAnalysisRow>();
 
-        foreach (var def in definitions.Entities)
+        foreach (var def in filteredDefs)
         {
             ct.ThrowIfCancellationRequested();
 
@@ -165,11 +280,12 @@ public sealed class DataverseService : IDataverseService, IDisposable
     }
 
     // ──────────────────────────────────────────────
-    //  Aggregated parallel scan
+    //  Aggregated parallel scan (solution-aware)
     // ──────────────────────────────────────────────
 
     private async Task<Dictionary<string, List<ComponentReference>>> ScanAllComponentsAsync(
-        HashSet<string> schemaNames, IProgress<string>? progress, CancellationToken ct)
+        HashSet<string> schemaNames, SolutionScope scope, ScanOptions scanOptions,
+        IProgress<string>? progress, CancellationToken ct)
     {
         var map = new ConcurrentDictionary<string, List<ComponentReference>>(
             StringComparer.OrdinalIgnoreCase);
@@ -181,9 +297,28 @@ public sealed class DataverseService : IDataverseService, IDisposable
                     (_, existing) => { lock (existing) { existing.AddRange(refs); } return existing; });
         }
 
+        var allScans = new (string Key, string Label, Func<Task<Dictionary<string, List<ComponentReference>>>> Scanner)[]
+        {
+            ("Flows",        "Flows",        () => ScanFlowsAsync(schemaNames, scope, ct)),
+            ("CanvasApps",   "Canvas Apps",  () => ScanCanvasAppsAsync(schemaNames, scope, progress, ct)),
+            ("WebResources", "Web Resources",() => ScanWebResourcesAsync(schemaNames, scope, ct)),
+            ("BusinessRules","Business Rules",() => ScanBusinessRulesAsync(schemaNames, scope, ct)),
+            ("Plugins",      "Plugins",      () => ScanPluginsAsync(schemaNames, scope, ct)),
+            ("Sitemaps",     "Sitemaps",     () => ScanSitemapsAsync(schemaNames, scope, ct)),
+            ("ConnRefs",     "Conn. Refs",   () => ScanConnectionReferencesAsync(schemaNames, scope, ct)),
+        };
+
+        var enabledScans = allScans
+            .Where(s => scanOptions.IsComponentEnabled(s.Key))
+            .ToList();
+
+        var skipped = allScans.Length - enabledScans.Count;
+        if (skipped > 0)
+            Log.Information("Skipping {Count} disabled component type(s)", skipped);
+
         var sw = Stopwatch.StartNew();
         var completedCount = 0;
-        const int totalScans = 7;
+        var totalScans = enabledScans.Count;
 
         void ReportAggregateProgress(string scanName, string status)
         {
@@ -195,50 +330,67 @@ public sealed class DataverseService : IDataverseService, IDisposable
                 progress?.Report($"[{completedCount}/{totalScans}] Scanning: {string.Join(", ", pending)} ({sw.Elapsed.TotalSeconds:F0}s)");
         }
 
-        async Task RunScan(string name, Func<Task<Dictionary<string, List<ComponentReference>>>> scanner)
+        async Task RunScan(string label, Func<Task<Dictionary<string, List<ComponentReference>>>> scanner)
         {
             try
             {
-                ReportAggregateProgress(name, "running");
+                ReportAggregateProgress(label, "running");
                 var partial = await scanner();
                 Merge(partial);
             }
             catch (Exception ex)
             {
-                _componentErrors.Add($"{name}: {ex.Message}");
-                Log.Warning(ex, "Component scan failed for {ComponentType}", name);
+                _componentErrors.Add($"{label}: {ex.Message}");
+                Log.Warning(ex, "Component scan failed for {ComponentType}", label);
             }
             finally
             {
                 Interlocked.Increment(ref completedCount);
-                ReportAggregateProgress(name, "done");
+                ReportAggregateProgress(label, "done");
             }
         }
 
-        var tasks = new[]
-        {
-            RunScan("Flows", () => ScanFlowsAsync(schemaNames, ct)),
-            RunScan("Canvas Apps", () => ScanCanvasAppsAsync(schemaNames, progress, ct)),
-            RunScan("Web Resources", () => ScanWebResourcesAsync(schemaNames, ct)),
-            RunScan("Business Rules", () => ScanBusinessRulesAsync(schemaNames, ct)),
-            RunScan("Plugins", () => ScanPluginsAsync(schemaNames, ct)),
-            RunScan("Sitemaps", () => ScanSitemapsAsync(schemaNames, ct)),
-            RunScan("Conn. Refs", () => ScanConnectionReferencesAsync(schemaNames, ct)),
-        };
+        var tasks = enabledScans
+            .Select(s => RunScan(s.Label, s.Scanner))
+            .ToArray();
 
         await Task.WhenAll(tasks);
         sw.Stop();
-        Log.Information("All component scans completed in {Elapsed}s", sw.Elapsed.TotalSeconds);
+        Log.Information("Component scans completed in {Elapsed}s ({Enabled}/{Total} types enabled)",
+            sw.Elapsed.TotalSeconds, enabledScans.Count, allScans.Length);
 
         return map.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
     }
 
     // ──────────────────────────────────────────────
-    //  Individual scanners
+    //  Server-side scope filtering helper
+    // ──────────────────────────────────────────────
+
+    /// <summary>
+    /// When scoped, adds an IN condition on the primary key so Dataverse only
+    /// returns the rows that belong to the selected solutions.
+    /// Returns false if scoped but no IDs exist for this component type (nothing to scan).
+    /// </summary>
+    private static bool ApplyScopeFilter(
+        QueryExpression query, string primaryKeyField,
+        SolutionScope scope, int componentType)
+    {
+        if (!scope.IsScoped) return true;
+
+        if (!scope.ComponentIdsByType.TryGetValue(componentType, out var ids) || ids.Count == 0)
+            return false;
+
+        var idValues = ids.Cast<object>().ToArray();
+        query.Criteria.AddCondition(primaryKeyField, ConditionOperator.In, idValues);
+        return true;
+    }
+
+    // ──────────────────────────────────────────────
+    //  Individual scanners (solution-scoped, server-filtered)
     // ──────────────────────────────────────────────
 
     private async Task<Dictionary<string, List<ComponentReference>>> ScanFlowsAsync(
-        HashSet<string> schemaNames, CancellationToken ct)
+        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
     {
         var results = new Dictionary<string, List<ComponentReference>>(
             StringComparer.OrdinalIgnoreCase);
@@ -252,6 +404,9 @@ public sealed class DataverseService : IDataverseService, IDisposable
         query.Criteria.AddCondition("category", ConditionOperator.Equal, 5);
         query.Criteria.AddCondition("type", ConditionOperator.Equal, 1);
 
+        if (!ApplyScopeFilter(query, "workflowid", scope, SolutionScope.Types.Workflow))
+            return results;
+
         var entities = await ExecuteWithThrottleAsync(
             () => RetrieveAllPagesAsync(query, ct), ct);
 
@@ -259,7 +414,6 @@ public sealed class DataverseService : IDataverseService, IDisposable
         {
             var name = entity.GetAttributeValue<string>("name") ?? "";
             var clientData = entity.GetAttributeValue<string>("clientdata") ?? "";
-            var id = entity.Id;
 
             if (string.IsNullOrEmpty(clientData)) continue;
 
@@ -268,7 +422,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
                 if (clientData.Contains(schema, StringComparison.OrdinalIgnoreCase))
                 {
                     if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Cloud Flow", name, id));
+                    results[schema].Add(new ComponentReference("Cloud Flow", name, entity.Id));
                 }
             }
         }
@@ -277,7 +431,8 @@ public sealed class DataverseService : IDataverseService, IDisposable
     }
 
     private async Task<Dictionary<string, List<ComponentReference>>> ScanCanvasAppsAsync(
-        HashSet<string> schemaNames, IProgress<string>? progress, CancellationToken ct)
+        HashSet<string> schemaNames, SolutionScope scope,
+        IProgress<string>? progress, CancellationToken ct)
     {
         var results = new ConcurrentDictionary<string, List<ComponentReference>>(
             StringComparer.OrdinalIgnoreCase);
@@ -287,6 +442,9 @@ public sealed class DataverseService : IDataverseService, IDisposable
             ColumnSet = new ColumnSet("canvasappid", "displayname"),
             PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
         };
+
+        if (!ApplyScopeFilter(query, "canvasappid", scope, SolutionScope.Types.CanvasApp))
+            return new Dictionary<string, List<ComponentReference>>();
 
         var entities = await ExecuteWithThrottleAsync(
             () => RetrieveAllPagesAsync(query, ct), ct);
@@ -326,7 +484,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
             }
 
             var done = Interlocked.Increment(ref processedCount);
-            if (done % 5 == 0)
+            if (done % 5 == 0 || done == apps.Count)
                 progress?.Report($"Canvas Apps: {done}/{apps.Count} scanned…");
         });
 
@@ -358,7 +516,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
     }
 
     private async Task<Dictionary<string, List<ComponentReference>>> ScanWebResourcesAsync(
-        HashSet<string> schemaNames, CancellationToken ct)
+        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
     {
         var results = new Dictionary<string, List<ComponentReference>>(
             StringComparer.OrdinalIgnoreCase);
@@ -366,12 +524,20 @@ public sealed class DataverseService : IDataverseService, IDisposable
         var query = new QueryExpression("webresource")
         {
             ColumnSet = new ColumnSet("webresourceid", "name", "displayname", "content"),
-            Criteria = new FilterExpression(LogicalOperator.Or),
             PageInfo = new PagingInfo { Count = 500, PageNumber = 1 }
         };
-        query.Criteria.AddCondition("webresourcetype", ConditionOperator.Equal, 1);
-        query.Criteria.AddCondition("webresourcetype", ConditionOperator.Equal, 3);
-        query.Criteria.AddCondition("webresourcetype", ConditionOperator.Equal, 4);
+
+        // Type filter must be AND-ed with the scope IN filter,
+        // so wrap the type conditions in a child filter
+        var typeFilter = new FilterExpression(LogicalOperator.Or);
+        typeFilter.AddCondition("webresourcetype", ConditionOperator.Equal, 1);
+        typeFilter.AddCondition("webresourcetype", ConditionOperator.Equal, 3);
+        typeFilter.AddCondition("webresourcetype", ConditionOperator.Equal, 4);
+        query.Criteria.FilterOperator = LogicalOperator.And;
+        query.Criteria.AddFilter(typeFilter);
+
+        if (!ApplyScopeFilter(query, "webresourceid", scope, SolutionScope.Types.WebResource))
+            return results;
 
         var entities = await ExecuteWithThrottleAsync(
             () => RetrieveAllPagesAsync(query, ct), ct);
@@ -381,7 +547,6 @@ public sealed class DataverseService : IDataverseService, IDisposable
             var name = entity.GetAttributeValue<string>("name")
                 ?? entity.GetAttributeValue<string>("displayname") ?? "";
             var contentB64 = entity.GetAttributeValue<string>("content") ?? "";
-            var id = entity.Id;
 
             if (string.IsNullOrEmpty(contentB64)) continue;
 
@@ -394,7 +559,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
                 if (decoded.Contains(schema, StringComparison.OrdinalIgnoreCase))
                 {
                     if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Web Resource", name, id));
+                    results[schema].Add(new ComponentReference("Web Resource", name, entity.Id));
                 }
             }
         }
@@ -403,7 +568,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
     }
 
     private async Task<Dictionary<string, List<ComponentReference>>> ScanBusinessRulesAsync(
-        HashSet<string> schemaNames, CancellationToken ct)
+        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
     {
         var results = new Dictionary<string, List<ComponentReference>>(
             StringComparer.OrdinalIgnoreCase);
@@ -416,6 +581,9 @@ public sealed class DataverseService : IDataverseService, IDisposable
         };
         query.Criteria.AddCondition("category", ConditionOperator.Equal, 2);
 
+        if (!ApplyScopeFilter(query, "workflowid", scope, SolutionScope.Types.Workflow))
+            return results;
+
         var entities = await ExecuteWithThrottleAsync(
             () => RetrieveAllPagesAsync(query, ct), ct);
 
@@ -423,7 +591,6 @@ public sealed class DataverseService : IDataverseService, IDisposable
         {
             var name = entity.GetAttributeValue<string>("name") ?? "";
             var xaml = entity.GetAttributeValue<string>("xaml") ?? "";
-            var id = entity.Id;
 
             if (string.IsNullOrEmpty(xaml)) continue;
 
@@ -432,7 +599,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
                 if (xaml.Contains(schema, StringComparison.OrdinalIgnoreCase))
                 {
                     if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Business Rule", name, id));
+                    results[schema].Add(new ComponentReference("Business Rule", name, entity.Id));
                 }
             }
         }
@@ -441,7 +608,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
     }
 
     private async Task<Dictionary<string, List<ComponentReference>>> ScanPluginsAsync(
-        HashSet<string> schemaNames, CancellationToken ct)
+        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
     {
         var results = new Dictionary<string, List<ComponentReference>>(
             StringComparer.OrdinalIgnoreCase);
@@ -453,6 +620,10 @@ public sealed class DataverseService : IDataverseService, IDisposable
             PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
         };
 
+        if (!ApplyScopeFilter(query, "sdkmessageprocessingstepid", scope,
+            SolutionScope.Types.SdkMessageProcessingStep))
+            return results;
+
         var entities = await ExecuteWithThrottleAsync(
             () => RetrieveAllPagesAsync(query, ct), ct);
 
@@ -460,7 +631,6 @@ public sealed class DataverseService : IDataverseService, IDisposable
         {
             var name = entity.GetAttributeValue<string>("name") ?? "";
             var config = entity.GetAttributeValue<string>("configuration") ?? "";
-            var id = entity.Id;
 
             if (string.IsNullOrEmpty(config)) continue;
 
@@ -469,7 +639,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
                 if (config.Contains(schema, StringComparison.OrdinalIgnoreCase))
                 {
                     if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Plugin Step", name, id));
+                    results[schema].Add(new ComponentReference("Plugin Step", name, entity.Id));
                 }
             }
         }
@@ -478,7 +648,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
     }
 
     private async Task<Dictionary<string, List<ComponentReference>>> ScanSitemapsAsync(
-        HashSet<string> schemaNames, CancellationToken ct)
+        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
     {
         var results = new Dictionary<string, List<ComponentReference>>(
             StringComparer.OrdinalIgnoreCase);
@@ -489,6 +659,9 @@ public sealed class DataverseService : IDataverseService, IDisposable
             PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
         };
 
+        if (!ApplyScopeFilter(query, "sitemapid", scope, SolutionScope.Types.Sitemap))
+            return results;
+
         var entities = await ExecuteWithThrottleAsync(
             () => RetrieveAllPagesAsync(query, ct), ct);
 
@@ -496,7 +669,6 @@ public sealed class DataverseService : IDataverseService, IDisposable
         {
             var name = entity.GetAttributeValue<string>("sitemapname") ?? "";
             var xml = entity.GetAttributeValue<string>("sitemapxml") ?? "";
-            var id = entity.Id;
 
             if (string.IsNullOrEmpty(xml)) continue;
 
@@ -505,7 +677,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
                 if (xml.Contains(schema, StringComparison.OrdinalIgnoreCase))
                 {
                     if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Sitemap", name, id));
+                    results[schema].Add(new ComponentReference("Sitemap", name, entity.Id));
                 }
             }
         }
@@ -514,7 +686,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
     }
 
     private async Task<Dictionary<string, List<ComponentReference>>> ScanConnectionReferencesAsync(
-        HashSet<string> schemaNames, CancellationToken ct)
+        HashSet<string> schemaNames, SolutionScope scope, CancellationToken ct)
     {
         var results = new Dictionary<string, List<ComponentReference>>(
             StringComparer.OrdinalIgnoreCase);
@@ -527,6 +699,10 @@ public sealed class DataverseService : IDataverseService, IDisposable
             PageInfo = new PagingInfo { Count = 5000, PageNumber = 1 }
         };
 
+        if (!ApplyScopeFilter(query, "connectionreferenceid", scope,
+            SolutionScope.Types.ConnectionReference))
+            return results;
+
         var entities = await ExecuteWithThrottleAsync(
             () => RetrieveAllPagesAsync(query, ct), ct);
 
@@ -535,7 +711,6 @@ public sealed class DataverseService : IDataverseService, IDisposable
             var name = entity.GetAttributeValue<string>("connectionreferencelogicalname") ?? "";
             var desc = entity.GetAttributeValue<string>("description") ?? "";
             var connectorId = entity.GetAttributeValue<string>("connectorid") ?? "";
-            var id = entity.Id;
             var searchable = $"{name}|{desc}|{connectorId}";
 
             foreach (var schema in schemaNames)
@@ -543,7 +718,7 @@ public sealed class DataverseService : IDataverseService, IDisposable
                 if (searchable.Contains(schema, StringComparison.OrdinalIgnoreCase))
                 {
                     if (!results.ContainsKey(schema)) results[schema] = new();
-                    results[schema].Add(new ComponentReference("Connection Reference", name, id));
+                    results[schema].Add(new ComponentReference("Connection Reference", name, entity.Id));
                 }
             }
         }
