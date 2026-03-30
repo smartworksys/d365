@@ -4,8 +4,8 @@
  * with automatic fallback to the configured default value.
  *
  * Usage:
- *   const value = await EnvironmentVariables.getValue("new_MyVariableName");
- *   const num   = await EnvironmentVariables.getValueAs("new_MyVariableName", "number");
+ *   const value = await EnvironmentVariables.getValue("kofc_variableName");
+ *   const num   = await EnvironmentVariables.getValueAs("kofc_variableName", "number");
  */
 
 "use strict";
@@ -17,7 +17,7 @@ var EnvironmentVariables = EnvironmentVariables || (function () {
      * If no current value row exists, falls back to the definition's defaultvalue.
      *
      * @param {string} schemaName  - The schema name of the environment variable
-     *                               (e.g. "new_MyApiEndpoint").
+     *                               (e.g. "kofc_MyApiEndpoint").
      * @returns {Promise<string|null>} Resolved string value, or null if not found.
      */
     async function getValue(schemaName) {
@@ -164,26 +164,26 @@ var EnvironmentVariables = EnvironmentVariables || (function () {
 (async function demo() {
 
     // 1. Raw string value with default fallback
-    const endpoint = await EnvironmentVariables.getValue("new_ApiEndpoint");
+    const endpoint = await EnvironmentVariables.getValue("kofc_ApiEndpoint");
     console.log("Endpoint:", endpoint);
 
     // 2. Typed retrieval — number with an inline fallback
-    const timeout = await EnvironmentVariables.getValueAs("new_TimeoutMs", "number", 5000);
+    const timeout = await EnvironmentVariables.getValueAs("kofc_TimeoutMs", "number", 5000);
     console.log("Timeout:", timeout);
 
     // 3. Boolean flag
-    const featureEnabled = await EnvironmentVariables.getValueAs("new_FeatureToggle", "boolean", false);
+    const featureEnabled = await EnvironmentVariables.getValueAs("kofc_FeatureToggle", "boolean", false);
     console.log("Feature enabled:", featureEnabled);
 
     // 4. JSON payload stored in the variable
-    const config = await EnvironmentVariables.getValueAs("new_JsonConfig", "json", {});
+    const config = await EnvironmentVariables.getValueAs("kofc_JsonConfig", "json", {});
     console.log("Config:", config);
 
     // 5. Batch fetch
     const vars = await EnvironmentVariables.getMultiple([
-        "new_ApiEndpoint",
-        "new_MaxRetries",
-        "new_FeatureToggle"
+        "kofc_ApiEndpoint",
+        "kofc_MaxRetries",
+        "kofc_FeatureToggle"
     ]);
     console.log("Batch:", vars);
 
