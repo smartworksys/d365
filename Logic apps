@@ -96,6 +96,7 @@
         inset: 0;
         background: rgba(255,255,255,0.78);
         display: none;
+        flex-direction: column;
         justify-content: center;
         align-items: center;
         z-index: 9999;
@@ -129,11 +130,14 @@
     }
 
     .hidden,
-    .row.hidden {
+    .row.hidden,
+    .section.hidden {
         display: none !important;
     }
 
-    .section.hidden {
+    #printBtn {
+        display: none !important;
+    }
 
     #errorBanner {
         display: none;
@@ -143,6 +147,7 @@
         padding: 10px 12px;
         margin-bottom: 12px;
         font-size: 13px;
+        flex-direction: row;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
@@ -693,4 +698,3 @@ window.onload = function () {
 
 </body>
 </html>
-
