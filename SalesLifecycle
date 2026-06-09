@@ -1,1 +1,767 @@
 
+var PolicyDetails = (function () {
+
+    let loaderVisible = false;
+    let loaderShownAt = 0;
+
+    function showLoader() {
+
+        loaderVisible = true;
+        loaderShownAt = Date.now();
+
+        const el = document.getElementById("loader");
+
+        if (el) {
+            el.style.display = "flex";
+            el.setAttribute("aria-hidden", "false");
+        }
+
+        document.body.classList.add("is-loading");
+
+        // Force paint before async work so loader is visible during API calls.
+        void document.body.offsetHeight;
+    }
+
+    function hideLoader() {
+
+        loaderVisible = false;
+
+        const el = document.getElementById("loader");
+
+        if (el) {
+            el.style.display = "none";
+            el.setAttribute("aria-hidden", "true");
+        }
+
+        document.body.classList.remove("is-loading");
+    }
+
+    function hideLoaderWithMinimumDelay(minVisibleMs) {
+
+        const elapsed = Date.now() - loaderShownAt;
+        const delay = Math.max(0, (minVisibleMs || 300) - elapsed);
+
+        setTimeout(function () {
+            hideLoader();
+            scheduleIframeResize();
+        }, delay);
+    }
+
+    function setLoadingMessage(message) {
+        const el = document.getElementById("loadingText");
+        if (el) el.innerText = message || "Loading data...";
+    }
+
+    function showError(message) {
+        const banner = document.getElementById("errorBanner");
+        const msg = document.getElementById("errorMessage");
+
+        if (msg) {
+            msg.innerText = message || "Failed to load policy data.";
+        }
+
+        if (banner) {
+            banner.style.display = "flex";
+        }
+    }
+
+    function hideError() {
+        const banner = document.getElementById("errorBanner");
+        if (banner) {
+            banner.style.display = "none";
+        }
+    }
+
+    function getDocumentHeight() {
+
+        return Math.max(
+            document.body.scrollHeight,
+            document.documentElement.scrollHeight,
+            document.body.offsetHeight,
+            document.documentElement.offsetHeight
+        );
+    }
+
+    function resizeParentIframe() {
+
+        if (loaderVisible) {
+            return;
+        }
+
+        try {
+
+            const height = getDocumentHeight();
+
+            if (window.frameElement) {
+                window.frameElement.style.height = (height + 16) + "px";
+                window.frameElement.style.overflow = "visible";
+                window.frameElement.removeAttribute("scrolling");
+            }
+
+        } catch (e) {
+            console.warn("Unable to resize parent iframe:", e);
+        }
+    }
+
+    function scheduleIframeResize() {
+
+        resizeParentIframe();
+
+        setTimeout(resizeParentIframe, 100);
+        setTimeout(resizeParentIframe, 400);
+        setTimeout(resizeParentIframe, 1000);
+    }
+
+    function retry() {
+        hideError();
+        init();
+    }
+
+    function getContext() {
+
+        let recordId = null;
+        let entityName = "kofc_policy";
+
+        try {
+
+            const params = new URLSearchParams(window.location.search);
+
+            recordId =
+                params.get("id") ||
+                params.get("data");
+
+            if (parent && parent.Xrm) {
+
+                const q =
+                    parent.Xrm.Utility
+                        .getGlobalContext()
+                        .getQueryStringParameters();
+
+                recordId = recordId || q.id;
+                entityName = q.etn || entityName;
+            }
+
+        } catch (e) {
+            console.error("Context Error:", e);
+        }
+
+        if (recordId) {
+            recordId = recordId.replace(/[{}]/g, "");
+        }
+
+        return {
+            recordId: recordId,
+            entityName: entityName
+        };
+    }
+
+    async function getPolicyRecord(entityName, recordId) {
+
+        try {
+
+            const query =
+                "?$select=" +
+                [
+                    "kofc_policynumber",
+                    "kofc_policyclassification",
+                    "kofc_sourcename",
+                    "kofc_issuecountry"
+                ].join(",");
+
+            const record =
+                await parent.Xrm.WebApi.retrieveRecord(
+                    entityName,
+                    recordId,
+                    query
+                );
+
+            console.log("Policy Record:", record);
+
+            return record;
+
+        } catch (e) {
+
+            console.error("Retrieve Record Error:", e);
+
+            return null;
+        }
+    }
+
+    async function validateRecord(record) {
+
+        const missingFields = [];
+
+        const policyNumber =
+            record?.kofc_policynumber;
+
+        const sourceSystem =
+            record?.kofc_sourcename;
+
+        const issueCountry =
+            record["kofc_issuecountry@OData.Community.Display.V1.FormattedValue"];
+
+        const policyClassification =
+            record["kofc_policyclassification@OData.Community.Display.V1.FormattedValue"];
+
+        const allowedValues = [
+            "Ingenium",
+            "DI",
+            "LTC",
+            "L70",
+            "Life 70"
+        ];
+
+        if (!policyNumber) {
+            missingFields.push("Policy Number");
+        }
+
+        if (!issueCountry) {
+            missingFields.push("Issue Country");
+        }
+
+        if (!policyClassification) {
+            missingFields.push("Policy Classification");
+        }
+
+        if (
+            !sourceSystem ||
+            !allowedValues.includes(sourceSystem)
+        ) {
+            missingFields.push("Source Name");
+        }
+
+        if (missingFields.length > 0) {
+
+            await parent.Xrm.Navigation.openAlertDialog({
+                title: "Validation Error",
+                text:
+                    "Below fields are either empty or invalid.\n\n" +
+                    missingFields.join("\n")
+            });
+
+            return false;
+        }
+
+        return true;
+    }
+
+    function mapSource(sourceName) {
+
+        switch ((sourceName || "").trim()) {
+
+            case "Ingenium":
+            case "ING":
+                return "ING";
+
+            case "Life 70":
+            case "L70":
+                return "L70";
+
+            case "LTC":
+                return "LTC";
+
+            case "DI":
+                return "DI";
+
+            default:
+                return "ING";
+        }
+    }
+
+    function mapCompanyCode(issueCountry) {
+
+        const country =
+            String(issueCountry || "")
+                .trim()
+                .toUpperCase();
+
+        switch (country) {
+
+            case "US":
+            case "USA":
+            case "UNITED STATES":
+            case "258510000":
+                return "01";
+
+            case "CANADA":
+            case "258510001":
+                return "50";
+
+            default:
+                return "01";
+        }
+    }
+
+    function mapClassification(policyClassification) {
+
+        if (!policyClassification) {
+            return "";
+        }
+
+        return policyClassification
+            .toString()
+            .trim();
+    }
+
+    function toggleSection(sectionId, visible) {
+
+        const el = document.getElementById(sectionId);
+
+        if (!el) {
+            return;
+        }
+
+        if (visible) {
+            el.classList.remove("hidden");
+        } else {
+            el.classList.add("hidden");
+        }
+    }
+
+    function getSectionVisibility(sourceName, policyClassification) {
+
+        const gblSourceSystem = mapSource(sourceName);
+        const gblClassificationText = mapClassification(policyClassification);
+
+        const ShowLifeIngContainer =
+            gblSourceSystem === "ING" &&
+            gblClassificationText === "Life";
+
+        const ShowLifeL70Container =
+            gblSourceSystem === "L70" &&
+            gblClassificationText === "Life";
+
+        const ShowAnnuityIngContainer =
+            gblSourceSystem === "ING" &&
+            gblClassificationText === "Annuity";
+
+        const ShowAnnuityL70Container =
+            gblSourceSystem === "L70" &&
+            gblClassificationText === "Annuity";
+
+        const ShowLTCContainer =
+            gblClassificationText === "LTC";
+
+        const ShowDIContainer =
+            gblClassificationText === "DI";
+
+        return {
+            gblSourceSystem: gblSourceSystem,
+            gblClassificationText: gblClassificationText,
+            ShowLifeIngContainer: ShowLifeIngContainer,
+            ShowLifeL70Container: ShowLifeL70Container,
+            ShowAnnuityIngContainer: ShowAnnuityIngContainer,
+            ShowAnnuityL70Container: ShowAnnuityL70Container,
+            ShowLTCContainer: ShowLTCContainer,
+            ShowDIContainer: ShowDIContainer
+        };
+    }
+
+    function applySectionVisibility(sourceName, policyClassification) {
+
+        const visibility = getSectionVisibility(
+            sourceName,
+            policyClassification
+        );
+
+        console.log("Section visibility:", visibility);
+
+        const showLifeAnnuitySection =
+            visibility.ShowLifeIngContainer ||
+            visibility.ShowLifeL70Container ||
+            visibility.ShowAnnuityIngContainer ||
+            visibility.ShowAnnuityL70Container;
+
+        toggleSection("lifeSection", showLifeAnnuitySection);
+        toggleSection("DISection", visibility.ShowDIContainer);
+        toggleSection("LTCSection", visibility.ShowLTCContainer);
+    }
+
+    async function fetchPolicyData(
+        policyNo,
+        sourceName,
+        issueCountry,
+        policyClassification
+    ) {
+
+        try {
+
+            const source =
+                mapSource(sourceName);
+
+            const companyCode =
+                mapCompanyCode(issueCountry);
+
+            const classificationCode =
+                mapClassification(policyClassification);
+
+            const userName =
+                parent.Xrm.Utility
+                    .getGlobalContext()
+                    .userSettings
+                    .internalEmailAddress || "system";
+
+            const url =
+                `https://kofc-dev-nhtl1-fa-awahhfaebegzeqgz.eastus-01.azurewebsites.net/api/getPolicyData` +
+                `?code=QiiGQtqB35Zuemtr2KFf4qrNaw9jbTHAv1eCPBZbgmeIAzFuhnip1Q==` +
+                `&source=${encodeURIComponent(source)}` +
+                `&companyCode=${encodeURIComponent(companyCode)}` +
+                `&policyNo=${encodeURIComponent(policyNo)}` +
+                `&userName=${encodeURIComponent(userName)}` +
+                `&classificationCode=${encodeURIComponent(classificationCode)}`;
+
+            console.log("API URL:", url);
+
+            const response = await fetch(url);
+
+            if (!response.ok) {
+                throw new Error(
+                    "API failed with status " +
+                    response.status
+                );
+            }
+
+            const data = await response.json();
+
+            console.log("API Data:", data);
+
+            return data;
+
+        } catch (e) {
+
+            console.error("API Error:", e);
+
+            return null;
+        }
+    }
+
+    function setValue(id, value) {
+
+        const el =
+            document.getElementById(id);
+
+        if (el) {
+            el.value = value ?? "";
+        }
+    }
+
+    function formatCurrency(value) {
+
+        if (
+            value === null ||
+            value === undefined ||
+            value === ""
+        ) {
+            return "";
+        }
+
+        const num = Number(value);
+
+        if (isNaN(num)) {
+            return value;
+        }
+
+        return "$" +
+            num.toLocaleString(
+                undefined,
+                {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2
+                }
+            );
+    }
+
+    function bind(data) {
+
+        const nh = data?.NonHeader || {};
+        const t = data?.TIERONE || {};
+
+        setValue("policyNumber", nh.PolicyNumber);
+        setValue("issueCountry", nh.IssueCountry);
+        setValue("insuranceSubType", nh.InsuranceSubType);
+        setValue("illustrationSystem", nh.IllustrationSystem);
+        setValue("adminSystem", nh.AdminSystem);
+        setValue("inforceCode", nh.InforceCode);
+        setValue("occClass", nh.OccClass);
+        setValue("issueClass", nh.IssueClass);
+        setValue("occpClasCd", nh.OccpClasCd);
+        setValue("accountName", nh.AccountName);
+        setValue("accountNumber", nh.AccountNumber);
+
+        setValue("lastAnniversaryDate", nh.LastAnniversaryDate);
+        setValue("applicationReceivedDate", nh.ApplicationReceivedDate);
+        setValue("applicationSignDate", nh.ApplicationSignDate);
+        setValue("applicationApproveDate", nh.ApplicationApproveDate);
+        setValue("policyMailDate", nh.PolicyMailDate);
+
+        setValue("nonForfeitureOption", nh.NonForfeitureOption);
+        setValue("miscPremiumOnDeposit", nh.MiscPremiumOnDeposit);
+        setValue("miscPremiumOnDepositInterestRate", nh.MiscPremiumOnDepositInterestRate);
+        setValue("discountedPremiumsOnDeposit", nh.DiscountedPremiumsOnDeposit);
+        setValue("discountedPremiumsYearsLeft", nh.DiscountedPremiumsYearsLeft);
+        setValue("puaEligibility", nh.PuaEligiblity);
+        setValue("puaLifetimeDepositAmount", nh.PuaLifetimeDepositAmount);
+        setValue("puaLifeToDateDepositAmount", nh.PuaLifeToDateDepositAmount);
+        setValue("puaYearToDatePremiumPaid", nh.PuaYearToDatePremiumPaid);
+        setValue("puaPriorYearPremiumPaid", nh.PuaPriorYearPremiumPaid);
+        setValue("adpuaPriorYearFaceAmount", nh.AdpuaPriorYearFaceAmount);
+        setValue("adpuaCurrentYearFaceAmount", nh.AdpuaCurrentYearFaceAmount);
+        setValue("adpuaAnnualIncreaseAmount", nh.AdpuaAnnualIncreaseAmount);
+        setValue("apbCurrentDeathBenefitAmount", nh.ApbCurrentDeathBenefitAmount);
+        setValue("lprIndicator", nh.LprIndicator);
+        setValue("sevenPayStartDate", nh.Policy7PayStartDate);
+        setValue("sevenPayAnnualPremium", nh.Policy7PayAnnualPremium);
+        setValue("sevenPayPremiumPaid", nh.Policy7PayPremiumPaid);
+        setValue("cvaoLastMatChange", nh.CvoaLastMatChange);
+        setValue("exchange1035Amount", nh.Policy1035ExchangeAmount);
+        setValue("dbPurchaseByPua", nh.DbPurchaseByPua);
+        setValue("adpuaDb", nh.AdppuaDb);
+        setValue("sdpuaDb", nh.SdppuaDb);
+        setValue("madpuaDb", nh.MadpuaDb);
+        setValue("apbPuaDb", nh.ApbpuaDb);
+        setValue("sliPuaDb", nh.SlipuaDb);
+        setValue("additionalAmountAvailableForIncreaseOrConversion", nh.AddtlAmtIncrOrConv);
+        setValue("amountAvailableForConversion", nh.AmountAvailConv);
+        setValue("annuityPayoutAmountForTheYear", nh.AnnuityPayoutAmountYtd);
+        setValue("annuityWithdrawalsForTheYear", nh.AnnuityWithdrawalsYtd);
+        setValue("annuityCost", nh.AnnuityCost);
+        setValue("annualIncome", nh.AnnualIncome);
+        setValue("swoEligibilityIndicator", nh.SowEligibilityIndicator);
+        setValue("combinedIndicator", nh.CombinedIndicator);
+        setValue("percentageIndicator", nh.PercentageIndicator);
+        setValue("iopoIndicator", nh.IopoIndicator);
+        setValue("paymentCeaseDate", nh.PaymentCeaseDate);
+        setValue("premiumLoanIndicator", nh.PremiumLoanIndicator);
+        setValue("loanPrincipleAtAnniversary", nh.LoanPrincipalAtAnniversary);
+        setValue("puaCashValueFromDividend", nh.PuaCashValueFromDividend);
+        setValue("cwaAmount", nh.CwaAmount);
+
+        setValue("socialInsuranceIndicator", nh.SocialInsuranceIndicator);
+        setValue("catastrophicDisabilityRiderIndicator", nh.CatastrophicDisabilityRiderIndicator);
+        setValue("clientFraternalStatusCode", nh.ClientFraternalStatusCode);
+        setValue("colaIndicator", nh.ColaIndicator);
+        setValue("diPolicyClientEligibilityCode", nh.DiPolicyClientEligibilityCode);
+        setValue("diCvgFctId", nh.DiCvgFctId);
+        setValue("diFctId", nh.DiFctId);
+        setValue("gpoDeclined1stDate", nh.GpoDeclined1stDate);
+        setValue("gpoDeclined2ndDate", nh.GpoDeclined2ndDate);
+        setValue("gpoOptionRemainingQuantity", nh.GpoOptionRemainingQuantity);
+        setValue("gpoOptionUsedQuantity", nh.GpoOptionUsedQuantity);
+        setValue("maxMonthlyBenefitAmount", nh.MaxMonthlyBenefitAmt);
+        setValue("monthlyPremiumAmount", nh.MonthlyPremiumAmount);
+        setValue("nextGpoOptionDate", nh.NextGpoOptionDate);
+        setValue("nextRenewalDate", nh.NextRenewalDate);
+        setValue("policyCeaseDate", nh.PolicyCeaseDate);
+        setValue("policyCwaAmount", nh.PolicyCwaAmount);
+        setValue("policyGrossAnnualPremiumAmount", nh.PolicyGrossAnnualPremiumAmount);
+        setValue("policyPriorAnniversaryDate", nh.PolicyPriorAnniversaryDate);
+        setValue("policyQuarterlyPremiumAmount", nh.PolicyQuarterlyPremiumAmount);
+        setValue("policyRiskEffectiveDate", nh.PolicyRiskEffectiveDate);
+        setValue("policySemiAnnualPremiumAmount", nh.PolicySemiAnnualPremiumAmount);
+        setValue("policyStatusReason", nh.PolicyStatusReason);
+
+        setValue("planVar", nh.PlanVar);
+        setValue("policyIndicator", nh.PolicyIndicator);
+        setValue("registerDate", nh.RegisterDate);
+        setValue("statusDate", nh.StatusDate);
+        setValue("baseInflationModalPremiumAmount", nh.BaseInflationModalPremiumAmount);
+        setValue("baseModalPremiumAmount", nh.BaseModalPremiumAmount);
+        setValue("baseNonForfeitureModalPremiumAmount", nh.BaseNonForfeitureModalPremiumAmount);
+        setValue("baseRopModalPremiumAmount", nh.BaseRpoModalPremiumAmount);
+        setValue("baseSdModalPremiumAmount", nh.BaseSdModalPremiumAmount);
+        setValue("dailyBenefitAmount", nh.DailyBenefitAmount);
+        setValue("gpoBaseModelPremiumAmount", nh.GpoBaseModelPremiumAmount);
+        setValue("gpoCriticalInd", nh.GpoCriticalInd);
+        setValue("gpoEligibilityIndicator", nh.GpoEligibilityIndicator);
+        setValue("gpoNonForfeitureModelPremium", nh.GpoNonForfeitureModelPremium);
+        setValue("gpoNumber", nh.GpoNumber);
+        setValue("gpoOption2Date", nh.GpoOption2Date);
+        setValue("gpoOptionDate", nh.GpoOptionDate);
+        setValue("gpoRopModelPremiumAmount", nh.GpoRopModelPremiumAmount);
+        setValue("gpoSdModelPremiumAmount", nh.GpoSdModelPremiumAmount);
+        setValue("hcCurrentDailyBenefit", nh.HcCurrentDailyBenefit);
+        setValue("hcCurrentDailyUnlimited", nh.HcCurrentDailyUnlimited);
+        setValue("hcEliminationPeriodDays", nh.HcEliminationPeriodDays);
+        setValue("hcMaxLifetimeBenefit", nh.HcMaxLifetimeBenefit);
+        setValue("hcMaxLifetimeUnlimited", nh.HcMaxLifetimeUnlimited);
+        setValue("hcMaxMonthlyBenefit", nh.HcMaxMonthlyBenefit);
+        setValue("hcMaxMonthlyUnlimited", nh.HcMaxMonthlyUnlimited);
+        setValue("inflationOption", nh.InflationOption);
+        setValue("inflationPercentage", nh.InflationPercentage);
+        setValue("longTermCareUnderwritingRiskClass", nh.LongTermCareUnderwritingRiskClass);
+        setValue("ltcDurationNumber", nh.LtcDurationNumber);
+        setValue("ltcPremIncmAmt", nh.LtcPremIncmAmt);
+        setValue("replacementIndicator", nh.ReplacementIndicator);
+        setValue("suitableIndicator", nh.SuitableIndicator);
+        setValue("modifiedDecisionIndicator", nh.ModifiedDecisionInd);
+        setValue("nfoIndicator", nh.NfoIndicator);
+        setValue("nfoPercentage", nh.NfoPercentage);
+        setValue("nhCurrentDailyBenefit", nh.NhCurrentDailyBenefit);
+        setValue("nhCurrentDailyUnlimited", nh.NhCurrentDailyUnlimited);
+        setValue("nhEliminationPeriodDays", nh.NhEliminationPeriodDays);
+        setValue("nhMaxLifetimeBenefit", nh.NhMaxLifetimeBenefit);
+        setValue("nhMaxLifetimeUnlimited", nh.NhMaxLifetimeUnlimited);
+        setValue("nhMaxMonthlyBenefit", nh.NhMaxMonthlyBenefit);
+        setValue("nhMaxMonthlyUnlimited", nh.NhMaxMonthlyUnlimited);
+        setValue("originalDailyBenefitAmount", nh.OriginalDailyBenefitAmount);
+        setValue("sharedCareInd", nh.SharedCareInd);
+        setValue("spouseDiscountIndicator", nh.SpouseDiscountIndicator);
+        setValue("spouseDiscountPercentage", nh.SpouseDiscountPercentage);
+        setValue("totalBaseModalPremiumAmount", nh.TotalBaseModalPremiumAmount);
+        setValue("totalGpoModalPremiumAmount", nh.TotalGpoModalPremiumAmount);
+        setValue("valuesCwa", nh.ValuesCwa);
+        setValue("premiumPaymentQuantity", nh.PremiumPaymentQuantity);
+        setValue("priorOneYearGpoAnnualizedPremium", nh.PriorOneYearGpoAnnualizedPremium);
+        setValue("priorOneYearGpoNumber", nh.PriorOneYearGpoNumber);
+        setValue("priorTwoYearsGpoNumber", nh.PriorTwoYearsGpoNumber);
+        setValue("priorTwoYearsGpoAnnualizedPremium", nh.PriorTwoYearsGpoAnnualizedPremium);
+        setValue("longTermCarePolicyId", nh.LongTermCarePolicyId);
+        setValue("eliminationPeriod", nh.EliminationPeriod);
+        setValue("benefitLengthYears", nh.BenefitLengthYears);
+        setValue("taxType", nh.TaxType);
+
+        setValue("checkDate", nh.CheckDate);
+        setValue("checkPaymentAmount", nh.CheckPaymentAmount);
+        setValue("eligibilityDate", nh.EligibilityDate);
+        setValue("tpaPdClmId", nh.TpaPdClmId);
+        setValue("tpaPdClmSeqNum", nh.TpaPdClmSeqNum);
+        setValue("yrNum", nh.YrNum);
+
+        setValue("deathBenefit", formatCurrency(t.DEATH_BENEFIT));
+        setValue("puaCashValue", formatCurrency(t.PUA_CASH_VALUE));
+        setValue("divDeathBenefit", t.DIV_DEATH_BENEFIT);
+        setValue("reducedPaidUpFaceAmount", t.REDUCED_PAIDUP_FACE_AMOUNT);
+        setValue("anniversaryDate", t.ANNIVERSARY_DATE);
+        setValue("anniversaryCashValue", formatCurrency(t.ANNIVERSARY_CASH_VALUE));
+        setValue("lastAnniversaryTier1Date", t.LAST_ANNIVERSARY_DATE);
+        setValue("valuesAsOfLastAnniversary", formatCurrency(t.VALUE_AS_OF_LAST_ANNIVERSARY));
+        setValue("increaseInCashValue", formatCurrency(t.INCREASE_IN_CASH_VALUE));
+        setValue("loanPayoffAmount", formatCurrency(t.LOAN_PAYOFF_AMOUNT));
+        setValue("maxLoanAmountAvailable", formatCurrency(t.MAX_LOAN_AMOUNT_AVAILABLE));
+        setValue("loanInterest", formatCurrency(t.LOAN_INTEREST));
+        setValue("loanPrinciple", formatCurrency(t.LOAN_PRINCIPLE));
+        setValue("cashSurrenderValue", formatCurrency(t.CASH_SURRENDER_VALUE));
+        setValue("surrenderCharge", t.SURRENDER_CHARGE);
+        setValue("dividendValue", t.DIVIDENT_VALUE);
+        setValue("annuitySurrenderValue", t.ANNUITY_SURRENDER_VALUE);
+        setValue("totalInforcePuaDeathBenefitFaceAmount", formatCurrency(t.TOTAL_INFORCE_PUA_DEATH_BENEFIT_FACE_AMOUNT));
+        setValue("netForYear", formatCurrency(t.NET_CHANGE_FOR_THE_YEAR_EQUALS));
+        setValue("annuityAccumulativeValue", t.ANNUITY_ACCUMULATIVE_VALUE);
+        setValue("puaCashValueFromDiv", formatCurrency(t.PUA_CASH_VALUE_FROM_DIV));
+        setValue("dbPurchaseByPuaTier1", formatCurrency(t.DB_PURCHASE_BY_PUA));
+        setValue("cashLoanInterestRate", t.CASH_LOAN_INTEREST_RATE);
+        setValue("onlineDate", t.ONLINE_DATE);
+        setValue("guaranteedInterestRate", t.GUARANTEED_INTEREST_RATE);
+        setValue("currentDividend", t.CURRENT_DIVIDEND);
+    }
+
+    async function init() {
+
+        try {
+
+            hideError();
+            showLoader();
+            setLoadingMessage("Loading policy context...");
+
+            const ctx = getContext();
+
+            console.log("Context:", ctx);
+
+            if (!ctx.recordId) {
+                throw new Error("Record Id missing");
+            }
+
+            setLoadingMessage("Retrieving policy record...");
+
+            const record =
+                await getPolicyRecord(
+                    ctx.entityName,
+                    ctx.recordId
+                );
+
+            if (!record) {
+                throw new Error("Unable to retrieve policy record");
+            }
+
+            const isValid =
+                await validateRecord(record);
+
+            if (!isValid) {
+                hideLoader();
+                return;
+            }
+
+            const policyNo = record.kofc_policynumber;
+            const sourceName = record.kofc_sourcename;
+            const issueCountry =
+                record["kofc_issuecountry@OData.Community.Display.V1.FormattedValue"];
+            const policyClassification =
+                record["kofc_policyclassification@OData.Community.Display.V1.FormattedValue"];
+
+            applySectionVisibility(sourceName, policyClassification);
+
+            console.log("Policy Number:", policyNo);
+            console.log("Source:", sourceName);
+            console.log("Issue Country:", issueCountry);
+            console.log("Policy Classification:", policyClassification);
+
+            setLoadingMessage("Calling Policy Non-Header API service...");
+
+            const data =
+                await fetchPolicyData(
+                    policyNo,
+                    sourceName,
+                    issueCountry,
+                    policyClassification
+                );
+
+            if (!data) {
+                throw new Error("No data returned from API");
+            }
+
+            if (data.ERROR) {
+                throw new Error(String(data.ERROR));
+            }
+
+            if (!data.NonHeader?.PolicyNumber) {
+                throw new Error("Response contained no data.");
+            }
+
+            setLoadingMessage("Rendering data...");
+            bind(data);
+            scheduleIframeResize();
+
+        } catch (e) {
+
+            console.error("Init Error:", e);
+
+            showError(
+                e.message || "Failed to load policy data."
+            );
+
+        } finally {
+
+            if (loaderVisible) {
+                hideLoaderWithMinimumDelay(300);
+            } else {
+                scheduleIframeResize();
+            }
+        }
+    }
+
+    if (typeof window !== "undefined") {
+        window.addEventListener("load", function () {
+            if (!loaderVisible) {
+                scheduleIframeResize();
+            }
+        });
+        window.addEventListener("resize", scheduleIframeResize);
+    }
+
+    return {
+        init: init,
+        retry: retry,
+        resize: scheduleIframeResize
+    };
+
+})();
