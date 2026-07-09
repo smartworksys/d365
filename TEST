@@ -1,19 +1,363 @@
-User Story
-As a security-conscious platform team
-I want the Agent Portal User Profile function to use Easy Auth for callers and Managed Identity for Dataverse
-So that we can remove CRM client secrets and function keys while keeping the API secure
+# KOFC Agent Portal – EApp SSO Function App Architecture
 
-Acceptance Criteria
-Function app uses Easy Auth (Entra ID) to protect inbound requests
-HTTP trigger uses AuthorizationLevel.Anonymous (Easy Auth handles auth)
-Function connects to Dataverse using Managed Identity (no CRM_CLIENT_SECRET)
-CRM_CLIENT_ID and CRM_CLIENT_SECRET are removed from app settings and pipeline variables
-Function app managed identity is registered as a Dataverse Application User with the required security role
-Authenticated user identity is read from Easy Auth claims (not only from query parameters)
-Existing getSOReqForEappSSO behavior still returns the same user profile data for valid requests
-Tasks
-Enable Easy Auth on the function app
-Update function code to use Managed Identity for Dataverse connection
-Update ARM template and pipeline variables
-Create Dataverse Application User for managed identity
-Test end-to-end with a valid Bearer token
+> **Solution:** `KOFC-FA-AgentPortal-UserProfile`
+> **Function:** `getSOReqForEappSSO`
+> **Runtime:** .NET 8 (Isolated), Azure Functions v4
+> **Last updated:** {{ update on edit }}
+
+[[_TOC_]]
+
+---
+
+## 1. Overview
+
+The EApp SSO Function App exposes a secure HTTP API that returns an agent's profile, role, and (optionally) linked client/opportunity data from **Microsoft Dataverse**. It is triggered from a **Dynamics 365** button, brokered through **Boomi**, and enforces **per-user Dataverse security** via impersonation.
+
+**Key characteristics**
+
+- **Inbound auth:** Azure App Service **Easy Auth** validates the caller's MSAL bearer token.
+- **Outbound auth:** **Managed Identity** + `DefaultAzureCredential` acquires the Dataverse token (no secrets in code).
+- **Per-user security:** `ServiceClient.CallerId` impersonation applies the calling user's CRM privileges.
+- **Concurrency-safe:** `ServiceClient` is registered **Scoped** (per invocation) to isolate impersonation.
+- **Response:** Base64-encoded JSON for downstream EApp consumption.
+
+---
+
+## 2. Identities & App Registrations
+
+There are **two Entra ID app registrations** plus the **Function App Managed Identity**.
+
+| No. | Identity | Type | Purpose |
+|-----|----------|------|---------|
+| 1 | **Function App API** | App registration (resource) | Easy Auth validates tokens issued **for** this API |
+| 2 | **Boomi client** | App registration (client) | Boomi uses MSAL to get a token **to call** the Function App |
+| 3 | **Function App Managed Identity** | System-assigned MI | Function App acquires a token **to call Dataverse** |
+
+> Easy Auth is **not** a separate app registration — it is middleware on the Function App configured to trust app registration **#1**.
+
+---
+
+## 3. High-Level Architecture
+
+::: mermaid
+flowchart LR
+    subgraph D365["Dynamics 365"]
+        BTN["Button / JS Web Resource<br/>collects userId, oppID"]
+    end
+
+    subgraph BOOMI["Boomi Integration"]
+        PROC["Process<br/>acquires MSAL token"]
+    end
+
+    subgraph AZURE["Azure"]
+        EA["Easy Auth<br/>(validates token)"]
+        FA["Function App<br/>getSOReqForEappSSO"]
+        MI["Managed Identity"]
+    end
+
+    DV[("Microsoft<br/>Dataverse")]
+    AAD["Microsoft Entra ID"]
+
+    BTN -->|userId, oppID| PROC
+    PROC -->|Bearer token + params| EA
+    EA --> FA
+    FA -->|GetToken| MI
+    MI -->|token request| AAD
+    AAD -->|access token| MI
+    FA -->|CallerId = userId<br/>RetrieveMultiple| DV
+    DV -->|user / opp / contact| FA
+    FA -->|Base64 JSON| PROC
+    PROC --> BTN
+:::
+
+---
+
+## 4. Authentication Layers
+
+The solution uses **two independent auth layers**. They are **not** linked by token exchange.
+
+| Layer | Direction | Mechanism | Identity | Purpose |
+|-------|-----------|-----------|----------|---------|
+| Inbound | Boomi → Function | Easy Auth + `ClaimsPrincipal` | Boomi app registration | Authorize API access |
+| Outbound | Function → Dataverse | `DefaultAzureCredential` | Function App Managed Identity | Acquire Dataverse token |
+| Impersonation | Function → Dataverse | `ServiceClient.CallerId` | Dataverse `systemuser` (`userId`) | Enforce per-user CRM security |
+
+::: mermaid
+flowchart TB
+    T1["Boomi MSAL token<br/><i>audience = Function App API</i>"] --> Q1{"Is caller<br/>allowed to hit<br/>the API?"}
+    Q1 -->|Easy Auth| OK1["ClaimsPrincipal.IsAuthenticated"]
+
+    T2["Managed Identity token<br/><i>audience = Dataverse</i>"] --> Q2{"Is the app<br/>allowed to reach<br/>Dataverse?"}
+    Q2 -->|DefaultAzureCredential| OK2["ServiceClient connected"]
+
+    OK2 --> IMP["CallerId = userId"]
+    IMP --> Q3{"Does THIS user<br/>have access to<br/>the record?"}
+    Q3 -->|Privilege intersection| OK3["Data returned or 403/empty"]
+:::
+
+---
+
+## 5. End-to-End Sequence
+
+::: mermaid
+sequenceDiagram
+    autonumber
+    participant U as D365 User (button)
+    participant JS as JS Web Resource
+    participant B as Boomi
+    participant EA as Easy Auth
+    participant FA as Function App
+    participant AAD as Entra ID
+    participant DV as Dataverse
+
+    U->>JS: Click button
+    JS->>B: Send userId, oppID
+    B->>B: Acquire MSAL token (client credentials)
+    B->>EA: GET/POST + Bearer token + params
+    EA->>EA: Validate token (sig, exp, aud, iss)
+    EA->>FA: Forward request + ClaimsPrincipal
+    FA->>FA: IsAuthenticated() check
+    FA->>FA: Validate userId (GUID), oppID (GUID)
+    FA->>FA: CallerId = userId
+    FA->>AAD: GetToken (Managed Identity)
+    AAD-->>FA: Dataverse access token
+    FA->>DV: RetrieveMultiple systemuser (impersonated)
+    DV-->>FA: Agent profile + role
+    opt oppID provided
+        FA->>DV: RetrieveMultiple opportunity + contact
+        DV-->>FA: clientId, clientDob (if permitted)
+    end
+    FA->>FA: Serialize -> Base64
+    FA-->>B: 200 text/plain (Base64 JSON)
+    B-->>JS: Response
+    JS-->>U: EApp SSO continues
+:::
+
+---
+
+## 6. Request Processing Logic
+
+::: mermaid
+flowchart TD
+    START([Request received]) --> AUTH{IsAuthenticated?}
+    AUTH -->|No| E401[401 Unauthorized]
+    AUTH -->|Yes| VUSER{Valid userId GUID?}
+    VUSER -->|No| E400a[400 Bad Request]
+    VUSER -->|Yes| VOPP{oppID valid or absent?}
+    VOPP -->|No| E400b[400 Bad Request]
+    VOPP -->|Yes| IMP[Set CallerId = userId]
+    IMP --> QUSER[Query systemuser]
+    QUSER --> FOUND{User found?}
+    FOUND -->|No| E404[404 Not Found]
+    FOUND -->|Yes| ROLE{Has insurance role?}
+    ROLE -->|No| E400c[400 Bad Request]
+    ROLE -->|Yes| MAP[Map role -> EApp flags]
+    MAP --> HASOPP{oppID provided?}
+    HASOPP -->|No| BUILD[Build SoReqData]
+    HASOPP -->|Yes| QOPP[Query opportunity + contact]
+    QOPP --> BUILD
+    BUILD --> ENC[Base64 encode JSON]
+    ENC --> OK200[200 OK]
+    QUSER -.privilege fault.-> E403[403 Forbidden]
+    QOPP -.privilege fault.-> E403
+    IMP -.finally.-> RESET[CallerId = Guid.Empty]
+:::
+
+---
+
+## 7. Component Model
+
+| Source File | Component | Responsibility |
+|-------------|-----------|----------------|
+| `Program.cs` | DI Host | Registers **scoped** `ServiceClient` per invocation |
+| `DataverseServiceClientFactory.cs` | CRM Client Factory | Creates `ServiceClient` with MI token callback |
+| `EappSSO.cs` | HTTP Function | Auth check, impersonation, FetchXML queries, response encoding |
+| `EappConstants.cs` | Role Mapping | Maps insurance role codes to EApp role flags |
+| `SoReqData.cs` | Response DTO | JSON structure returned to caller |
+| `functionapp.json` | ARM Template | Provisions Function App with system-assigned MI |
+
+---
+
+## 8. API Specification
+
+### 8.1 Endpoint
+
+| Property | Value |
+|----------|-------|
+| Function name | `getSOReqForEappSSO` |
+| Methods | `GET`, `POST` |
+| Authorization level | `Anonymous` (platform auth via Easy Auth) |
+| Response content type | `text/plain` (Base64-encoded JSON) |
+
+### 8.2 Parameters
+
+| Parameter | Required | Type | Description |
+|-----------|----------|------|-------------|
+| `userId` | Yes | GUID | Dataverse `systemuserid` to impersonate |
+| `oppID` | No | GUID | Opportunity ID; returns linked contact data |
+
+### 8.3 Response fields (decoded JSON)
+
+| Field | Type | Source |
+|-------|------|--------|
+| `reqAction` | string | Constant `"EAPP"` |
+| `gmtStamp` | string | Generated timestamp |
+| `agentId` | string | `systemuser.kofc_agentid` |
+| `loginUserID` | string | `systemuser.kofc_user_ldap_id` |
+| `clientId` | string | `contact.kofc_clientid` |
+| `clientDob` | string | `contact.kofc_birthdate` |
+| `isFieldAgent`, `isGeneralAgent`, `isAssistantGeneralAgent`, `isFieldAssistant`, `isAdmin` | bool | Role mapping |
+
+### 8.4 Status codes
+
+| Status | Condition |
+|--------|-----------|
+| `200 OK` | Success (Base64 JSON) |
+| `400 Bad Request` | Invalid/missing `userId`, invalid `oppID`, or missing role |
+| `401 Unauthorized` | Easy Auth: caller not authenticated |
+| `403 Forbidden` | Dataverse privilege denied for impersonated user |
+| `404 Not Found` | `systemuser` not found / not visible |
+
+---
+
+## 9. Role Code Mapping
+
+| Role Label | Code | EApp Flag |
+|------------|------|-----------|
+| Insurance-Field Agent | KC20 | `isFieldAgent` |
+| Insurance-General Agent | KC10 | `isGeneralAgent` |
+| Insurance-Assistant General Agent | KC30 | `isAssistantGeneralAgent` |
+| Insurance-Agency Admin | KC40 | `isFieldAssistant` |
+| Insurance-Field Agent Assistant | KC50 | `isFieldAssistant` |
+| Insurance-AgencyAdmin | KC60 | `isAdmin` |
+
+---
+
+## 10. Security Design
+
+### 10.1 Inbound (Boomi → Function)
+
+- Easy Auth configured manually on the Function App (Entra ID provider).
+- Boomi obtains an MSAL token scoped to the **Function App API** registration.
+- Function runtime auth level is `Anonymous`; platform enforces authentication.
+- Local dev bypasses auth when `WEBSITE_SITE_NAME` is unset.
+
+### 10.2 Outbound (Function → Dataverse)
+
+- System-assigned Managed Identity on the Function App.
+- MI registered as an **Application User** in Power Platform.
+- **Custom least-privilege role** recommended.
+- **Act on Behalf of Another User** (`prvActOnBehalfOfAnotherUser`) assigned **directly** (not via team).
+
+### 10.3 Recommended Dataverse role
+
+| Privilege | Area | Level |
+|-----------|------|-------|
+| Act on Behalf of Another User | Business Management | Organization |
+| Read | User (`systemuser`) | Appropriate depth |
+| Read | Opportunity | As needed |
+| Read | Contact | As needed |
+
+> **Privilege intersection:** with `CallerId` set, effective access = **app user privileges ∩ impersonated user privileges**. Both must permit the action.
+
+### 10.4 What is NOT used
+
+| Mechanism | Reason |
+|-----------|--------|
+| Azure AD `user_impersonation` (delegated) | For OBO/user-token flows, not MI + `CallerId` |
+| Boomi token pass-through to Dataverse | Token audience is Function App API, not Dataverse |
+| `CRM_CLIENT_ID` / `CRM_CLIENT_SECRET` | Replaced by Managed Identity in code (legacy settings) |
+
+---
+
+## 11. Infrastructure
+
+| Resource | Value (dev example) |
+|----------|---------------------|
+| Function App | `KOFC-Dev-FA-Eapp-Integration` |
+| Runtime | `dotnet-isolated`, Functions v4, .NET 8 |
+| Identity | System-assigned Managed Identity |
+| App Service Plan | `KOC-EUS-Premium-ASP` |
+| Application Insights | `KOC-CRM-INTDEV-APPINS` |
+| Key Vault | `KOC-CRM-KOCAZINTDEV1-KV` |
+| Storage Account | `koccrmdevsa` |
+| Resource Group | `KOC-CRM-DEV` |
+| Location | East US |
+
+**Key app settings:** `CRM_URL`, `APPLICATIONINSIGHTS_CONNECTION_STRING`, `AzureWebJobsStorage`, `FUNCTIONS_WORKER_RUNTIME=dotnet-isolated`, `FUNCTIONS_EXTENSION_VERSION=~4`.
+
+---
+
+## 12. Deployment Checklist
+
+1. Deploy Function App via ARM template / Azure DevOps pipeline.
+2. Enable Managed Identity and note the Object (principal) ID.
+3. Create the Application User in Dataverse linked to the MI.
+4. Assign a security role with **Act on Behalf Of** + entity read privileges.
+5. Configure Easy Auth on the Function App for the Boomi app registration.
+6. Grant the Boomi app registration permission to call the Function App API.
+7. Store `CRM_URL` in Key Vault and reference from app settings.
+8. Validate connectivity and impersonation with test `userId` values.
+
+---
+
+## 13. Error Handling
+
+| Scenario | Behavior | Status |
+|----------|----------|--------|
+| Unauthenticated caller | `UnauthorizedObjectResult` | 401 |
+| Invalid `userId` / `oppID` | `BadRequestObjectResult` | 400 |
+| User not found / not visible | `NotFoundObjectResult` | 404 |
+| Missing `kofc_insurancerole` | `BadRequestObjectResult` | 400 |
+| Dataverse privilege fault (`0x80048303`) | Logged warning, forbidden | 403 |
+| CRM connection failure at startup | `InvalidOperationException` | 500 |
+| Opportunity/contact not accessible | Empty client fields | 200 |
+
+---
+
+## 14. Test Scenarios
+
+| No. | Scenario | Expected |
+|-----|----------|----------|
+| 1 | Valid token + valid `userId` | 200 + role flags |
+| 2 | + `oppID` (user has access) | 200 + `clientId`, `clientDob` |
+| 3 | + `oppID` (no contact access) | 200 + empty client fields |
+| 4 | Missing/invalid token (Azure) | 401 |
+| 5 | Missing `userId` | 400 |
+| 6 | Invalid `oppID` format | 400 |
+| 7 | `userId` not found | 404 |
+| 8 | App user missing Act on Behalf Of | 403 |
+| 9 | Local dev (no `WEBSITE_SITE_NAME`) | Auth bypassed |
+
+---
+
+## 15. Dependencies
+
+| Package | Version |
+|---------|---------|
+| `Microsoft.Azure.Functions.Worker` | 1.21.0 |
+| `Azure.Identity` | 1.13.2 |
+| `Microsoft.PowerPlatform.Dataverse.Client` | 1.1.32 |
+| `Newtonsoft.Json` | 13.0.3 |
+
+---
+
+## 16. References
+
+- Microsoft Learn — *Impersonate another user (Dataverse)*
+- Microsoft Learn — *DefaultAzureCredential class*
+- Microsoft Learn — *Build web applications using Server-to-Server (S2S) authentication*
+- Microsoft Learn — *Application users and security roles (Power Platform)*
+
+---
+
+## 17. Azure DevOps Wiki Notes
+
+This page is written for Azure DevOps wiki Markdown. When editing or republishing:
+
+- Keep a blank line **before** each table; do **not** insert blank lines between table rows.
+- Escape pipe characters inside cells as `\|` (ADO treats `|` as a column boundary).
+- Prefer `No.` over `#` as a column header (`#` can be parsed as a work item mention).
+- Prefer **Publish code as wiki** from this file over paste into the wiki editor (paste often breaks tables).
+- Mermaid diagrams use `::: mermaid` fences; if a diagram fails to render, content after it may also look wrong until the fence is fixed.
+- In the wiki editor, use **Format tables** (`Ctrl+Shift+F`) if columns look misaligned.
