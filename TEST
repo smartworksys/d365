@@ -1,1 +1,46 @@
 
+### Step-by-step flow
+
+1. **Agent clicks the Dynamics 365 button**  
+   The ribbon/command button runs a JS web resource in the agent’s CRM session.
+
+2. **Web resource collects context**  
+   It reads the logged-in agent’s Dataverse `systemuserid` (`userId`) and, if applicable, the current opportunity id (`oppID`). No MSAL token is obtained here.
+
+3. **Web resource calls Boomi**  
+   It sends an HTTP request to the Boomi process with `userId` and optional `oppID` only.
+
+4. **Boomi authenticates to Entra ID**  
+   Inside the integration, Boomi uses its app registration (client credentials) and MSAL to acquire an access token whose audience is the **Function App API**.
+
+5. **Boomi calls the Function App**  
+   Boomi sends `GET`/`POST` to `getSOReqForEappSSO` with:
+   - `Authorization: Bearer <MSAL token>`
+   - query/body params: `userId`, optional `oppID`
+
+6. **Easy Auth validates the caller**  
+   Azure App Service Easy Auth checks the bearer token (signature, expiry, issuer, audience). If invalid → **401**. If valid → request reaches the function with an authenticated `ClaimsPrincipal` (Boomi’s service principal, not the CRM user).
+
+7. **Function checks authentication and inputs**  
+   Code confirms `IsAuthenticated()`, validates `userId` (required GUID) and `oppID` (optional GUID).
+
+8. **Function connects to Dataverse as the app**  
+   Using the Function App **Managed Identity**, `DefaultAzureCredential` gets a Dataverse-scoped token. The connection identity is the Dataverse **application user**.
+
+9. **Function applies user context via impersonation**  
+   Sets `ServiceClient.CallerId = userId` so subsequent queries run under the agent’s CRM privileges (privilege intersection with the app user).
+
+10. **Function queries Dataverse**  
+    - Loads `systemuser` (agent id, LDAP id, insurance role)  
+    - Maps role → EApp flags (`isFieldAgent`, etc.)  
+    - If `oppID` is present, loads opportunity + linked contact (`clientId`, `clientDob`) when permitted
+
+11. **Function returns the payload**  
+    Builds `SoReqData`, serializes to JSON, Base64-encodes it, returns `200 text/plain`. Clears `CallerId` afterward.
+
+12. **Boomi returns the result to Dynamics**  
+    Boomi passes the Base64 response back to the web resource so the EApp SSO flow can continue.
+
+**Summary:** Dynamics supplies **who** (`userId`). Boomi supplies **API auth** (MSAL). The Function App supplies **Dataverse auth** (Managed Identity) and **CRM security** (`CallerId`).
+
+---
