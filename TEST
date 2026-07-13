@@ -17,6 +17,9 @@ namespace KOFC_FA_AgentPortal_UserProfile;
 
 public class EappSSO
 {
+    private const string ContactReadRole = "Contact.Read";
+    private const string OpportunityReadRole = "Opportunity.Read";
+
     private readonly ILogger<EappSSO> _log;
     private readonly ServiceClient _serviceClient;
 
@@ -37,6 +40,17 @@ public class EappSSO
             return new UnauthorizedObjectResult("Authentication required.");
         }
 
+        var callerRoles = GetCallerRoles(req);
+        _log.LogInformation("Caller app roles: {Roles}", string.Join(", ", callerRoles));
+
+        if (!HasAppRole(callerRoles, ContactReadRole))
+        {
+            return new ObjectResult($"Missing required app role: {ContactReadRole}.")
+            {
+                StatusCode = StatusCodes.Status403Forbidden
+            };
+        }
+
         var queryParams = req.Query;
         string? userId = queryParams["userId"];
         string? opportunityId = queryParams["oppID"];
@@ -49,6 +63,14 @@ public class EappSSO
         if (!string.IsNullOrWhiteSpace(opportunityId) && !Guid.TryParse(opportunityId, out _))
         {
             return new BadRequestObjectResult("oppID must be a valid GUID when provided.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(opportunityId) && !HasAppRole(callerRoles, OpportunityReadRole))
+        {
+            return new ObjectResult($"Missing required app role: {OpportunityReadRole}.")
+            {
+                StatusCode = StatusCodes.Status403Forbidden
+            };
         }
 
         _log.LogInformation("CRM connection ready.");
@@ -216,6 +238,44 @@ public class EappSSO
         return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
     }
 
+    private static bool HasAppRole(IReadOnlyCollection<string> callerRoles, string role)
+    {
+        return callerRoles.Contains(role, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static IReadOnlyCollection<string> GetCallerRoles(HttpRequest req)
+    {
+        if (!IsRunningInAzure())
+        {
+            return new[] { ContactReadRole, OpportunityReadRole };
+        }
+
+        var roles = req.HttpContext.User.Claims
+            .Where(c => c.Type is "roles" or System.Security.Claims.ClaimTypes.Role
+                or "http://schemas.microsoft.com/ws/2008/06/identity/claims/role")
+            .Select(c => c.Value)
+            .ToList();
+
+        if (roles.Count > 0)
+        {
+            return roles;
+        }
+
+        if (!req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var header)
+            || string.IsNullOrWhiteSpace(header.FirstOrDefault()))
+        {
+            return Array.Empty<string>();
+        }
+
+        var json = Encoding.UTF8.GetString(Convert.FromBase64String(header.First()!));
+        var principal = JsonConvert.DeserializeObject<ClientPrincipal>(json);
+
+        return principal?.Claims?
+            .Where(c => string.Equals(c.Typ, "roles", StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.Val)
+            .ToList() ?? [];
+    }
+
     private static string Base64Encode(string jsonStr)
     {
         return Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonStr));
@@ -235,5 +295,19 @@ public class EappSSO
 
         return attMetadata.OptionSet.Options.FirstOrDefault(x => x.Value == optionSetValue)?.Label.UserLocalizedLabel.Label;
     }
-}
 
+    private sealed class ClientPrincipal
+    {
+        [JsonProperty("claims")]
+        public List<ClientPrincipalClaim>? Claims { get; set; }
+    }
+
+    private sealed class ClientPrincipalClaim
+    {
+        [JsonProperty("typ")]
+        public string Typ { get; set; } = "";
+
+        [JsonProperty("val")]
+        public string Val { get; set; } = "";
+    }
+}
