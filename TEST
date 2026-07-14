@@ -1,313 +1,332 @@
-using System.Security.Claims;
-using System.ServiceModel;
-using System.Text;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Logging;
-using Microsoft.PowerPlatform.Dataverse.Client;
-using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Messages;
-using Microsoft.Xrm.Sdk.Metadata;
-using Microsoft.Xrm.Sdk.Query;
-using Newtonsoft.Json;
-using Formatting = Newtonsoft.Json.Formatting;
-
-namespace KOFC_FA_AgentPortal_UserProfile;
-
-public class EappSSO
-{
-    private const string ContactReadRole = "Contact.Read";
-    private const string OpportunityReadRole = "Opportunity.Read";
-
-    private readonly ILogger<EappSSO> _log;
-    private readonly ServiceClient _serviceClient;
-
-    public EappSSO(ILogger<EappSSO> log, ServiceClient serviceClient)
-    {
-        _log = log;
-        _serviceClient = serviceClient;
-    }
-
-    [Function("getSOReqForEappSSO")]
-    public IActionResult Run(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequest req)
-    {
-        _log.LogInformation("C# HTTP trigger function processed a request.");
-
-        if (!IsAuthenticated(req))
-        {
-            return new UnauthorizedObjectResult("Authentication required.");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Boomi Integration Validator</title>
+    <style>
+        body {
+            font-family: Segoe UI, Arial, sans-serif;
+            margin: 16px;
+            max-width: 900px;
         }
 
-        var callerRoles = GetCallerRoles(req);
-        _log.LogInformation("Caller app roles: {Roles}", string.Join(", ", callerRoles));
-
-        if (!HasAppRole(callerRoles, ContactReadRole))
-        {
-            return new ObjectResult($"Missing required app role: {ContactReadRole}.")
-            {
-                StatusCode = StatusCodes.Status403Forbidden
-            };
+        h1 {
+            font-size: 1.25rem;
+            margin-bottom: 8px;
         }
 
-        var queryParams = req.Query;
-        string? userId = queryParams["userId"];
-        string? opportunityId = queryParams["oppID"];
-
-        if (string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var dataverseUserId))
-        {
-            return new BadRequestObjectResult("A valid userId query parameter is required.");
+        fieldset {
+            border: 1px solid #ccc;
+            margin-bottom: 12px;
+            padding: 12px;
         }
 
-        if (!string.IsNullOrWhiteSpace(opportunityId) && !Guid.TryParse(opportunityId, out _))
-        {
-            return new BadRequestObjectResult("oppID must be a valid GUID when provided.");
+        legend {
+            font-weight: 600;
         }
 
-        if (!string.IsNullOrWhiteSpace(opportunityId) && !HasAppRole(callerRoles, OpportunityReadRole))
-        {
-            return new ObjectResult($"Missing required app role: {OpportunityReadRole}.")
-            {
-                StatusCode = StatusCodes.Status403Forbidden
-            };
+        label {
+            display: block;
+            margin: 8px 0 4px;
+            font-size: 0.9rem;
         }
 
-        _log.LogInformation("CRM connection ready.");
-        _log.LogInformation("Impersonating Dataverse user: {UserId}", dataverseUserId);
-
-        try
-        {
-            _serviceClient.CallerId = dataverseUserId;
-            return BuildSoReqResponse(userId, opportunityId);
-        }
-        catch (FaultException<OrganizationServiceFault> ex) when (IsInsufficientPrivilege(ex))
-        {
-            _log.LogWarning(ex, "Dataverse access denied for user {UserId}", dataverseUserId);
-            return new ObjectResult("Access denied for the requested Dataverse records.")
-            {
-                StatusCode = StatusCodes.Status403Forbidden
-            };
-        }
-        finally
-        {
-            _serviceClient.CallerId = Guid.Empty;
-        }
-    }
-
-    private IActionResult BuildSoReqResponse(string userId, string? opportunityId)
-    {
-        string userFetchXml = $@"
-                                    <fetch top='50'>
-                                      <entity name='systemuser'>
-                                         <attribute name='kofc_agentid' />
-                                         <attribute name='kofc_user_ldap_id' />
-                                         <attribute name='windowsliveid' />
-                                         <attribute name='kofc_insurancerole' />
-                                        <filter>
-                                          <condition attribute='systemuserid' operator='eq' value='{userId}' />
-                                        </filter>
-                                      </entity>
-                                    </fetch>";
-
-        var userFetchExpression = new FetchExpression(userFetchXml);
-        EntityCollection userResult = _serviceClient.RetrieveMultiple(userFetchExpression);
-        var soReq = new SoReqData();
-
-        if (userResult.Entities == null || userResult.Entities.Count == 0)
-        {
-            return new NotFoundObjectResult("User not found.");
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 6px 8px;
         }
 
-        Entity userEntity = userResult.Entities[0];
-        string? roleCode;
-
-        if (userEntity.Contains("kofc_insurancerole"))
-        {
-            OptionSetValue roleCodeId = userEntity.GetAttributeValue<OptionSetValue>("kofc_insurancerole");
-            roleCode = GetOptionSetValueLabel("systemuser", "kofc_insurancerole", roleCodeId.Value, _serviceClient);
-        }
-        else
-        {
-            return new BadRequestObjectResult("Role not found for the user.");
+        button {
+            margin-right: 8px;
+            margin-top: 8px;
+            padding: 8px 14px;
+            cursor: pointer;
         }
 
-        string roletype = EappConstants.userRoleType.ContainsKey(roleCode ?? string.Empty)
-            ? EappConstants.userRoleType[roleCode!]
-            : string.Empty;
-
-        soReq.reqAction = "EAPP";
-        string dateTime = DateTime.Now.ToString("yyyy-MM-dd.HH:mm:ss");
-        soReq.gmtStamp = dateTime;
-        soReq.agentId = userEntity.GetAttributeValue<string>("kofc_agentid") ?? " ";
-        soReq.loginUserID = userEntity.GetAttributeValue<string>("kofc_user_ldap_id") ?? " ";
-
-        _log.LogInformation(roletype);
-
-        switch (roletype)
-        {
-            case "isFieldAgent":
-                soReq.isFieldAgent = true;
-                break;
-            case "isGeneralAgent":
-                soReq.isGeneralAgent = true;
-                break;
-            case "isAssistantGeneralAgent":
-                soReq.isAssistantGeneralAgent = true;
-                break;
-            case "isFieldAssistant":
-                soReq.isFieldAssistant = true;
-                break;
+        pre {
+            background: #f4f4f4;
+            border: 1px solid #ddd;
+            padding: 10px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 320px;
+            overflow: auto;
         }
 
-        if (!string.IsNullOrEmpty(opportunityId))
-        {
-            string clientFetchXml = $@"<fetch>
-                                        <entity name = 'opportunity'>
-                                            <attribute name = 'opportunityid'/>
-                                             <filter type = 'and' >
-                                                 <condition attribute = 'parentcontactid' operator= 'not-null'/>
-                                                 <condition attribute='opportunityid' operator='eq' value='{opportunityId}'/>
-                                            </filter>
-                                                <link-entity name = 'contact' from = 'contactid' to = 'parentcontactid' visible = 'false' link-type = 'outer' alias = 'c' >
-                                                    <attribute name = 'kofc_clientid'/>
-                                                    <attribute name = 'kofc_contacttype'/>
-                                                    <attribute name = 'kofc_birthdate'/>
-                                                </link-entity>
-                                             </entity>
-                                        </fetch>";
+        .ok {
+            color: #107c10;
+        }
 
-            var clientFetchExpression = new FetchExpression(clientFetchXml);
-            EntityCollection clientResult = _serviceClient.RetrieveMultiple(clientFetchExpression);
+        .err {
+            color: #a4262c;
+        }
 
-            if (clientResult.Entities != null && clientResult.Entities.Count > 0)
-            {
-                Entity client = clientResult.Entities[0];
-                var clientId = client.GetAttributeValue<AliasedValue>("c.kofc_clientid");
-                soReq.clientId = clientId?.Value.ToString() ?? string.Empty;
+        .hint {
+            color: #605e5c;
+            font-size: 0.85rem;
+        }
+    </style>
 
-                var clientDob = client.GetAttributeValue<AliasedValue>("c.kofc_birthdate");
-                if (clientDob != null && DateTime.TryParse(clientDob.Value.ToString(), out DateTime dob))
-                {
-                    soReq.clientDob = dob.ToString("yyyy-MM-dd");
+    <!--
+      Upload msal-browser.min.js as web resource kofc_msal-browser.min.js
+      and use that path if your org blocks CDN scripts.
+    -->
+    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+</head>
+<body>
+    <h1>Boomi Integration Validator</h1>
+    <p class="hint">
+        Validate MSAL token acquisition and the Dynamics → Boomi → Function App path.
+        Open from Dynamics as a web resource so <code>Xrm</code> can prefill user context.
+    </p>
+
+    <fieldset>
+        <legend>Config</legend>
+        <label for="tenantId">Tenant ID</label>
+        <input id="tenantId" type="text" placeholder="00000000-0000-0000-0000-000000000000" />
+
+        <label for="clientId">SPA Client ID</label>
+        <input id="clientId" type="text" placeholder="SPA app registration client ID" />
+
+        <label for="apiAppId">Function API App ID (for scope)</label>
+        <input id="apiAppId" type="text" placeholder="Function App API app registration ID" />
+
+        <label for="boomiUrl">Boomi URL (no query string)</label>
+        <input id="boomiUrl" type="text" placeholder="https://your-boomi-host/ws/rest/YourProcess" />
+
+        <label for="boomiApiKey">Boomi API key (x-api-key)</label>
+        <input id="boomiApiKey" type="password" placeholder="Boomi API key" autocomplete="off" />
+    </fieldset>
+
+    <fieldset>
+        <legend>Request params</legend>
+        <label for="userId">userId (Dataverse systemuserid)</label>
+        <input id="userId" type="text" placeholder="Auto-filled from D365 when available" />
+
+        <label for="oppId">oppID (optional)</label>
+        <input id="oppId" type="text" placeholder="Opportunity GUID" />
+    </fieldset>
+
+    <button id="btnToken" type="button">1. Validate token</button>
+    <button id="btnCall" type="button">2. Validate full integration</button>
+    <button id="btnClear" type="button">Clear log</button>
+
+    <h2>Validation log</h2>
+    <pre id="log"></pre>
+
+    <script>
+        (function () {
+            "use strict";
+
+            var VALIDATOR_NAME = "Boomi Integration Validator";
+            var logEl = document.getElementById("log");
+            var msalApp = null;
+
+            function log(message, isError) {
+                var line = "[" + new Date().toLocaleTimeString() + "] " + message;
+                logEl.textContent += line + "\n";
+                logEl.className = isError ? "err" : "";
+                console.log(message);
+            }
+
+            function getConfig() {
+                return {
+                    tenantId: document.getElementById("tenantId").value.trim(),
+                    clientId: document.getElementById("clientId").value.trim(),
+                    apiAppId: document.getElementById("apiAppId").value.trim(),
+                    boomiUrl: document.getElementById("boomiUrl").value.trim(),
+                    boomiApiKey: document.getElementById("boomiApiKey").value.trim(),
+                    userId: document.getElementById("userId").value.trim(),
+                    oppId: document.getElementById("oppId").value.trim()
+                };
+            }
+
+            function validateConfig(cfg, requireBoomi) {
+                if (!cfg.tenantId || !cfg.clientId || !cfg.apiAppId) {
+                    throw new Error("Tenant ID, SPA Client ID, and Function API App ID are required.");
+                }
+                if (requireBoomi && !cfg.boomiUrl) {
+                    throw new Error("Boomi URL is required.");
+                }
+                if (requireBoomi && !cfg.userId) {
+                    throw new Error("userId is required.");
+                }
+                if (requireBoomi && !cfg.boomiApiKey) {
+                    throw new Error("Boomi API key (x-api-key) is required.");
                 }
             }
-        }
 
-        string jsonResult = JsonConvert.SerializeObject(soReq, Formatting.Indented);
-        _log.LogInformation("JSON Results:\n{JsonResult}", jsonResult);
+            function getScopes(apiAppId) {
+                return [
+                    "api://" + apiAppId + "/Contact.Read",
+                    "api://" + apiAppId + "/Opportunity.Read"
+                ];
+            }
 
-        string base64encodedStr = Base64Encode(jsonResult);
-        _log.LogInformation("Base64 Encoded String:\n{Base64Result}", base64encodedStr);
+            async function initializeMsal(cfg) {
+                if (typeof msal === "undefined") {
+                    throw new Error("MSAL library not loaded. Upload kofc_msal-browser.min.js as a web resource if CDN is blocked.");
+                }
 
-        return new ContentResult
-        {
-            Content = base64encodedStr,
-            ContentType = "text/plain",
-            StatusCode = StatusCodes.Status200OK
-        };
-    }
+                if (!msalApp) {
+                    msalApp = new msal.PublicClientApplication({
+                        auth: {
+                            clientId: cfg.clientId,
+                            authority: "https://login.microsoftonline.com/" + cfg.tenantId,
+                            redirectUri: window.location.origin
+                        },
+                        cache: {
+                            cacheLocation: "sessionStorage",
+                            storeAuthStateInCookie: true
+                        }
+                    });
+                    await msalApp.initialize();
+                }
 
-    private static bool IsInsufficientPrivilege(FaultException<OrganizationServiceFault> ex)
-    {
-        // 0x80048303 = principal user does not have required privileges
-        const int PrivilegeDeniedErrorCode = unchecked((int)0x80048303);
-        return ex.Detail.ErrorCode == PrivilegeDeniedErrorCode;
-    }
+                return msalApp;
+            }
 
-    private static bool IsAuthenticated(HttpRequest req)
-    {
-        if (req.HttpContext.User.Identity?.IsAuthenticated == true)
-        {
-            return true;
-        }
+            async function acquireToken(cfg) {
+                var app = await initializeMsal(cfg);
+                var request = { scopes: getScopes(cfg.apiAppId) };
+                var accounts = app.getAllAccounts();
 
-        // Easy Auth on isolated Functions often injects X-MS-CLIENT-PRINCIPAL
-        // without populating HttpContext.User for app-only (client credentials) tokens.
-        if (IsRunningInAzure() && req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var principalHeader))
-        {
-            return !string.IsNullOrWhiteSpace(principalHeader.FirstOrDefault());
-        }
+                if (accounts.length > 0) {
+                    try {
+                        var silent = await app.acquireTokenSilent({
+                            scopes: request.scopes,
+                            account: accounts[0]
+                        });
+                        return silent.accessToken;
+                    } catch (silentError) {
+                        log("Silent token failed, opening login popup...", false);
+                    }
+                }
 
-        // Easy Auth is configured manually on the function app; locally there is no platform auth.
-        return !IsRunningInAzure();
-    }
+                var popup = await app.loginPopup(request);
+                return popup.accessToken;
+            }
 
-    private static bool IsRunningInAzure()
-    {
-        return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
-    }
+            function decodeJwtPayload(token) {
+                try {
+                    var parts = token.split(".");
+                    if (parts.length < 2) {
+                        return null;
+                    }
+                    var json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+                    return JSON.parse(json);
+                } catch (e) {
+                    return null;
+                }
+            }
 
-    private static bool HasAppRole(IReadOnlyCollection<string> callerRoles, string role)
-    {
-        return callerRoles.Contains(role, StringComparer.OrdinalIgnoreCase);
-    }
+            async function callBoomi(cfg, token) {
+                var query = new URLSearchParams({ userId: cfg.userId });
+                if (cfg.oppId) {
+                    query.append("oppID", cfg.oppId);
+                }
 
-    private static IReadOnlyCollection<string> GetCallerRoles(HttpRequest req)
-    {
-        if (!IsRunningInAzure())
-        {
-            return new[] { ContactReadRole, OpportunityReadRole };
-        }
+                var url = cfg.boomiUrl + (cfg.boomiUrl.indexOf("?") >= 0 ? "&" : "?") + query.toString();
+                log("Calling Boomi: " + url, false);
+                log("Sending headers: Authorization (Bearer), x-api-key", false);
 
-        var roles = req.HttpContext.User.Claims
-            .Where(c => c.Type is "roles" or System.Security.Claims.ClaimTypes.Role
-                or "http://schemas.microsoft.com/ws/2008/06/identity/claims/role")
-            .Select(c => c.Value)
-            .ToList();
+                var response = await fetch(url, {
+                    method: "GET",
+                    headers: {
+                        "Authorization": "Bearer " + token,
+                        "x-api-key": cfg.boomiApiKey,
+                        "Accept": "text/plain"
+                    }
+                });
 
-        if (roles.Count > 0)
-        {
-            return roles;
-        }
+                var body = await response.text();
 
-        if (!req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var header)
-            || string.IsNullOrWhiteSpace(header.FirstOrDefault()))
-        {
-            return Array.Empty<string>();
-        }
+                if (!response.ok) {
+                    throw new Error("Boomi returned " + response.status + ": " + body);
+                }
 
-        var json = Encoding.UTF8.GetString(Convert.FromBase64String(header.First()!));
-        var principal = JsonConvert.DeserializeObject<ClientPrincipal>(json);
+                return {
+                    status: response.status,
+                    body: body
+                };
+            }
 
-        return principal?.Claims?
-            .Where(c => string.Equals(c.Typ, "roles", StringComparison.OrdinalIgnoreCase))
-            .Select(c => c.Val)
-            .ToList() ?? [];
-    }
+            function prefillFromDynamics() {
+                log(VALIDATOR_NAME + " ready.", false);
 
-    private static string Base64Encode(string jsonStr)
-    {
-        return Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonStr));
-    }
+                try {
+                    if (typeof Xrm !== "undefined" && Xrm.Utility && Xrm.Utility.getGlobalContext) {
+                        var ctx = Xrm.Utility.getGlobalContext();
+                        var currentUserId = ctx.userSettings.userId.replace(/[{}]/g, "");
+                        document.getElementById("userId").value = currentUserId;
+                        log("Prefilled userId from D365: " + currentUserId, false);
 
-    private static string? GetOptionSetValueLabel(string entityName, string fieldName, int optionSetValue, ServiceClient service)
-    {
-        var attReq = new RetrieveAttributeRequest
-        {
-            EntityLogicalName = entityName,
-            LogicalName = fieldName,
-            RetrieveAsIfPublished = true
-        };
+                        if (typeof Xrm.Page !== "undefined" && Xrm.Page.data && Xrm.Page.data.entity) {
+                            var entityName = Xrm.Page.data.entity.getEntityName();
+                            if (entityName === "opportunity") {
+                                var oppId = Xrm.Page.data.entity.getId().replace(/[{}]/g, "");
+                                document.getElementById("oppId").value = oppId;
+                                log("Prefilled oppID from Opportunity form: " + oppId, false);
+                            }
+                        }
+                    } else {
+                        log("Xrm not available. Enter userId manually or open from Dynamics.", false);
+                    }
+                } catch (e) {
+                    log("Could not prefill from D365: " + e.message, true);
+                }
+            }
 
-        var attResponse = (RetrieveAttributeResponse)service.Execute(attReq);
-        var attMetadata = (EnumAttributeMetadata)attResponse.AttributeMetadata;
+            document.getElementById("btnToken").addEventListener("click", async function () {
+                try {
+                    var cfg = getConfig();
+                    validateConfig(cfg, false);
+                    log("Validating MSAL token acquisition...", false);
 
-        return attMetadata.OptionSet.Options.FirstOrDefault(x => x.Value == optionSetValue)?.Label.UserLocalizedLabel.Label;
-    }
+                    var token = await acquireToken(cfg);
+                    var claims = decodeJwtPayload(token);
 
-    private sealed class ClientPrincipal
-    {
-        [JsonProperty("claims")]
-        public List<ClientPrincipalClaim>? Claims { get; set; }
-    }
+                    log("Token validation passed.", false);
+                    if (claims) {
+                        log("aud: " + (claims.aud || ""), false);
+                        log("scp: " + (claims.scp || claims.roles || ""), false);
+                        log("oid: " + (claims.oid || ""), false);
+                        log("appid/azp: " + (claims.appid || claims.azp || ""), false);
+                    }
+                    log("Token (first 40 chars): " + token.substring(0, 40) + "...", false);
+                } catch (e) {
+                    log("Token validation failed: " + (e.message || e), true);
+                }
+            });
 
-    private sealed class ClientPrincipalClaim
-    {
-        [JsonProperty("typ")]
-        public string Typ { get; set; } = "";
+            document.getElementById("btnCall").addEventListener("click", async function () {
+                try {
+                    var cfg = getConfig();
+                    validateConfig(cfg, true);
+                    log("Starting full integration validation...", false);
 
-        [JsonProperty("val")]
-        public string Val { get; set; } = "";
-    }
-}
+                    var token = await acquireToken(cfg);
+                    var claims = decodeJwtPayload(token);
+                    log("Token acquired. scp/roles: " + (claims ? (claims.scp || claims.roles || "") : "n/a"), false);
+
+                    var result = await callBoomi(cfg, token);
+                    log("Boomi integration validation passed. HTTP " + result.status, false);
+                    log("Response (first 120 chars): " + result.body.substring(0, 120) + "...", false);
+                    log(VALIDATOR_NAME + " completed successfully.", false);
+                } catch (e) {
+                    log("Integration validation failed: " + (e.message || e), true);
+                }
+            });
+
+            document.getElementById("btnClear").addEventListener("click", function () {
+                logEl.textContent = "";
+                logEl.className = "";
+            });
+
+            prefillFromDynamics();
+        })();
+    </script>
+</body>
+</html>
