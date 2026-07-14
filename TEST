@@ -69,10 +69,8 @@
         }
     </style>
 
-    <!--
-      Upload msal-browser.min.js as web resource kofc_msal-browser.min.js
-      and use that path if your org blocks CDN scripts.
-    -->
+    <!-- Loads D365 context when opened as /WebResources/... (provides GetGlobalContext, not always Xrm) -->
+    <script src="ClientGlobalContext.js.aspx" type="text/javascript"></script>
     <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 </head>
 <body>
@@ -82,9 +80,10 @@
         Open from Dynamics (see instructions below). <code>userId</code> can be entered manually if needed.
     </p>
     <p class="hint">
-        <strong>Open from browser:</strong>
-        <code>https://&lt;yourorg&gt;.crm.dynamics.com/WebResources/kofc_BoomiIntegrationValidator</code><br />
-        <strong>Or from D365 console (F12):</strong>
+        <strong>Best URL (inside D365 shell):</strong><br />
+        <code>https://&lt;yourorg&gt;.crm.dynamics.com/main.aspx?pagetype=webresource&amp;webresourceName=kofc_BoomiIntegrationValidator</code><br />
+        <strong>With params:</strong> append <code>&amp;userId=&lt;guid&gt;&amp;oppID=&lt;guid&gt;</code><br />
+        <strong>From D365 console (F12):</strong>
         <code>Xrm.Navigation.openWebResource("kofc_BoomiIntegrationValidator")</code>
     </p>
 
@@ -278,68 +277,65 @@
                 return null;
             }
 
-            function loadClientGlobalContext() {
-                return new Promise(function (resolve, reject) {
-                    if (getXrm()) {
-                        resolve(getXrm());
-                        return;
+            function getD365Context() {
+                try {
+                    if (typeof GetGlobalContext === "function") {
+                        return GetGlobalContext();
                     }
+                } catch (e) {
+                    // Continue to Xrm fallback.
+                }
 
-                    var script = document.createElement("script");
-                    script.src = window.location.origin + "/WebResources/ClientGlobalContext.js.aspx";
-                    script.onload = function () {
-                        resolve(getXrm());
-                    };
-                    script.onerror = function () {
-                        reject(new Error("Could not load ClientGlobalContext.js.aspx"));
-                    };
-                    document.head.appendChild(script);
-                });
-            }
-
-            async function waitForXrm(maxAttempts) {
-                var attempts = maxAttempts || 20;
-
-                for (var i = 0; i < attempts; i++) {
-                    var xrm = getXrm();
-                    if (xrm && xrm.Utility && xrm.Utility.getGlobalContext) {
-                        return xrm;
-                    }
-                    await new Promise(function (resolve) {
-                        setTimeout(resolve, 250);
-                    });
+                var xrm = getXrm();
+                if (xrm && xrm.Utility && xrm.Utility.getGlobalContext) {
+                    return xrm.Utility.getGlobalContext();
                 }
 
                 return null;
             }
 
+            function normalizeGuid(value) {
+                return (value || "").replace(/[{}]/g, "").trim();
+            }
+
+            function prefillFromUrl() {
+                var params = new URLSearchParams(window.location.search);
+                var userId = normalizeGuid(params.get("userId") || params.get("userid"));
+                var oppId = normalizeGuid(params.get("oppID") || params.get("oppid"));
+
+                if (userId) {
+                    document.getElementById("userId").value = userId;
+                    log("Prefilled userId from URL: " + userId, false);
+                }
+                if (oppId) {
+                    document.getElementById("oppId").value = oppId;
+                    log("Prefilled oppID from URL: " + oppId, false);
+                }
+            }
+
             async function prefillFromDynamics() {
                 log(VALIDATOR_NAME + " ready.", false);
+                prefillFromUrl();
 
                 try {
-                    if (!getXrm()) {
-                        log("Loading Dynamics client context...", false);
-                        try {
-                            await loadClientGlobalContext();
-                        } catch (loadError) {
-                            log("Could not load ClientGlobalContext: " + loadError.message, false);
+                    var ctx = getD365Context();
+                    if (!ctx || !ctx.userSettings || !ctx.userSettings.userId) {
+                        if (!document.getElementById("userId").value) {
+                            log("D365 context not auto-detected. Enter userId manually, use URL params, or open via main.aspx link above.", false);
                         }
-                    }
-
-                    var xrm = await waitForXrm();
-                    if (!xrm || !xrm.Utility || !xrm.Utility.getGlobalContext) {
-                        log("Xrm not available. Enter userId manually, or open via Xrm.Navigation.openWebResource from a D365 page.", false);
                         return;
                     }
 
-                    var ctx = xrm.Utility.getGlobalContext();
-                    var currentUserId = ctx.userSettings.userId.replace(/[{}]/g, "");
-                    document.getElementById("userId").value = currentUserId;
-                    log("Prefilled userId from D365: " + currentUserId, false);
+                    var currentUserId = normalizeGuid(ctx.userSettings.userId);
+                    if (!document.getElementById("userId").value) {
+                        document.getElementById("userId").value = currentUserId;
+                        log("Prefilled userId from D365 context: " + currentUserId, false);
+                    }
 
                     var page = null;
                     try {
-                        if (xrm.Page && xrm.Page.data && xrm.Page.data.entity) {
+                        var xrm = getXrm();
+                        if (xrm && xrm.Page && xrm.Page.data && xrm.Page.data.entity) {
                             page = xrm.Page;
                         } else if (window.parent && window.parent.Xrm && window.parent.Xrm.Page) {
                             page = window.parent.Xrm.Page;
@@ -348,10 +344,10 @@
                         // Ignore frame access errors.
                     }
 
-                    if (page && page.data && page.data.entity) {
+                    if (!document.getElementById("oppId").value && page && page.data && page.data.entity) {
                         var entityName = page.data.entity.getEntityName();
                         if (entityName === "opportunity") {
-                            var oppId = page.data.entity.getId().replace(/[{}]/g, "");
+                            var oppId = normalizeGuid(page.data.entity.getId());
                             document.getElementById("oppId").value = oppId;
                             log("Prefilled oppID from Opportunity form: " + oppId, false);
                         }
