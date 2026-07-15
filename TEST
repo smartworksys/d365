@@ -2,48 +2,6 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>Authentication Callback</title>
-    <!--
-      MSAL popup/redirect callback target.
-      IMPORTANT: Do NOT call window.close() here. MSAL in the opener window reads the
-      auth response hash from this page's URL and closes the popup itself. Closing early
-      causes 'timed_out' or 'user_cancelled' errors in the opener.
-
-      Register this EXACT URL in Entra (SPA redirect URIs):
-      https://<yourorg>.crm.dynamics.com/WebResources/kofc_msalcallback.html
-    -->
-    <script src="kofc_msal-browser.min.js" type="text/javascript"></script>
-</head>
-<body>
-    <p>Authentication complete. This window will close automatically.</p>
-    <script>
-        (function () {
-            "use strict";
-            // handleRedirectPromise processes the response for the redirect fallback and
-            // clears the hash. For popup flow the opener reads the hash directly, so this
-            // is a no-op there. Either way, we must not close the window ourselves.
-            try {
-                if (typeof msal !== "undefined") {
-                    var pca = new msal.PublicClientApplication({
-                        auth: { clientId: "00000000-0000-0000-0000-000000000000" },
-                        cache: { cacheLocation: "sessionStorage" }
-                    });
-                    pca.initialize()
-                        .then(function () { return pca.handleRedirectPromise(); })
-                        .catch(function () { /* opener still reads the hash; ignore */ });
-                }
-            } catch (e) {
-                // No-op: page only needs to exist, load fast, and keep the hash in the URL.
-            }
-        })();
-    </script>
-</body>
-</html>
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
     <title>Boomi Integration Validator</title>
     <style>
         body {
@@ -301,7 +259,8 @@
                         auth: {
                             clientId: cfg.clientId,
                             authority: "https://login.microsoftonline.com/" + cfg.tenantId,
-                            redirectUri: getRedirectUri()
+                            redirectUri: getRedirectUri(),
+                            navigateToLoginRequestUrl: false
                         },
                         cache: {
                             cacheLocation: "sessionStorage",
@@ -309,12 +268,6 @@
                         }
                     });
                     await msalApp.initialize();
-                    // Clears any pending redirect state; harmless for popup flow.
-                    try {
-                        await msalApp.handleRedirectPromise();
-                    } catch (e) {
-                        log("handleRedirectPromise: " + (e.message || e), false);
-                    }
                 }
 
                 return msalApp;
@@ -348,7 +301,8 @@
                 try {
                     var popup = await app.acquireTokenPopup({
                         scopes: scopes,
-                        prompt: "select_account"
+                        prompt: "select_account",
+                        redirectUri: getRedirectUri()
                     });
                     return popup.accessToken;
                 } finally {
