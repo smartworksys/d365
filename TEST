@@ -339,6 +339,9 @@
                             storeAuthStateInCookie: true
                         },
                         system: {
+                            // Skip MSAL's iframe guard; our navigationClient drives the TOP window,
+                            // so the interactive redirect leaves the frame instead of navigating it.
+                            allowRedirectInIframe: true,
                             navigationClient: buildNavigationClient()
                         }
                     });
