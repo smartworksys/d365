@@ -2,6 +2,129 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
+    <title>Auth Callback</title>
+    <style>
+        body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #333; }
+        .msg { font-size: 0.95rem; }
+        .err { color: #a4262c; }
+    </style>
+</head>
+<body>
+    <p id="msg" class="msg">Completing sign-in...</p>
+    <script>
+        (function () {
+            "use strict";
+
+            var CFG_KEY = "biv_cfg";
+            var RESULT_KEY = "biv_result";
+            var msgEl = document.getElementById("msg");
+
+            function setMsg(text, isErr) {
+                msgEl.textContent = text;
+                msgEl.className = isErr ? "msg err" : "msg";
+            }
+
+            function readCfg() {
+                try {
+                    var raw = localStorage.getItem(CFG_KEY);
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function loadScript(src) {
+                return new Promise(function (resolve, reject) {
+                    var s = document.createElement("script");
+                    s.src = src;
+                    s.onload = function () { resolve(typeof msal !== "undefined"); };
+                    s.onerror = function () { reject(new Error("404: " + src)); };
+                    document.head.appendChild(s);
+                });
+            }
+
+            async function ensureMsal() {
+                if (typeof msal !== "undefined") { return; }
+                var base = window.location.origin + "/WebResources/";
+                var names = [
+                    "kofc_msal-browser.min.js", "kofc_msalbrowsermin",
+                    "kofc_msal_browser_min", "kofc_msalbrowser.min.js", "kofc_msal-browser"
+                ];
+                for (var i = 0; i < names.length; i++) {
+                    try {
+                        await loadScript(base + names[i]);
+                        if (typeof msal !== "undefined") { return; }
+                    } catch (e) { /* try next */ }
+                }
+                throw new Error("MSAL library not found as a web resource.");
+            }
+
+            function validatorReturnUrl() {
+                return window.location.origin +
+                    "/main.aspx?pagetype=webresource&webresourceName=kofc_BoomiIntegrationValidator.html";
+            }
+
+            async function run() {
+                // No auth response in the URL: nothing to do (page opened directly).
+                if (window.location.hash.indexOf("code=") < 0 &&
+                    window.location.hash.indexOf("error=") < 0 &&
+                    window.location.search.indexOf("code=") < 0) {
+                    setMsg("Auth callback page. Open the validator to start.");
+                    return;
+                }
+
+                var cfg = readCfg();
+                if (!cfg || !cfg.clientId || !cfg.tenantId) {
+                    setMsg("Missing sign-in context. Start again from the validator.", true);
+                    return;
+                }
+
+                try {
+                    await ensureMsal();
+
+                    var pca = new msal.PublicClientApplication({
+                        auth: {
+                            clientId: cfg.clientId,
+                            authority: "https://login.microsoftonline.com/" + cfg.tenantId,
+                            redirectUri: window.location.href.split("#")[0].split("?")[0]
+                        },
+                        cache: {
+                            // Shared with the validator (same origin) so the PKCE verifier is found.
+                            cacheLocation: "localStorage",
+                            storeAuthStateInCookie: true
+                        }
+                    });
+
+                    await pca.initialize();
+                    var result = await pca.handleRedirectPromise();
+
+                    if (result && result.accessToken) {
+                        localStorage.setItem(RESULT_KEY, JSON.stringify({
+                            accessToken: result.accessToken,
+                            action: cfg.action || "token"
+                        }));
+                        setMsg("Sign-in complete. Returning to validator...");
+                        window.location.href = validatorReturnUrl();
+                        return;
+                    }
+
+                    setMsg("No token in the response. Start again from the validator.", true);
+                } catch (e) {
+                    setMsg("Sign-in failed: " + (e && e.message ? e.message : e), true);
+                }
+            }
+
+            run();
+        })();
+    </script>
+</body>
+</html>
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
     <title>Boomi Integration Validator</title>
     <style>
         body {
@@ -252,7 +375,8 @@
                 return msalLoadPromise;
             }
 
-            var STATE_KEY = "biv_pending_state";
+            var CFG_KEY = "biv_cfg";       // shared with callback (localStorage)
+            var RESULT_KEY = "biv_result"; // token result written by callback
 
             function getDefaultRedirectUri() {
                 // Point at the minimal, SERVED callback page (kofc_msalcallback.html), not the
@@ -280,24 +404,36 @@
 
             function saveState(cfg, action) {
                 try {
-                    sessionStorage.setItem(STATE_KEY, JSON.stringify({ cfg: cfg, action: action }));
+                    var payload = {};
+                    Object.keys(cfg).forEach(function (k) { payload[k] = cfg[k]; });
+                    payload.action = action;
+                    localStorage.setItem(CFG_KEY, JSON.stringify(payload));
                 } catch (e) {
-                    // sessionStorage may be unavailable; ignore.
+                    // ignore
                 }
             }
 
-            function readState() {
+            function readCfgState() {
                 try {
-                    var raw = sessionStorage.getItem(STATE_KEY);
+                    var raw = localStorage.getItem(CFG_KEY);
                     return raw ? JSON.parse(raw) : null;
                 } catch (e) {
                     return null;
                 }
             }
 
-            function clearState() {
+            function readResult() {
                 try {
-                    sessionStorage.removeItem(STATE_KEY);
+                    var raw = localStorage.getItem(RESULT_KEY);
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function clearResult() {
+                try {
+                    localStorage.removeItem(RESULT_KEY);
                 } catch (e) {
                     // ignore
                 }
@@ -350,7 +486,9 @@
                             navigateToLoginRequestUrl: false
                         },
                         cache: {
-                            cacheLocation: "sessionStorage",
+                            // localStorage is shared with the callback page (same origin) so it can
+                            // complete the code exchange with the PKCE verifier this page created.
+                            cacheLocation: "localStorage",
                             storeAuthStateInCookie: true
                         },
                         system: {
@@ -601,32 +739,27 @@
                 log(VALIDATOR_NAME + " completed successfully.", false);
             }
 
-            // Runs when the page loads after returning from a redirect sign-in.
+            // Runs on load. The callback page completes the code exchange and stores the
+            // token in localStorage (RESULT_KEY); here we consume it and continue.
             async function handleRedirectReturn() {
-                var state = readState();
-                if (!state) {
+                var result = readResult();
+                if (!result || !result.accessToken) {
                     return;
                 }
 
-                applyConfigToForm(state.cfg);
+                var cfg = readCfgState() || getConfig();
+                applyConfigToForm(cfg);
+                clearResult();
 
                 try {
-                    await initializeMsal(state.cfg);
-                    var result = await msalApp.handleRedirectPromise();
-                    if (!result || !result.accessToken) {
-                        return; // No auth response in the URL; normal fresh load.
-                    }
-
-                    log("Returned from Microsoft sign-in.", false);
-                    if (state.action === "call") {
-                        await completeCall(state.cfg, result.accessToken);
+                    log("Returned from Microsoft sign-in (token received).", false);
+                    if (result.action === "call") {
+                        await completeCall(cfg, result.accessToken);
                     } else {
                         completeToken(result.accessToken);
                     }
                 } catch (e) {
-                    log("Sign-in completion failed: " + (e.message || e), true);
-                } finally {
-                    clearState();
+                    log("Post-sign-in step failed: " + (e.message || e), true);
                 }
             }
 
