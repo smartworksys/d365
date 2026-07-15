@@ -253,6 +253,27 @@
                 return window.location.origin + "/WebResources/kofc_BoomiIntegrationValidator.html";
             }
 
+            function isFramed() {
+                try {
+                    return window.self !== window.top;
+                } catch (e) {
+                    return true;
+                }
+            }
+
+            // Redirect auth cannot run inside the D365 iframe. Open the validator as a
+            // standalone top-level tab and run sign-in there. Returns true if it redirected.
+            function ensureStandalone() {
+                if (!isFramed()) {
+                    return false;
+                }
+                var standaloneUrl = getRedirectUri();
+                log("This page is running inside the D365 frame. Opening it as a standalone tab...", false);
+                window.open(standaloneUrl, "_blank");
+                log("Standalone tab opened. Enter your values there and run sign-in from that tab.", true);
+                return true;
+            }
+
             function saveState(cfg, action) {
                 try {
                     sessionStorage.setItem(STATE_KEY, JSON.stringify({ cfg: cfg, action: action }));
@@ -322,6 +343,10 @@
             async function acquireTokenOrRedirect(cfg, action) {
                 if (authInProgress) {
                     throw new Error("A sign-in is already in progress.");
+                }
+
+                if (ensureStandalone()) {
+                    return null; // Sign-in continues in the standalone tab.
                 }
 
                 var app = await initializeMsal(cfg);
@@ -554,6 +579,11 @@
                     log("MSAL loaded from org web resource.", false);
                 } catch (e) {
                     log((e.message || e), true);
+                }
+
+                if (isFramed()) {
+                    log("WARNING: running inside the D365 frame. Redirect sign-in will open a standalone tab. " +
+                        "For best results open this URL directly: " + getRedirectUri(), true);
                 }
 
                 await prefillFromDynamics();
