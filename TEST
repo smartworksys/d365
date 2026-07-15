@@ -244,11 +244,55 @@
                 return msalLoadPromise;
             }
 
+            var STATE_KEY = "biv_pending_state";
+
             function getRedirectUri() {
-                // Dedicated blank page avoids popup timeout caused by redirecting back
-                // to this heavy validator page. This page must NOT auto-close.
+                // Redirect flow returns to THIS page (single tab), which avoids the
+                // popup/opener split that Edge automatic profile switching breaks.
                 // Register this EXACT URI in Entra (SPA redirect URIs).
-                return window.location.origin + "/WebResources/kofc_msalcallback.html";
+                return window.location.origin + "/WebResources/kofc_BoomiIntegrationValidator.html";
+            }
+
+            function saveState(cfg, action) {
+                try {
+                    sessionStorage.setItem(STATE_KEY, JSON.stringify({ cfg: cfg, action: action }));
+                } catch (e) {
+                    // sessionStorage may be unavailable; ignore.
+                }
+            }
+
+            function readState() {
+                try {
+                    var raw = sessionStorage.getItem(STATE_KEY);
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function clearState() {
+                try {
+                    sessionStorage.removeItem(STATE_KEY);
+                } catch (e) {
+                    // ignore
+                }
+            }
+
+            function applyConfigToForm(cfg) {
+                if (!cfg) {
+                    return;
+                }
+                var map = {
+                    tenantId: cfg.tenantId, clientId: cfg.clientId, apiAppId: cfg.apiAppId,
+                    scopes: cfg.scopes, boomiUrl: cfg.boomiUrl, boomiApiKey: cfg.boomiApiKey,
+                    userId: cfg.userId, oppId: cfg.oppId
+                };
+                Object.keys(map).forEach(function (id) {
+                    var el = document.getElementById(id);
+                    if (el && typeof map[id] === "string" && map[id]) {
+                        el.value = map[id];
+                    }
+                });
             }
 
             async function initializeMsal(cfg) {
@@ -273,9 +317,11 @@
                 return msalApp;
             }
 
-            async function acquireToken(cfg) {
+            // Returns an access token if silent works; otherwise starts a full-page
+            // redirect (this function will not return in that case).
+            async function acquireTokenOrRedirect(cfg, action) {
                 if (authInProgress) {
-                    throw new Error("A sign-in is already in progress. Finish or close the popup, then try again.");
+                    throw new Error("A sign-in is already in progress.");
                 }
 
                 var app = await initializeMsal(cfg);
@@ -284,7 +330,6 @@
                 log("Redirect URI: " + getRedirectUri(), false);
 
                 var accounts = app.getAllAccounts();
-
                 if (accounts.length > 0) {
                     try {
                         var silent = await app.acquireTokenSilent({
@@ -293,21 +338,19 @@
                         });
                         return silent.accessToken;
                     } catch (silentError) {
-                        log("Silent token failed, opening popup...", false);
+                        log("Silent token failed; redirecting to sign in...", false);
                     }
                 }
 
                 authInProgress = true;
-                try {
-                    var popup = await app.acquireTokenPopup({
-                        scopes: scopes,
-                        prompt: "select_account",
-                        redirectUri: getRedirectUri()
-                    });
-                    return popup.accessToken;
-                } finally {
-                    authInProgress = false;
-                }
+                saveState(cfg, action);
+                log("Redirecting to Microsoft sign-in (full page)...", false);
+                await app.acquireTokenRedirect({
+                    scopes: scopes,
+                    redirectStartPage: getRedirectUri()
+                });
+                // Page navigates away here; nothing after runs.
+                return null;
             }
 
             function decodeJwtPayload(token) {
@@ -453,6 +496,58 @@
                 }
             }
 
+            function completeToken(token) {
+                var claims = decodeJwtPayload(token);
+                log("Token validation passed.", false);
+                if (claims) {
+                    log("aud: " + (claims.aud || ""), false);
+                    log("scp: " + (claims.scp || claims.roles || ""), false);
+                    log("oid: " + (claims.oid || ""), false);
+                    log("appid/azp: " + (claims.appid || claims.azp || ""), false);
+                }
+                log("Access token:\n" + token, false);
+            }
+
+            async function completeCall(cfg, token) {
+                var claims = decodeJwtPayload(token);
+                log("Token acquired. scp/roles: " + (claims ? (claims.scp || claims.roles || "") : "n/a"), false);
+                log("Access token:\n" + token, false);
+
+                var result = await callBoomi(cfg, token);
+                log("Boomi integration validation passed. HTTP " + result.status, false);
+                log("Response (first 120 chars): " + result.body.substring(0, 120) + "...", false);
+                log(VALIDATOR_NAME + " completed successfully.", false);
+            }
+
+            // Runs when the page loads after returning from a redirect sign-in.
+            async function handleRedirectReturn() {
+                var state = readState();
+                if (!state) {
+                    return;
+                }
+
+                applyConfigToForm(state.cfg);
+
+                try {
+                    await initializeMsal(state.cfg);
+                    var result = await msalApp.handleRedirectPromise();
+                    if (!result || !result.accessToken) {
+                        return; // No auth response in the URL; normal fresh load.
+                    }
+
+                    log("Returned from Microsoft sign-in.", false);
+                    if (state.action === "call") {
+                        await completeCall(state.cfg, result.accessToken);
+                    } else {
+                        completeToken(result.accessToken);
+                    }
+                } catch (e) {
+                    log("Sign-in completion failed: " + (e.message || e), true);
+                } finally {
+                    clearState();
+                }
+            }
+
             async function startup() {
                 try {
                     await loadMsalLibrary();
@@ -462,6 +557,7 @@
                 }
 
                 await prefillFromDynamics();
+                await handleRedirectReturn();
             }
 
             document.getElementById("btnToken").addEventListener("click", async function () {
@@ -470,17 +566,10 @@
                     validateConfig(cfg, false);
                     log("Validating MSAL token acquisition...", false);
 
-                    var token = await acquireToken(cfg);
-                    var claims = decodeJwtPayload(token);
-
-                    log("Token validation passed.", false);
-                    if (claims) {
-                        log("aud: " + (claims.aud || ""), false);
-                        log("scp: " + (claims.scp || claims.roles || ""), false);
-                        log("oid: " + (claims.oid || ""), false);
-                        log("appid/azp: " + (claims.appid || claims.azp || ""), false);
+                    var token = await acquireTokenOrRedirect(cfg, "token");
+                    if (token) {
+                        completeToken(token);
                     }
-                    log("Access token:\n" + token, false);
                 } catch (e) {
                     log("Token validation failed: " + (e.message || e), true);
                 }
@@ -492,15 +581,10 @@
                     validateConfig(cfg, true);
                     log("Starting full integration validation...", false);
 
-                    var token = await acquireToken(cfg);
-                    var claims = decodeJwtPayload(token);
-                    log("Token acquired. scp/roles: " + (claims ? (claims.scp || claims.roles || "") : "n/a"), false);
-                    log("Access token:\n" + token, false);
-
-                    var result = await callBoomi(cfg, token);
-                    log("Boomi integration validation passed. HTTP " + result.status, false);
-                    log("Response (first 120 chars): " + result.body.substring(0, 120) + "...", false);
-                    log(VALIDATOR_NAME + " completed successfully.", false);
+                    var token = await acquireTokenOrRedirect(cfg, "call");
+                    if (token) {
+                        await completeCall(cfg, token);
+                    }
                 } catch (e) {
                     log("Integration validation failed: " + (e.message || e), true);
                 }
