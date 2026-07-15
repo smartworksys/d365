@@ -59,12 +59,20 @@
                 throw new Error("MSAL library not found as a web resource.");
             }
 
-            function validatorReturnUrl() {
+            function validatorReturnUrl(cfg) {
+                // Prefer the exact URL that loaded the validator (kept in app context).
+                if (cfg && cfg.returnUrl) { return cfg.returnUrl; }
                 return window.location.origin +
                     "/main.aspx?pagetype=webresource&webresourceName=kofc_BoomiIntegrationValidator.html";
             }
 
             async function run() {
+                // Inside the ssoSilent hidden iframe: do NOTHING. The validator (parent) reads
+                // the hash itself; if we processed/navigated here we'd break silent SSO.
+                if (window.self !== window.top) {
+                    return;
+                }
+
                 // No auth response in the URL: nothing to do (page opened directly).
                 if (window.location.hash.indexOf("code=") < 0 &&
                     window.location.hash.indexOf("error=") < 0 &&
@@ -104,7 +112,7 @@
                             action: cfg.action || "token"
                         }));
                         setMsg("Sign-in complete. Returning to validator...");
-                        window.location.href = validatorReturnUrl();
+                        window.location.href = validatorReturnUrl(cfg);
                         return;
                     }
 
@@ -402,11 +410,23 @@
                 }
             }
 
+            function getReturnUrl() {
+                // The exact URL that actually loaded this validator (the D365 shell URL).
+                // We return here after sign-in so we stay in the app context instead of
+                // a bare main.aspx that D365 bounces to the admin/home page.
+                try {
+                    return window.top.location.href;
+                } catch (e) {
+                    return window.location.href;
+                }
+            }
+
             function saveState(cfg, action) {
                 try {
                     var payload = {};
                     Object.keys(cfg).forEach(function (k) { payload[k] = cfg[k]; });
                     payload.action = action;
+                    payload.returnUrl = getReturnUrl();
                     localStorage.setItem(CFG_KEY, JSON.stringify(payload));
                 } catch (e) {
                     // ignore
