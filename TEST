@@ -2,15 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>Auth Callback</title>
+    <title>Auth Callback / Results</title>
     <style>
-        body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #333; }
+        body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #333; max-width: 900px; }
+        h1 { font-size: 1.15rem; }
         .msg { font-size: 0.95rem; }
         .err { color: #a4262c; }
+        pre { background: #f3f2f1; border: 1px solid #ccc; padding: 12px; white-space: pre-wrap;
+              word-break: break-all; font-size: 0.85rem; }
+        a.button { display: inline-block; margin-top: 8px; }
     </style>
 </head>
 <body>
+    <h1>Boomi Integration Validator — Result</h1>
     <p id="msg" class="msg">Completing sign-in...</p>
+    <pre id="log"></pre>
     <script>
         (function () {
             "use strict";
@@ -18,10 +24,16 @@
             var CFG_KEY = "biv_cfg";
             var RESULT_KEY = "biv_result";
             var msgEl = document.getElementById("msg");
+            var logEl = document.getElementById("log");
 
             function setMsg(text, isErr) {
                 msgEl.textContent = text;
                 msgEl.className = isErr ? "msg err" : "msg";
+            }
+
+            function log(text, isErr) {
+                logEl.textContent += "[" + new Date().toLocaleTimeString() + "] " + text + "\n";
+                if (isErr) { logEl.className = "err"; }
             }
 
             function readCfg() {
@@ -31,6 +43,39 @@
                 } catch (e) {
                     return null;
                 }
+            }
+
+            function decodeJwtPayload(token) {
+                try {
+                    var parts = token.split(".");
+                    if (parts.length < 2) { return null; }
+                    var json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
+                    return JSON.parse(json);
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            async function callBoomi(cfg, token) {
+                var query = new URLSearchParams({ userId: cfg.userId });
+                if (cfg.oppId) { query.append("oppID", cfg.oppId); }
+                var url = cfg.boomiUrl + (cfg.boomiUrl.indexOf("?") >= 0 ? "&" : "?") + query.toString();
+                log("Calling Boomi: " + url);
+                log("Sending headers: Authorization (Bearer), x-api-key");
+
+                var response = await fetch(url, {
+                    method: "GET",
+                    headers: {
+                        "Authorization": "Bearer " + token,
+                        "x-api-key": cfg.boomiApiKey,
+                        "Accept": "text/plain"
+                    }
+                });
+                var body = await response.text();
+                if (!response.ok) {
+                    throw new Error("Boomi returned " + response.status + ": " + body);
+                }
+                return { status: response.status, body: body };
             }
 
             function loadScript(src) {
@@ -59,21 +104,36 @@
                 throw new Error("MSAL library not found as a web resource.");
             }
 
-            function validatorReturnUrl(cfg) {
-                // Prefer the exact URL that loaded the validator (kept in app context).
-                if (cfg && cfg.returnUrl) { return cfg.returnUrl; }
-                return window.location.origin +
-                    "/main.aspx?pagetype=webresource&webresourceName=kofc_BoomiIntegrationValidator.html";
+            async function showResults(cfg, token) {
+                var claims = decodeJwtPayload(token);
+                setMsg("Sign-in complete.");
+                if (claims) {
+                    log("aud: " + (claims.aud || ""));
+                    log("scp: " + (claims.scp || claims.roles || ""));
+                    log("oid: " + (claims.oid || ""));
+                    log("appid/azp: " + (claims.appid || claims.azp || ""));
+                }
+                log("Access token:\n" + token);
+
+                if (cfg.action === "call") {
+                    try {
+                        var res = await callBoomi(cfg, token);
+                        log("Boomi integration validation passed. HTTP " + res.status);
+                        log("Response (first 200 chars): " + res.body.substring(0, 200));
+                    } catch (e) {
+                        setMsg("Boomi call failed.", true);
+                        log("Boomi call failed: " + (e && e.message ? e.message : e), true);
+                    }
+                }
             }
 
             async function run() {
                 // Inside the ssoSilent hidden iframe: do NOTHING. The validator (parent) reads
-                // the hash itself; if we processed/navigated here we'd break silent SSO.
+                // the hash itself; processing/navigating here would break silent SSO.
                 if (window.self !== window.top) {
                     return;
                 }
 
-                // No auth response in the URL: nothing to do (page opened directly).
                 if (window.location.hash.indexOf("code=") < 0 &&
                     window.location.hash.indexOf("error=") < 0 &&
                     window.location.search.indexOf("code=") < 0) {
@@ -89,7 +149,6 @@
 
                 try {
                     await ensureMsal();
-
                     var pca = new msal.PublicClientApplication({
                         auth: {
                             clientId: cfg.clientId,
@@ -97,7 +156,6 @@
                             redirectUri: window.location.href.split("#")[0].split("?")[0]
                         },
                         cache: {
-                            // Shared with the validator (same origin) so the PKCE verifier is found.
                             cacheLocation: "localStorage",
                             storeAuthStateInCookie: true
                         }
@@ -111,14 +169,14 @@
                             accessToken: result.accessToken,
                             action: cfg.action || "token"
                         }));
-                        setMsg("Sign-in complete. Returning to validator...");
-                        window.location.href = validatorReturnUrl(cfg);
+                        await showResults(cfg, result.accessToken);
                         return;
                     }
 
                     setMsg("No token in the response. Start again from the validator.", true);
                 } catch (e) {
-                    setMsg("Sign-in failed: " + (e && e.message ? e.message : e), true);
+                    setMsg("Sign-in failed.", true);
+                    log((e && e.message ? e.message : String(e)), true);
                 }
             }
 
@@ -128,720 +186,4 @@
 </body>
 </html>
 
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <title>Boomi Integration Validator</title>
-    <style>
-        body {
-            font-family: Segoe UI, Arial, sans-serif;
-            margin: 16px;
-            max-width: 900px;
-        }
-
-        h1 {
-            font-size: 1.25rem;
-            margin-bottom: 8px;
-        }
-
-        fieldset {
-            border: 1px solid #ccc;
-            margin-bottom: 12px;
-            padding: 12px;
-        }
-
-        legend {
-            font-weight: 600;
-        }
-
-        label {
-            display: block;
-            margin: 8px 0 4px;
-            font-size: 0.9rem;
-        }
-
-        input[type="text"],
-        input[type="password"] {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 6px 8px;
-        }
-
-        button {
-            margin-right: 8px;
-            margin-top: 8px;
-            padding: 8px 14px;
-            cursor: pointer;
-        }
-
-        pre {
-            background: #f4f4f4;
-            border: 1px solid #ddd;
-            padding: 10px;
-            white-space: pre-wrap;
-            word-break: break-word;
-            max-height: 320px;
-            overflow: auto;
-        }
-
-        .ok {
-            color: #107c10;
-        }
-
-        .err {
-            color: #a4262c;
-        }
-
-        .hint {
-            color: #605e5c;
-            font-size: 0.85rem;
-        }
-    </style>
-
-    <script src="ClientGlobalContext.js.aspx" type="text/javascript"></script>
-    <script src="kofc_msal-browser.min.js" type="text/javascript"></script>
-</head>
-<body>
-    <h1>Boomi Integration Validator</h1>
-    <p class="hint">
-        Validate MSAL token acquisition and the Dynamics → Boomi → Function App path.
-        <code>userId</code> can be entered manually or passed in the URL.
-    </p>
-    <p class="hint">
-        <strong>MSAL setup (required):</strong> Upload <code>kofc_msal-browser.min.js</code> as a <strong>Script</strong> web resource.
-        Download from
-        <a href="https://github.com/AzureAD/microsoft-authentication-library-for-js/releases" target="_blank" rel="noopener">MSAL.js releases</a>
-        (<code>msal-browser.min.js</code> from the <code>lib</code> folder in the package).
-    </p>
-    <p class="hint">
-        <strong>Best URL (inside D365 shell):</strong><br />
-        <code>https://&lt;yourorg&gt;.crm.dynamics.com/main.aspx?pagetype=webresource&amp;webresourceName=kofc_BoomiIntegrationValidator</code><br />
-        <strong>With params:</strong> append <code>&amp;userId=&lt;guid&gt;&amp;oppID=&lt;guid&gt;</code><br />
-        <strong>From D365 console (F12):</strong>
-        <code>Xrm.Navigation.openWebResource("kofc_BoomiIntegrationValidator")</code>
-    </p>
-
-    <fieldset>
-        <legend>Config</legend>
-        <label for="tenantId">Tenant ID</label>
-        <input id="tenantId" type="text" value="11111111-1111-1111-1111-111111111111" placeholder="00000000-0000-0000-0000-000000000000" />
-
-        <label for="clientId">SPA Client ID</label>
-        <input id="clientId" type="text" value="22222222-2222-2222-2222-222222222222" placeholder="SPA app registration client ID" />
-
-        <label for="apiAppId">Function API App ID (for scope)</label>
-        <input id="apiAppId" type="text" value="33333333-3333-3333-3333-333333333333" placeholder="Function App API app registration ID" />
-
-        <label for="scopes">Delegated scope(s) — space separated (must be exposed on the API app)</label>
-        <input id="scopes" type="text" value="access_as_user" placeholder="access_as_user" />
-
-        <label for="loginHint">Login hint (email/UPN) — used for silent SSO</label>
-        <input id="loginHint" type="text" placeholder="user@yourtenant.com" />
-
-        <label for="redirectUri">Redirect URI — the served callback page, NO query string, must match Entra (register only this one)</label>
-        <input id="redirectUri" type="text" placeholder="https://yourorg.crm.dynamics.com/WebResources/kofc_msalcallback.html" />
-
-        <label for="boomiUrl">Boomi URL (no query string)</label>
-        <input id="boomiUrl" type="text" value="https://your-boomi-host/ws/rest/YourProcess" placeholder="https://your-boomi-host/ws/rest/YourProcess" />
-
-        <label for="boomiApiKey">Boomi API key (x-api-key)</label>
-        <input id="boomiApiKey" type="password" value="REPLACE_WITH_BOOMI_API_KEY" placeholder="Boomi API key" autocomplete="off" />
-    </fieldset>
-
-    <fieldset>
-        <legend>Request params</legend>
-        <label for="userId">userId (Dataverse systemuserid)</label>
-        <input id="userId" type="text" value="44444444-4444-4444-4444-444444444444" placeholder="Auto-filled from D365 when available" />
-
-        <label for="oppId">oppID (optional)</label>
-        <input id="oppId" type="text" value="55555555-5555-5555-5555-555555555555" placeholder="Opportunity GUID" />
-    </fieldset>
-
-    <button id="btnToken" type="button">1. Validate token</button>
-    <button id="btnCall" type="button">2. Validate full integration</button>
-    <button id="btnClear" type="button">Clear log</button>
-
-    <h2>Validation log</h2>
-    <pre id="log"></pre>
-
-    <script>
-        (function () {
-            "use strict";
-
-            var VALIDATOR_NAME = "Boomi Integration Validator";
-            var logEl = document.getElementById("log");
-            var msalApp = null;
-            var msalLoadPromise = null;
-            var authInProgress = false;
-
-            function log(message, isError) {
-                var line = "[" + new Date().toLocaleTimeString() + "] " + message;
-                logEl.textContent += line + "\n";
-                logEl.className = isError ? "err" : "";
-                console.log(message);
-            }
-
-            function clean(value) {
-                // Strip surrounding whitespace and any stray quotes from pasted values.
-                return (value || "").trim().replace(/^["']+|["']+$/g, "");
-            }
-
-            function getConfig() {
-                return {
-                    tenantId: clean(document.getElementById("tenantId").value),
-                    clientId: clean(document.getElementById("clientId").value),
-                    apiAppId: clean(document.getElementById("apiAppId").value),
-                    scopes: clean(document.getElementById("scopes").value),
-                    loginHint: clean(document.getElementById("loginHint").value),
-                    redirectUri: clean(document.getElementById("redirectUri").value),
-                    boomiUrl: document.getElementById("boomiUrl").value.trim(),
-                    boomiApiKey: document.getElementById("boomiApiKey").value.trim(),
-                    userId: clean(document.getElementById("userId").value),
-                    oppId: clean(document.getElementById("oppId").value)
-                };
-            }
-
-            function validateConfig(cfg, requireBoomi) {
-                if (!cfg.tenantId || !cfg.clientId || !cfg.apiAppId) {
-                    throw new Error("Tenant ID, SPA Client ID, and Function API App ID are required.");
-                }
-                if (requireBoomi && !cfg.boomiUrl) {
-                    throw new Error("Boomi URL is required.");
-                }
-                if (requireBoomi && !cfg.userId) {
-                    throw new Error("userId is required.");
-                }
-                if (requireBoomi && !cfg.boomiApiKey) {
-                    throw new Error("Boomi API key (x-api-key) is required.");
-                }
-            }
-
-            function getScopes(cfg) {
-                var raw = (cfg.scopes || "access_as_user").split(/\s+/);
-                return raw
-                    .filter(function (s) { return s; })
-                    .map(function (s) {
-                        // Allow either bare scope names or full api://.../scope values.
-                        return s.indexOf("api://") === 0 ? s : "api://" + cfg.apiAppId + "/" + s;
-                    });
-            }
-
-            function tryLoadScript(src) {
-                return new Promise(function (resolve, reject) {
-                    var script = document.createElement("script");
-                    script.src = src;
-                    script.onload = function () {
-                        resolve(typeof msal !== "undefined");
-                    };
-                    script.onerror = function () {
-                        reject(new Error("404/blocked: " + src));
-                    };
-                    document.head.appendChild(script);
-                });
-            }
-
-            async function loadMsalLibrary() {
-                if (typeof msal !== "undefined") {
-                    return;
-                }
-
-                if (msalLoadPromise) {
-                    return msalLoadPromise;
-                }
-
-                // The uploaded MSAL web resource name varies; try common variants.
-                var base = window.location.origin + "/WebResources/";
-                var candidates = [
-                    "kofc_msal-browser.min.js",
-                    "kofc_msalbrowsermin",
-                    "kofc_msal_browser_min",
-                    "kofc_msalbrowser.min.js",
-                    "kofc_msal-browser"
-                ];
-
-                msalLoadPromise = (async function () {
-                    for (var i = 0; i < candidates.length; i++) {
-                        try {
-                            log("Loading MSAL from: " + base + candidates[i], false);
-                            await tryLoadScript(base + candidates[i]);
-                            if (typeof msal !== "undefined") {
-                                log("MSAL loaded: " + candidates[i], false);
-                                return;
-                            }
-                        } catch (e) {
-                            // Try next candidate.
-                        }
-                    }
-                    throw new Error(
-                        "MSAL blocked or missing. Upload the MSAL bundle as a Script web resource and make its " +
-                        "name match one of: " + candidates.join(", ") + " (or tell me the exact name you used)."
-                    );
-                })();
-
-                return msalLoadPromise;
-            }
-
-            var CFG_KEY = "biv_cfg";       // shared with callback (localStorage)
-            var RESULT_KEY = "biv_result"; // token result written by callback
-
-            function getDefaultRedirectUri() {
-                // Point at the minimal, SERVED callback page (kofc_msalcallback.html), not the
-                // validator itself. This is the single SPA redirect URI to register in Entra
-                // and lets ssoSilent (hidden iframe) complete without any popup/redirect.
-                return window.location.origin + "/WebResources/kofc_msalcallback.html";
-            }
-
-            function getRedirectUri() {
-                // MUST be a served URL (no 404), with NO query string, and registered in
-                // Entra as a SPA redirect URI. If /WebResources/<name>.html 404s, set this
-                // field to the exact URL that actually loads the validator top-level.
-                var el = document.getElementById("redirectUri");
-                var val = el ? clean(el.value) : "";
-                return val || getDefaultRedirectUri();
-            }
-
-            function isFramed() {
-                try {
-                    return window.self !== window.top;
-                } catch (e) {
-                    return true;
-                }
-            }
-
-            function getReturnUrl() {
-                // The exact URL that actually loaded this validator (the D365 shell URL).
-                // We return here after sign-in so we stay in the app context instead of
-                // a bare main.aspx that D365 bounces to the admin/home page.
-                try {
-                    return window.top.location.href;
-                } catch (e) {
-                    return window.location.href;
-                }
-            }
-
-            function saveState(cfg, action) {
-                try {
-                    var payload = {};
-                    Object.keys(cfg).forEach(function (k) { payload[k] = cfg[k]; });
-                    payload.action = action;
-                    payload.returnUrl = getReturnUrl();
-                    localStorage.setItem(CFG_KEY, JSON.stringify(payload));
-                } catch (e) {
-                    // ignore
-                }
-            }
-
-            function readCfgState() {
-                try {
-                    var raw = localStorage.getItem(CFG_KEY);
-                    return raw ? JSON.parse(raw) : null;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            function readResult() {
-                try {
-                    var raw = localStorage.getItem(RESULT_KEY);
-                    return raw ? JSON.parse(raw) : null;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            function clearResult() {
-                try {
-                    localStorage.removeItem(RESULT_KEY);
-                } catch (e) {
-                    // ignore
-                }
-            }
-
-            function applyConfigToForm(cfg) {
-                if (!cfg) {
-                    return;
-                }
-                var map = {
-                    tenantId: cfg.tenantId, clientId: cfg.clientId, apiAppId: cfg.apiAppId,
-                    scopes: cfg.scopes, loginHint: cfg.loginHint, redirectUri: cfg.redirectUri,
-                    boomiUrl: cfg.boomiUrl, boomiApiKey: cfg.boomiApiKey,
-                    userId: cfg.userId, oppId: cfg.oppId
-                };
-                Object.keys(map).forEach(function (id) {
-                    var el = document.getElementById(id);
-                    if (el && typeof map[id] === "string" && map[id]) {
-                        el.value = map[id];
-                    }
-                });
-            }
-
-            function buildNavigationClient() {
-                // When framed inside the D365 shell, navigate the TOP window to Microsoft
-                // (same origin, so this is allowed). This avoids the redirect_in_iframe error
-                // and Microsoft's login page cannot be framed anyway.
-                var client = new msal.NavigationClient();
-                client.navigateExternal = function (url, options) {
-                    try {
-                        var target = isFramed() ? window.top : window;
-                        target.location.href = url;
-                    } catch (e) {
-                        window.location.href = url;
-                    }
-                    return Promise.resolve(true);
-                };
-                return client;
-            }
-
-            async function initializeMsal(cfg) {
-                await loadMsalLibrary();
-
-                if (!msalApp) {
-                    msalApp = new msal.PublicClientApplication({
-                        auth: {
-                            clientId: cfg.clientId,
-                            authority: "https://login.microsoftonline.com/" + cfg.tenantId,
-                            redirectUri: getRedirectUri(),
-                            navigateToLoginRequestUrl: false
-                        },
-                        cache: {
-                            // localStorage is shared with the callback page (same origin) so it can
-                            // complete the code exchange with the PKCE verifier this page created.
-                            cacheLocation: "localStorage",
-                            storeAuthStateInCookie: true
-                        },
-                        system: {
-                            // Skip MSAL's iframe guard; our navigationClient drives the TOP window,
-                            // so the interactive redirect leaves the frame instead of navigating it.
-                            allowRedirectInIframe: true,
-                            navigationClient: buildNavigationClient()
-                        }
-                    });
-                    await msalApp.initialize();
-                }
-
-                return msalApp;
-            }
-
-            // Returns an access token if silent works; otherwise starts a full-page
-            // redirect (this function will not return in that case).
-            async function acquireTokenOrRedirect(cfg, action) {
-                if (authInProgress) {
-                    throw new Error("A sign-in is already in progress.");
-                }
-
-                var app = await initializeMsal(cfg);
-                var scopes = getScopes(cfg);
-                log("Requesting scopes: " + scopes.join(" "), false);
-                log("Redirect URI: " + getRedirectUri(), false);
-
-                // 1) Silent with a cached MSAL account (works after first sign-in).
-                var accounts = app.getAllAccounts();
-                if (accounts.length > 0) {
-                    try {
-                        log("Trying acquireTokenSilent (cached account)...", false);
-                        var silent = await app.acquireTokenSilent({
-                            scopes: scopes,
-                            account: accounts[0]
-                        });
-                        return silent.accessToken;
-                    } catch (silentError) {
-                        log("Cached silent failed: " + (silentError.errorCode || silentError.message), false);
-                    }
-                }
-
-                // 2) ssoSilent using your existing AAD session (hidden iframe, prompt=none).
-                //    This avoids popup/redirect entirely and works inside the D365 frame.
-                try {
-                    var loginHint = getLoginHint();
-                    log("Trying ssoSilent" + (loginHint ? " (loginHint: " + loginHint + ")" : "") + "...", false);
-                    var sso = await app.ssoSilent({
-                        scopes: scopes,
-                        loginHint: loginHint || undefined
-                    });
-                    return sso.accessToken;
-                } catch (ssoError) {
-                    log("ssoSilent failed: " + (ssoError.errorCode || ssoError.message)
-                        + " — falling back to interactive redirect.", false);
-                }
-
-                // 3) Interactive redirect fallback (full page).
-                authInProgress = true;
-                saveState(cfg, action);
-                log("Redirecting to Microsoft sign-in (full page)...", false);
-                await app.acquireTokenRedirect({
-                    scopes: scopes,
-                    redirectStartPage: getRedirectUri()
-                });
-                // Page navigates away here; nothing after runs.
-                return null;
-            }
-
-            function getLoginHint() {
-                // ssoSilent needs a hint (UPN/email) to pick the account silently.
-                try {
-                    var ctx = getD365Context();
-                    if (ctx && ctx.userSettings && ctx.userSettings.userName
-                        && ctx.userSettings.userName.indexOf("@") > 0) {
-                        return ctx.userSettings.userName;
-                    }
-                } catch (e) {
-                    // ignore
-                }
-                var el = document.getElementById("loginHint");
-                return el && el.value ? clean(el.value) : "";
-            }
-
-            function decodeJwtPayload(token) {
-                try {
-                    var parts = token.split(".");
-                    if (parts.length < 2) {
-                        return null;
-                    }
-                    var json = atob(parts[1].replace(/-/g, "+").replace(/_/g, "/"));
-                    return JSON.parse(json);
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            async function callBoomi(cfg, token) {
-                var query = new URLSearchParams({ userId: cfg.userId });
-                if (cfg.oppId) {
-                    query.append("oppID", cfg.oppId);
-                }
-
-                var url = cfg.boomiUrl + (cfg.boomiUrl.indexOf("?") >= 0 ? "&" : "?") + query.toString();
-                log("Calling Boomi: " + url, false);
-                log("Sending headers: Authorization (Bearer), x-api-key", false);
-
-                var response = await fetch(url, {
-                    method: "GET",
-                    headers: {
-                        "Authorization": "Bearer " + token,
-                        "x-api-key": cfg.boomiApiKey,
-                        "Accept": "text/plain"
-                    }
-                });
-
-                var body = await response.text();
-
-                if (!response.ok) {
-                    throw new Error("Boomi returned " + response.status + ": " + body);
-                }
-
-                return {
-                    status: response.status,
-                    body: body
-                };
-            }
-
-            function getXrm() {
-                if (typeof Xrm !== "undefined") {
-                    return Xrm;
-                }
-
-                try {
-                    if (window.parent && window.parent.Xrm) {
-                        return window.parent.Xrm;
-                    }
-                    if (window.top && window.top.Xrm) {
-                        return window.top.Xrm;
-                    }
-                } catch (e) {
-                    // Cross-origin frame access can throw; ignore and continue.
-                }
-
-                return null;
-            }
-
-            function getD365Context() {
-                try {
-                    if (typeof GetGlobalContext === "function") {
-                        return GetGlobalContext();
-                    }
-                } catch (e) {
-                    // Continue to Xrm fallback.
-                }
-
-                var xrm = getXrm();
-                if (xrm && xrm.Utility && xrm.Utility.getGlobalContext) {
-                    return xrm.Utility.getGlobalContext();
-                }
-
-                return null;
-            }
-
-            function normalizeGuid(value) {
-                return (value || "").replace(/[{}]/g, "").trim();
-            }
-
-            function prefillFromUrl() {
-                var params = new URLSearchParams(window.location.search);
-                var userId = normalizeGuid(params.get("userId") || params.get("userid"));
-                var oppId = normalizeGuid(params.get("oppID") || params.get("oppid"));
-
-                if (userId) {
-                    document.getElementById("userId").value = userId;
-                    log("Prefilled userId from URL: " + userId, false);
-                }
-                if (oppId) {
-                    document.getElementById("oppId").value = oppId;
-                    log("Prefilled oppID from URL: " + oppId, false);
-                }
-            }
-
-            async function prefillFromDynamics() {
-                log(VALIDATOR_NAME + " ready.", false);
-                prefillFromUrl();
-
-                try {
-                    var ctx = getD365Context();
-                    if (!ctx || !ctx.userSettings || !ctx.userSettings.userId) {
-                        if (!document.getElementById("userId").value) {
-                            log("D365 context not auto-detected. Enter userId manually, use URL params, or open via main.aspx link above.", false);
-                        }
-                        return;
-                    }
-
-                    var currentUserId = normalizeGuid(ctx.userSettings.userId);
-                    if (!document.getElementById("userId").value) {
-                        document.getElementById("userId").value = currentUserId;
-                        log("Prefilled userId from D365 context: " + currentUserId, false);
-                    }
-
-                    var page = null;
-                    try {
-                        var xrm = getXrm();
-                        if (xrm && xrm.Page && xrm.Page.data && xrm.Page.data.entity) {
-                            page = xrm.Page;
-                        } else if (window.parent && window.parent.Xrm && window.parent.Xrm.Page) {
-                            page = window.parent.Xrm.Page;
-                        }
-                    } catch (e) {
-                        // Ignore frame access errors.
-                    }
-
-                    if (!document.getElementById("oppId").value && page && page.data && page.data.entity) {
-                        var entityName = page.data.entity.getEntityName();
-                        if (entityName === "opportunity") {
-                            var oppId = normalizeGuid(page.data.entity.getId());
-                            document.getElementById("oppId").value = oppId;
-                            log("Prefilled oppID from Opportunity form: " + oppId, false);
-                        }
-                    }
-                } catch (e) {
-                    log("Could not prefill from D365: " + e.message, true);
-                }
-            }
-
-            function completeToken(token) {
-                var claims = decodeJwtPayload(token);
-                log("Token validation passed.", false);
-                if (claims) {
-                    log("aud: " + (claims.aud || ""), false);
-                    log("scp: " + (claims.scp || claims.roles || ""), false);
-                    log("oid: " + (claims.oid || ""), false);
-                    log("appid/azp: " + (claims.appid || claims.azp || ""), false);
-                }
-                log("Access token:\n" + token, false);
-            }
-
-            async function completeCall(cfg, token) {
-                var claims = decodeJwtPayload(token);
-                log("Token acquired. scp/roles: " + (claims ? (claims.scp || claims.roles || "") : "n/a"), false);
-                log("Access token:\n" + token, false);
-
-                var result = await callBoomi(cfg, token);
-                log("Boomi integration validation passed. HTTP " + result.status, false);
-                log("Response (first 120 chars): " + result.body.substring(0, 120) + "...", false);
-                log(VALIDATOR_NAME + " completed successfully.", false);
-            }
-
-            // Runs on load. The callback page completes the code exchange and stores the
-            // token in localStorage (RESULT_KEY); here we consume it and continue.
-            async function handleRedirectReturn() {
-                var result = readResult();
-                if (!result || !result.accessToken) {
-                    return;
-                }
-
-                var cfg = readCfgState() || getConfig();
-                applyConfigToForm(cfg);
-                clearResult();
-
-                try {
-                    log("Returned from Microsoft sign-in (token received).", false);
-                    if (result.action === "call") {
-                        await completeCall(cfg, result.accessToken);
-                    } else {
-                        completeToken(result.accessToken);
-                    }
-                } catch (e) {
-                    log("Post-sign-in step failed: " + (e.message || e), true);
-                }
-            }
-
-            async function startup() {
-                var riEl = document.getElementById("redirectUri");
-                if (riEl && !riEl.value) {
-                    riEl.value = getDefaultRedirectUri();
-                }
-
-                try {
-                    await loadMsalLibrary();
-                    log("MSAL loaded from org web resource.", false);
-                } catch (e) {
-                    log((e.message || e), true);
-                }
-
-                if (isFramed()) {
-                    log("Note: running inside the D365 frame. Sign-in will navigate the top window, " +
-                        "then return to the redirect URI: " + getRedirectUri(), false);
-                }
-
-                await prefillFromDynamics();
-                await handleRedirectReturn();
-            }
-
-            document.getElementById("btnToken").addEventListener("click", async function () {
-                try {
-                    var cfg = getConfig();
-                    validateConfig(cfg, false);
-                    log("Validating MSAL token acquisition...", false);
-
-                    var token = await acquireTokenOrRedirect(cfg, "token");
-                    if (token) {
-                        completeToken(token);
-                    }
-                } catch (e) {
-                    log("Token validation failed: " + (e.message || e), true);
-                }
-            });
-
-            document.getElementById("btnCall").addEventListener("click", async function () {
-                try {
-                    var cfg = getConfig();
-                    validateConfig(cfg, true);
-                    log("Starting full integration validation...", false);
-
-                    var token = await acquireTokenOrRedirect(cfg, "call");
-                    if (token) {
-                        await completeCall(cfg, token);
-                    }
-                } catch (e) {
-                    log("Integration validation failed: " + (e.message || e), true);
-                }
-            });
-
-            document.getElementById("btnClear").addEventListener("click", function () {
-                logEl.textContent = "";
-                logEl.className = "";
-            });
-
-            startup();
-        })();
-    </script>
-</body>
-</html>
+Object.keys(localStorage).filter(k => k.startsWith('biv_') || k.startsWith('msal')).forEach(k => localStorage.removeItem(k));
