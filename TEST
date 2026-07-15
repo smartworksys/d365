@@ -109,8 +109,8 @@
         <label for="loginHint">Login hint (email/UPN) — used for silent SSO</label>
         <input id="loginHint" type="text" placeholder="user@yourtenant.com" />
 
-        <label for="redirectUri">Redirect URI — the served page URL, NO query string, must match Entra</label>
-        <input id="redirectUri" type="text" placeholder="https://yourorg.crm.dynamics.com/WebResources/kofc_BoomiIntegrationValidator.html" />
+        <label for="redirectUri">Redirect URI — the served callback page, NO query string, must match Entra (register only this one)</label>
+        <input id="redirectUri" type="text" placeholder="https://yourorg.crm.dynamics.com/WebResources/kofc_msalcallback.html" />
 
         <label for="boomiUrl">Boomi URL (no query string)</label>
         <input id="boomiUrl" type="text" value="https://your-boomi-host/ws/rest/YourProcess" placeholder="https://your-boomi-host/ws/rest/YourProcess" />
@@ -255,7 +255,10 @@
             var STATE_KEY = "biv_pending_state";
 
             function getDefaultRedirectUri() {
-                return window.location.origin + "/WebResources/kofc_BoomiIntegrationValidator.html";
+                // Point at the minimal, SERVED callback page (kofc_msalcallback.html), not the
+                // validator itself. This is the single SPA redirect URI to register in Entra
+                // and lets ssoSilent (hidden iframe) complete without any popup/redirect.
+                return window.location.origin + "/WebResources/kofc_msalcallback.html";
             }
 
             function getRedirectUri() {
