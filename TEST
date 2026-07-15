@@ -109,6 +109,9 @@
         <label for="loginHint">Login hint (email/UPN) — used for silent SSO</label>
         <input id="loginHint" type="text" placeholder="user@yourtenant.com" />
 
+        <label for="redirectUri">Redirect URI — the served page URL, NO query string, must match Entra</label>
+        <input id="redirectUri" type="text" placeholder="https://yourorg.crm.dynamics.com/WebResources/kofc_BoomiIntegrationValidator.html" />
+
         <label for="boomiUrl">Boomi URL (no query string)</label>
         <input id="boomiUrl" type="text" value="https://your-boomi-host/ws/rest/YourProcess" placeholder="https://your-boomi-host/ws/rest/YourProcess" />
 
@@ -160,6 +163,8 @@
                     clientId: clean(document.getElementById("clientId").value),
                     apiAppId: clean(document.getElementById("apiAppId").value),
                     scopes: clean(document.getElementById("scopes").value),
+                    loginHint: clean(document.getElementById("loginHint").value),
+                    redirectUri: clean(document.getElementById("redirectUri").value),
                     boomiUrl: document.getElementById("boomiUrl").value.trim(),
                     boomiApiKey: document.getElementById("boomiApiKey").value.trim(),
                     userId: clean(document.getElementById("userId").value),
@@ -249,11 +254,17 @@
 
             var STATE_KEY = "biv_pending_state";
 
-            function getRedirectUri() {
-                // Redirect flow returns to THIS page (single tab), which avoids the
-                // popup/opener split that Edge automatic profile switching breaks.
-                // Register this EXACT URI in Entra (SPA redirect URIs).
+            function getDefaultRedirectUri() {
                 return window.location.origin + "/WebResources/kofc_BoomiIntegrationValidator.html";
+            }
+
+            function getRedirectUri() {
+                // MUST be a served URL (no 404), with NO query string, and registered in
+                // Entra as a SPA redirect URI. If /WebResources/<name>.html 404s, set this
+                // field to the exact URL that actually loads the validator top-level.
+                var el = document.getElementById("redirectUri");
+                var val = el ? clean(el.value) : "";
+                return val || getDefaultRedirectUri();
             }
 
             function isFramed() {
@@ -295,7 +306,8 @@
                 }
                 var map = {
                     tenantId: cfg.tenantId, clientId: cfg.clientId, apiAppId: cfg.apiAppId,
-                    scopes: cfg.scopes, boomiUrl: cfg.boomiUrl, boomiApiKey: cfg.boomiApiKey,
+                    scopes: cfg.scopes, loginHint: cfg.loginHint, redirectUri: cfg.redirectUri,
+                    boomiUrl: cfg.boomiUrl, boomiApiKey: cfg.boomiApiKey,
                     userId: cfg.userId, oppId: cfg.oppId
                 };
                 Object.keys(map).forEach(function (id) {
@@ -616,6 +628,11 @@
             }
 
             async function startup() {
+                var riEl = document.getElementById("redirectUri");
+                if (riEl && !riEl.value) {
+                    riEl.value = getDefaultRedirectUri();
+                }
+
                 try {
                     await loadMsalLibrary();
                     log("MSAL loaded from org web resource.", false);
