@@ -2,32 +2,38 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>Auth Redirect</title>
-    <!-- Minimal, fast-loading redirect target for MSAL popup/redirect flows.
-         Must be registered in Entra as a SPA redirect URI:
-         https://<yourorg>.crm.dynamics.com/WebResources/kofc_authredirect -->
+    <title>Authentication Callback</title>
+    <!--
+      MSAL popup/redirect callback target.
+      IMPORTANT: Do NOT call window.close() here. MSAL in the opener window reads the
+      auth response hash from this page's URL and closes the popup itself. Closing early
+      causes 'timed_out' or 'user_cancelled' errors in the opener.
+
+      Register this EXACT URL in Entra (SPA redirect URIs):
+      https://<yourorg>.crm.dynamics.com/WebResources/kofc_msalcallback.html
+    -->
     <script src="kofc_msal-browser.min.js" type="text/javascript"></script>
 </head>
 <body>
-    <p>Authentication complete. You can close this window.</p>
+    <p>Authentication complete. This window will close automatically.</p>
     <script>
         (function () {
             "use strict";
-            // For popup flows MSAL reads the response hash from this page's URL directly.
-            // handleRedirectPromise covers the redirect fallback and clears the hash cleanly.
+            // handleRedirectPromise processes the response for the redirect fallback and
+            // clears the hash. For popup flow the opener reads the hash directly, so this
+            // is a no-op there. Either way, we must not close the window ourselves.
             try {
                 if (typeof msal !== "undefined") {
                     var pca = new msal.PublicClientApplication({
-                        auth: { clientId: "00000000-0000-0000-0000-000000000000" }
+                        auth: { clientId: "00000000-0000-0000-0000-000000000000" },
+                        cache: { cacheLocation: "sessionStorage" }
                     });
-                    pca.initialize().then(function () {
-                        return pca.handleRedirectPromise();
-                    }).catch(function () {
-                        // Popup poller still reads the hash; ignore init errors here.
-                    });
+                    pca.initialize()
+                        .then(function () { return pca.handleRedirectPromise(); })
+                        .catch(function () { /* opener still reads the hash; ignore */ });
                 }
             } catch (e) {
-                // No-op: this page only needs to exist and load fast.
+                // No-op: page only needs to exist, load fast, and keep the hash in the URL.
             }
         })();
     </script>
@@ -173,6 +179,7 @@
             var logEl = document.getElementById("log");
             var msalApp = null;
             var msalLoadPromise = null;
+            var authInProgress = false;
 
             function log(message, isError) {
                 var line = "[" + new Date().toLocaleTimeString() + "] " + message;
@@ -224,41 +231,66 @@
                     });
             }
 
-            function loadMsalLibrary() {
+            function tryLoadScript(src) {
+                return new Promise(function (resolve, reject) {
+                    var script = document.createElement("script");
+                    script.src = src;
+                    script.onload = function () {
+                        resolve(typeof msal !== "undefined");
+                    };
+                    script.onerror = function () {
+                        reject(new Error("404/blocked: " + src));
+                    };
+                    document.head.appendChild(script);
+                });
+            }
+
+            async function loadMsalLibrary() {
                 if (typeof msal !== "undefined") {
-                    return Promise.resolve();
+                    return;
                 }
 
                 if (msalLoadPromise) {
                     return msalLoadPromise;
                 }
 
-                msalLoadPromise = new Promise(function (resolve, reject) {
-                    var script = document.createElement("script");
-                    script.src = window.location.origin + "/WebResources/kofc_msal-browser.min.js";
-                    script.onload = function () {
-                        if (typeof msal === "undefined") {
-                            reject(new Error("MSAL script loaded but msal object was not found."));
-                            return;
+                // The uploaded MSAL web resource name varies; try common variants.
+                var base = window.location.origin + "/WebResources/";
+                var candidates = [
+                    "kofc_msal-browser.min.js",
+                    "kofc_msalbrowsermin",
+                    "kofc_msal_browser_min",
+                    "kofc_msalbrowser.min.js",
+                    "kofc_msal-browser"
+                ];
+
+                msalLoadPromise = (async function () {
+                    for (var i = 0; i < candidates.length; i++) {
+                        try {
+                            log("Loading MSAL from: " + base + candidates[i], false);
+                            await tryLoadScript(base + candidates[i]);
+                            if (typeof msal !== "undefined") {
+                                log("MSAL loaded: " + candidates[i], false);
+                                return;
+                            }
+                        } catch (e) {
+                            // Try next candidate.
                         }
-                        resolve();
-                    };
-                    script.onerror = function () {
-                        reject(new Error(
-                            "MSAL blocked or missing. Upload kofc_msal-browser.min.js as a Script web resource " +
-                            "(Dynamics CSP blocks external CDN scripts)."
-                        ));
-                    };
-                    document.head.appendChild(script);
-                });
+                    }
+                    throw new Error(
+                        "MSAL blocked or missing. Upload the MSAL bundle as a Script web resource and make its " +
+                        "name match one of: " + candidates.join(", ") + " (or tell me the exact name you used)."
+                    );
+                })();
 
                 return msalLoadPromise;
             }
 
             function getRedirectUri() {
                 // Dedicated blank page avoids popup timeout caused by redirecting back
-                // to this heavy validator page. Register this EXACT URI in Entra (SPA).
-                return window.location.origin + "/WebResources/kofc_authredirect";
+                // to this heavy validator page. This page must NOT auto-close.
+                // Register this EXACT URI in Entra (SPA redirect URIs).
+                return window.location.origin + "/WebResources/kofc_msalcallback.html";
             }
 
             async function initializeMsal(cfg) {
@@ -289,6 +321,10 @@
             }
 
             async function acquireToken(cfg) {
+                if (authInProgress) {
+                    throw new Error("A sign-in is already in progress. Finish or close the popup, then try again.");
+                }
+
                 var app = await initializeMsal(cfg);
                 var scopes = getScopes(cfg);
                 log("Requesting scopes: " + scopes.join(" "), false);
@@ -308,11 +344,16 @@
                     }
                 }
 
-                var popup = await app.acquireTokenPopup({
-                    scopes: scopes,
-                    prompt: "select_account"
-                });
-                return popup.accessToken;
+                authInProgress = true;
+                try {
+                    var popup = await app.acquireTokenPopup({
+                        scopes: scopes,
+                        prompt: "select_account"
+                    });
+                    return popup.accessToken;
+                } finally {
+                    authInProgress = false;
+                }
             }
 
             function decodeJwtPayload(token) {
@@ -485,7 +526,7 @@
                         log("oid: " + (claims.oid || ""), false);
                         log("appid/azp: " + (claims.appid || claims.azp || ""), false);
                     }
-                    log("Token (first 40 chars): " + token.substring(0, 40) + "...", false);
+                    log("Access token:\n" + token, false);
                 } catch (e) {
                     log("Token validation failed: " + (e.message || e), true);
                 }
@@ -500,6 +541,7 @@
                     var token = await acquireToken(cfg);
                     var claims = decodeJwtPayload(token);
                     log("Token acquired. scp/roles: " + (claims ? (claims.scp || claims.roles || "") : "n/a"), false);
+                    log("Access token:\n" + token, false);
 
                     var result = await callBoomi(cfg, token);
                     log("Boomi integration validation passed. HTTP " + result.status, false);
