@@ -106,6 +106,9 @@
         <label for="scopes">Delegated scope(s) — space separated (must be exposed on the API app)</label>
         <input id="scopes" type="text" value="access_as_user" placeholder="access_as_user" />
 
+        <label for="loginHint">Login hint (email/UPN) — used for silent SSO</label>
+        <input id="loginHint" type="text" placeholder="user@yourtenant.com" />
+
         <label for="boomiUrl">Boomi URL (no query string)</label>
         <input id="boomiUrl" type="text" value="https://your-boomi-host/ws/rest/YourProcess" placeholder="https://your-boomi-host/ws/rest/YourProcess" />
 
@@ -357,19 +360,37 @@
                 log("Requesting scopes: " + scopes.join(" "), false);
                 log("Redirect URI: " + getRedirectUri(), false);
 
+                // 1) Silent with a cached MSAL account (works after first sign-in).
                 var accounts = app.getAllAccounts();
                 if (accounts.length > 0) {
                     try {
+                        log("Trying acquireTokenSilent (cached account)...", false);
                         var silent = await app.acquireTokenSilent({
                             scopes: scopes,
                             account: accounts[0]
                         });
                         return silent.accessToken;
                     } catch (silentError) {
-                        log("Silent token failed; redirecting to sign in...", false);
+                        log("Cached silent failed: " + (silentError.errorCode || silentError.message), false);
                     }
                 }
 
+                // 2) ssoSilent using your existing AAD session (hidden iframe, prompt=none).
+                //    This avoids popup/redirect entirely and works inside the D365 frame.
+                try {
+                    var loginHint = getLoginHint();
+                    log("Trying ssoSilent" + (loginHint ? " (loginHint: " + loginHint + ")" : "") + "...", false);
+                    var sso = await app.ssoSilent({
+                        scopes: scopes,
+                        loginHint: loginHint || undefined
+                    });
+                    return sso.accessToken;
+                } catch (ssoError) {
+                    log("ssoSilent failed: " + (ssoError.errorCode || ssoError.message)
+                        + " — falling back to interactive redirect.", false);
+                }
+
+                // 3) Interactive redirect fallback (full page).
                 authInProgress = true;
                 saveState(cfg, action);
                 log("Redirecting to Microsoft sign-in (full page)...", false);
@@ -379,6 +400,21 @@
                 });
                 // Page navigates away here; nothing after runs.
                 return null;
+            }
+
+            function getLoginHint() {
+                // ssoSilent needs a hint (UPN/email) to pick the account silently.
+                try {
+                    var ctx = getD365Context();
+                    if (ctx && ctx.userSettings && ctx.userSettings.userName
+                        && ctx.userSettings.userName.indexOf("@") > 0) {
+                        return ctx.userSettings.userName;
+                    }
+                } catch (e) {
+                    // ignore
+                }
+                var el = document.getElementById("loginHint");
+                return el && el.value ? clean(el.value) : "";
             }
 
             function decodeJwtPayload(token) {
