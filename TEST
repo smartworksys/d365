@@ -1,22 +1,254 @@
-function callEappFunctionAPP(userID, OppID, eappURL, eappIntFunAppURL) {
-    // KOFC.Eapp.openEapp acquires the user's MSAL token (silent from cache; full-page
-    // redirect the first time), calls Boomi with x-api-key, and opens
-    // eappURL + "?soreq=<base64>" in a new tab.
-    //
-    // First-time users: if a full-page sign-in redirect is required, openEapp resolves to
-    // null and the redirect callback page (kofc_eappauthcallback.html) finishes the flow
-    // automatically on return — the user does NOT have to click the button again.
-    Xrm.Utility.showProgressIndicator("Processing Request... Please Wait.");
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Auth Callback</title>
+    <style>
+        html, body { height: 100%; margin: 0; }
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            color: #323130;
+            background: #faf9f8;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .card {
+            text-align: center;
+            padding: 32px 40px;
+            max-width: 420px;
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto 20px;
+            border: 4px solid #e1dfdd;
+            border-top-color: #0078d4;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #msg { font-size: 1rem; line-height: 1.4; }
+        .sub { margin-top: 8px; font-size: 0.85rem; color: #605e5c; }
+        .err { color: #a4262c; }
+        .err-hide { display: none; }
+    </style>
+    <!--
+      MSAL redirect URI for kofc_eappBoomiCall.js.
 
-    KOFC.Eapp.openEapp(userID, OppID, eappURL)
-        .then(function (ssoURL) {
-            Xrm.Utility.closeProgressIndicator();
-            // ssoURL === null => sign-in redirect in progress; callback page will finish it.
-        })
-        .catch(function (err) {
-            Xrm.Utility.closeProgressIndicator();
-            Xrm.Navigation.openAlertDialog({
-                text: (err && err.message) ? err.message : String(err)
-            });
-        });
-}
+      Two flows land here:
+        1) ssoSilent hidden iframe  -> stay blank; the parent MSAL reads the response.
+        2) full-page redirect back  -> load MSAL, run handleRedirectPromise() to read the ?code=/#code=
+           and cache the token. If a "pending" EApp action was saved (kofc_eapp_pending), finish it:
+           call Boomi with the token, then open eappUrl + "?soreq=<base64>" — so the user does NOT
+           have to click the button again. Otherwise just return to the D365 form (returnUrl).
+
+      Register in Entra (case-sensitive, SPA platform):
+        https://<org>.crm.dynamics.com/WebResources/kofc_eappauthcallback.html
+    -->
+</head>
+<body>
+    <div class="card">
+        <div id="spinner" class="spinner"></div>
+        <p id="msg">Signing you in, please wait…</p>
+        <p class="sub">You'll be redirected to your application automatically.</p>
+    </div>
+    <script>
+        (function () {
+            "use strict";
+
+            var CFG_KEY = "kofc_eapp_msal_cfg";
+            var PENDING_KEY = "kofc_eapp_pending";
+            var msgEl = document.getElementById("msg");
+            var spinnerEl = document.getElementById("spinner");
+
+            function setMsg(text, isErr) {
+                if (!msgEl) { return; }
+                msgEl.textContent = text;
+                msgEl.className = isErr ? "err" : "";
+                // Hide the spinner once we hit a terminal error state.
+                if (spinnerEl) {
+                    spinnerEl.className = isErr ? "spinner err-hide" : "spinner";
+                }
+            }
+
+            // 1) ssoSilent hidden iframe: do nothing — the parent window reads the hash.
+            if (window.self !== window.top) {
+                return;
+            }
+
+            var hasAuthResponse = window.location.hash.indexOf("code=") >= 0
+                || window.location.hash.indexOf("error=") >= 0
+                || window.location.search.indexOf("code=") >= 0
+                || window.location.search.indexOf("error=") >= 0;
+
+            // Opened directly (no auth response): nothing to process.
+            if (!hasAuthResponse) {
+                setMsg("Auth callback page. Return to Dynamics and use the EApp button.");
+                return;
+            }
+
+            function readJson(key) {
+                try {
+                    var raw = localStorage.getItem(key);
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function loadMsal() {
+                return new Promise(function (resolve, reject) {
+                    if (typeof msal !== "undefined") {
+                        resolve();
+                        return;
+                    }
+                    var s = document.createElement("script");
+                    s.src = window.location.origin + "/WebResources/kofc_msalbrowsermin";
+                    s.onload = function () {
+                        if (typeof msal !== "undefined") {
+                            resolve();
+                        } else {
+                            reject(new Error("MSAL failed to load."));
+                        }
+                    };
+                    s.onerror = function () {
+                        reject(new Error("MSAL web resource not found."));
+                    };
+                    document.head.appendChild(s);
+                });
+            }
+
+            async function callBoomi(pending, token) {
+                var method = (pending.httpMethod || "POST").toUpperCase();
+                var base = pending.boomiUrl;
+                var qs = "userId=" + encodeURIComponent(pending.userId);
+                if (pending.oppId) {
+                    qs += "&oppID=" + encodeURIComponent(pending.oppId);
+                }
+                var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + qs;
+
+                var options = {
+                    method: method,
+                    headers: {
+                        "Authorization": "Bearer " + token,
+                        "x-api-key": pending.apiKey,
+                        "Accept": "text/plain"
+                    }
+                };
+                if (method !== "GET" && method !== "HEAD") {
+                    options.headers["Content-Type"] = "application/json";
+                    options.body = JSON.stringify({
+                        userId: pending.userId,
+                        oppID: pending.oppId || undefined
+                    });
+                }
+
+                var response = await fetch(url, options);
+                var body = await response.text();
+                if (!response.ok) {
+                    throw new Error("Boomi returned " + response.status + ": " + body);
+                }
+                return body;
+            }
+
+            function finishEapp(pending, base64) {
+                var ssoUrl = pending.eappUrl + "?soreq=" + base64;
+                // Prefer opening EApp in a new tab and returning this tab to the D365 form.
+                var win = null;
+                try {
+                    win = window.open(ssoUrl, "_blank");
+                } catch (e) {
+                    win = null;
+                }
+                var cfg = readJson(CFG_KEY);
+                if (win) {
+                    setMsg("EApp opened in a new tab. Returning to Dynamics...");
+                    if (cfg && cfg.returnUrl) {
+                        window.location.href = cfg.returnUrl;
+                    }
+                } else {
+                    // Popup blocked — navigate this tab straight to EApp.
+                    setMsg("Opening EApp...");
+                    window.location.href = ssoUrl;
+                }
+            }
+
+            async function run() {
+                var cfg = readJson(CFG_KEY);
+                if (!cfg || !cfg.clientId || !cfg.tenantId || !cfg.redirectUri) {
+                    setMsg("Missing sign-in context. Open Dynamics and click the EApp button again.", true);
+                    return;
+                }
+
+                try {
+                    await loadMsal();
+                    var pca = new msal.PublicClientApplication({
+                        auth: {
+                            clientId: cfg.clientId,
+                            authority: "https://login.microsoftonline.com/" + cfg.tenantId,
+                            redirectUri: cfg.redirectUri
+                        },
+                        cache: {
+                            cacheLocation: "localStorage",
+                            storeAuthStateInCookie: true
+                        }
+                    });
+
+                    await pca.initialize();
+                    // Reads the code from this page's URL, exchanges it (PKCE), and caches the token.
+                    var result = await pca.handleRedirectPromise();
+
+                    var pending = readJson(PENDING_KEY);
+
+                    // Resolve an access token: from the redirect result, or silently from cache.
+                    var token = result && result.accessToken ? result.accessToken : null;
+                    if (!token && pending && pending.apiScopes) {
+                        var accounts = pca.getAllAccounts();
+                        if (accounts.length > 0) {
+                            try {
+                                var silent = await pca.acquireTokenSilent({
+                                    scopes: pending.apiScopes,
+                                    account: accounts[0]
+                                });
+                                token = silent.accessToken;
+                            } catch (e) {
+                                // fall through to no-token handling
+                            }
+                        }
+                    }
+
+                    if (token && pending && pending.eappUrl && pending.boomiUrl) {
+                        setMsg("Sign-in complete. Finishing your EApp request...");
+                        try {
+                            var base64 = await callBoomi(pending, token);
+                            localStorage.removeItem(PENDING_KEY);
+                            finishEapp(pending, base64);
+                        } catch (e) {
+                            setMsg("EApp request failed: " + (e && e.message ? e.message : String(e)), true);
+                        }
+                        return;
+                    }
+
+                    // No pending EApp action: just cache the token and return to the form.
+                    if (token) {
+                        setMsg("Sign-in complete. Returning to Dynamics...");
+                        if (cfg.returnUrl) {
+                            window.location.href = cfg.returnUrl;
+                            return;
+                        }
+                        setMsg("Sign-in complete. You can close this tab and return to Dynamics.");
+                        return;
+                    }
+
+                    setMsg("Sign-in response received but no token was produced. Try the EApp button again.", true);
+                } catch (e) {
+                    setMsg("Sign-in failed: " + (e && e.message ? e.message : String(e)), true);
+                }
+            }
+
+            run();
+        })();
+    </script>
+</body>
+</html>
