@@ -1,3 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Auth Callback</title>
+    <style>
+        body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #333; }
+        .err { color: #a4262c; }
+    </style>
+    <!--
+      MSAL redirect URI for kofc_eappBoomiCall.js.
+
+      Two flows land here:
+        1) ssoSilent hidden iframe  -> stay blank; the parent MSAL reads the response.
+        2) full-page redirect back  -> load MSAL, run handleRedirectPromise() to read the ?code=/#code=
+           and cache the token, then return the user to the D365 form (returnUrl).
+
+      Mirrors kofc_msalcallback.html (the validator's working callback).
+
+      Register in Entra (case-sensitive, SPA platform):
+        https://<org>.crm.dynamics.com/WebResources/kofc_eappauthcallback.html
+    -->
+</head>
+<body>
+    <p id="msg">Completing sign-in...</p>
+    <script>
+        (function () {
+            "use strict";
+
+            var CFG_KEY = "kofc_eapp_msal_cfg";
+            var msgEl = document.getElementById("msg");
+
+            function setMsg(text, isErr) {
+                if (!msgEl) { return; }
+                msgEl.textContent = text;
+                msgEl.className = isErr ? "err" : "";
+            }
+
+            // 1) ssoSilent hidden iframe: do nothing — the parent window reads the hash.
+            if (window.self !== window.top) {
+                return;
+            }
+
+            var hasAuthResponse = window.location.hash.indexOf("code=") >= 0
+                || window.location.hash.indexOf("error=") >= 0
+                || window.location.search.indexOf("code=") >= 0
+                || window.location.search.indexOf("error=") >= 0;
+
+            // Opened directly (no auth response): nothing to process.
+            if (!hasAuthResponse) {
+                setMsg("Auth callback page. Return to Dynamics and use the EApp button.");
+                return;
+            }
+
+            function readCfg() {
+                try {
+                    var raw = localStorage.getItem(CFG_KEY);
+                    return raw ? JSON.parse(raw) : null;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function loadMsal() {
+                return new Promise(function (resolve, reject) {
+                    if (typeof msal !== "undefined") {
+                        resolve();
+                        return;
+                    }
+                    var s = document.createElement("script");
+                    s.src = window.location.origin + "/WebResources/kofc_msalbrowsermin";
+                    s.onload = function () {
+                        if (typeof msal !== "undefined") {
+                            resolve();
+                        } else {
+                            reject(new Error("MSAL failed to load."));
+                        }
+                    };
+                    s.onerror = function () {
+                        reject(new Error("MSAL web resource not found."));
+                    };
+                    document.head.appendChild(s);
+                });
+            }
+
+            async function run() {
+                var cfg = readCfg();
+                if (!cfg || !cfg.clientId || !cfg.tenantId || !cfg.redirectUri) {
+                    setMsg("Missing sign-in context. Open Dynamics and click the EApp button again.", true);
+                    return;
+                }
+
+                try {
+                    await loadMsal();
+                    var pca = new msal.PublicClientApplication({
+                        auth: {
+                            clientId: cfg.clientId,
+                            authority: "https://login.microsoftonline.com/" + cfg.tenantId,
+                            redirectUri: cfg.redirectUri
+                        },
+                        cache: {
+                            cacheLocation: "localStorage",
+                            storeAuthStateInCookie: true
+                        }
+                    });
+
+                    await pca.initialize();
+                    // Reads the code from this page's URL, exchanges it (PKCE), and caches the token.
+                    var result = await pca.handleRedirectPromise();
+
+                    if (result && result.accessToken) {
+                        setMsg("Sign-in complete. Returning to Dynamics...");
+                        if (cfg.returnUrl) {
+                            // Back to the form; the next EApp button click is now silent (cached token).
+                            window.location.href = cfg.returnUrl;
+                            return;
+                        }
+                        setMsg("Sign-in complete. You can close this tab and return to Dynamics.");
+                        return;
+                    }
+
+                    setMsg("Sign-in response received but no token was produced. Try the EApp button again.", true);
+                } catch (e) {
+                    setMsg("Sign-in failed: " + (e && e.message ? e.message : String(e)), true);
+                }
+            }
+
+            run();
+        })();
+    </script>
+</body>
+</html>
+
+
 /*
  * KOFC EApp SSO - Boomi call from a Dynamics 365 command bar button.
  *
@@ -54,7 +188,9 @@ KOFC.Eapp = (function () {
         // (case-sensitive). Leave null to use the default below.
         redirectUri: null,
         redirectWebResource: "kofc_eappauthcallback.html",
-        msalWebResourcePath: "/WebResources/kofc_msal-browser.min.js",
+        // D365 web resource name for the MSAL library. Use the exact registered name
+        // (case-sensitive, no .js/.min.js extension in the D365 resource name).
+        msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
         // false = never show popup/redirect UI; fails with a clear message if silent auth cannot complete.
         // Set true only for first-time user consent troubleshooting.
         allowInteractive: false,
@@ -446,36 +582,47 @@ KOFC.Eapp = (function () {
             log("debug", "token.silent.skip", { reason: "no_cached_account" });
         }
 
-        // 2) ssoSilent via hidden iframe. Retry once on a transient timed_out.
-        var ssoReq = { scopes: scopeList };
-        if (loginHint) {
-            ssoReq.loginHint = loginHint;
-        }
-        if (account) {
-            ssoReq.account = account;
-        }
-        var attempts = (CONFIG.ssoSilentRetries || 0) + 1;
-        for (var attempt = 1; attempt <= attempts; attempt++) {
-            try {
-                log("info", "token.ssoSilent.try", {
-                    loginHint: loginHint || null,
-                    attempt: attempt,
-                    of: attempts
-                });
-                var sso = await msalApp.ssoSilent(ssoReq);
-                log("info", "token.ssoSilent.ok", tokenMeta(sso.accessToken));
-                return sso.accessToken;
-            } catch (e) {
-                lastError = e;
-                log("warn", "token.ssoSilent.failed", {
-                    error: formatAuthError(e),
-                    attempt: attempt
-                });
-                // Only a timeout is worth retrying; other errors won't fix themselves.
-                if (!isTimeout(e) || attempt >= attempts) {
-                    break;
+        // 2) ssoSilent via hidden iframe — ONLY worth trying if MSAL can resolve the user
+        //    silently, i.e. we have a cached account OR a loginHint (UPN). With neither,
+        //    Entra can't pick a session in the hidden iframe and it just burns the full
+        //    timeout ("timed_out / redirect_bridge_timeout"), so we skip straight to redirect.
+        if (account || loginHint) {
+            var ssoReq = { scopes: scopeList };
+            if (loginHint) {
+                ssoReq.loginHint = loginHint;
+            }
+            if (account) {
+                ssoReq.account = account;
+            }
+            var attempts = (CONFIG.ssoSilentRetries || 0) + 1;
+            for (var attempt = 1; attempt <= attempts; attempt++) {
+                try {
+                    log("info", "token.ssoSilent.try", {
+                        loginHint: loginHint || null,
+                        hasAccount: !!account,
+                        attempt: attempt,
+                        of: attempts
+                    });
+                    var sso = await msalApp.ssoSilent(ssoReq);
+                    log("info", "token.ssoSilent.ok", tokenMeta(sso.accessToken));
+                    return sso.accessToken;
+                } catch (e) {
+                    lastError = e;
+                    log("warn", "token.ssoSilent.failed", {
+                        error: formatAuthError(e),
+                        attempt: attempt
+                    });
+                    // Only a timeout is worth retrying; other errors won't fix themselves.
+                    if (!isTimeout(e) || attempt >= attempts) {
+                        break;
+                    }
                 }
             }
+        } else {
+            log("info", "token.ssoSilent.skip", {
+                reason: "no_account_and_no_loginHint",
+                note: "ssoSilent cannot resolve a user silently; using redirect fallback."
+            });
         }
 
         // 3) Full-page redirect fallback (mirrors the validator). Reliably fixes ssoSilent
@@ -752,137 +899,3 @@ KOFC.Eapp = (function () {
         dumpLogs: dumpLogs
     };
 })();
-
-
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <title>Auth Callback</title>
-    <style>
-        body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #333; }
-        .err { color: #a4262c; }
-    </style>
-    <!--
-      MSAL redirect URI for kofc_eappBoomiCall.js.
-
-      Two flows land here:
-        1) ssoSilent hidden iframe  -> stay blank; the parent MSAL reads the response.
-        2) full-page redirect back  -> load MSAL, run handleRedirectPromise() to read the ?code=/#code=
-           and cache the token, then return the user to the D365 form (returnUrl).
-
-      Mirrors kofc_msalcallback.html (the validator's working callback).
-
-      Register in Entra (case-sensitive, SPA platform):
-        https://<org>.crm.dynamics.com/WebResources/kofc_eappauthcallback.html
-    -->
-</head>
-<body>
-    <p id="msg">Completing sign-in...</p>
-    <script>
-        (function () {
-            "use strict";
-
-            var CFG_KEY = "kofc_eapp_msal_cfg";
-            var msgEl = document.getElementById("msg");
-
-            function setMsg(text, isErr) {
-                if (!msgEl) { return; }
-                msgEl.textContent = text;
-                msgEl.className = isErr ? "err" : "";
-            }
-
-            // 1) ssoSilent hidden iframe: do nothing — the parent window reads the hash.
-            if (window.self !== window.top) {
-                return;
-            }
-
-            var hasAuthResponse = window.location.hash.indexOf("code=") >= 0
-                || window.location.hash.indexOf("error=") >= 0
-                || window.location.search.indexOf("code=") >= 0
-                || window.location.search.indexOf("error=") >= 0;
-
-            // Opened directly (no auth response): nothing to process.
-            if (!hasAuthResponse) {
-                setMsg("Auth callback page. Return to Dynamics and use the EApp button.");
-                return;
-            }
-
-            function readCfg() {
-                try {
-                    var raw = localStorage.getItem(CFG_KEY);
-                    return raw ? JSON.parse(raw) : null;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            function loadMsal() {
-                return new Promise(function (resolve, reject) {
-                    if (typeof msal !== "undefined") {
-                        resolve();
-                        return;
-                    }
-                    var s = document.createElement("script");
-                    s.src = window.location.origin + "/WebResources/kofc_msal-browser.min.js";
-                    s.onload = function () {
-                        if (typeof msal !== "undefined") {
-                            resolve();
-                        } else {
-                            reject(new Error("MSAL failed to load."));
-                        }
-                    };
-                    s.onerror = function () {
-                        reject(new Error("MSAL web resource not found."));
-                    };
-                    document.head.appendChild(s);
-                });
-            }
-
-            async function run() {
-                var cfg = readCfg();
-                if (!cfg || !cfg.clientId || !cfg.tenantId || !cfg.redirectUri) {
-                    setMsg("Missing sign-in context. Open Dynamics and click the EApp button again.", true);
-                    return;
-                }
-
-                try {
-                    await loadMsal();
-                    var pca = new msal.PublicClientApplication({
-                        auth: {
-                            clientId: cfg.clientId,
-                            authority: "https://login.microsoftonline.com/" + cfg.tenantId,
-                            redirectUri: cfg.redirectUri
-                        },
-                        cache: {
-                            cacheLocation: "localStorage",
-                            storeAuthStateInCookie: true
-                        }
-                    });
-
-                    await pca.initialize();
-                    // Reads the code from this page's URL, exchanges it (PKCE), and caches the token.
-                    var result = await pca.handleRedirectPromise();
-
-                    if (result && result.accessToken) {
-                        setMsg("Sign-in complete. Returning to Dynamics...");
-                        if (cfg.returnUrl) {
-                            // Back to the form; the next EApp button click is now silent (cached token).
-                            window.location.href = cfg.returnUrl;
-                            return;
-                        }
-                        setMsg("Sign-in complete. You can close this tab and return to Dynamics.");
-                        return;
-                    }
-
-                    setMsg("Sign-in response received but no token was produced. Try the EApp button again.", true);
-                } catch (e) {
-                    setMsg("Sign-in failed: " + (e && e.message ? e.message : String(e)), true);
-                }
-            }
-
-            run();
-        })();
-    </script>
-</body>
-</html>
