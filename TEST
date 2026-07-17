@@ -1,1 +1,22 @@
+function callEappFunctionAPP(userID, OppID, eappURL, eappIntFunAppURL) {
+    // KOFC.Eapp.openEapp acquires the user's MSAL token (silent from cache; full-page
+    // redirect the first time), calls Boomi with x-api-key, and opens
+    // eappURL + "?soreq=<base64>" in a new tab.
+    //
+    // First-time users: if a full-page sign-in redirect is required, openEapp resolves to
+    // null and the redirect callback page (kofc_eappauthcallback.html) finishes the flow
+    // automatically on return — the user does NOT have to click the button again.
+    Xrm.Utility.showProgressIndicator("Processing Request... Please Wait.");
 
+    KOFC.Eapp.openEapp(userID, OppID, eappURL)
+        .then(function (ssoURL) {
+            Xrm.Utility.closeProgressIndicator();
+            // ssoURL === null => sign-in redirect in progress; callback page will finish it.
+        })
+        .catch(function (err) {
+            Xrm.Utility.closeProgressIndicator();
+            Xrm.Navigation.openAlertDialog({
+                text: (err && err.message) ? err.message : String(err)
+            });
+        });
+}
