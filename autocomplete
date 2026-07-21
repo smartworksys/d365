@@ -1,311 +1,378 @@
-using System.ServiceModel;
+using Azure;
+using KOFC_FA_PolicyNonHeader_TierOne.Helpers;
+using KOFC_FA_PolicyNonHeader_TierOne.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
-using Microsoft.PowerPlatform.Dataverse.Client;
-using Microsoft.Xrm.Sdk;
-using Microsoft.Xrm.Sdk.Query;
+using System.Net;
+using System.Text.Json;
 
-namespace KOFC_FA_PolicyNonHeader_TierOne;
-
-public enum PolicyAccessStatus
+namespace KOFC_FA_PolicyNonHeader_TierOne
 {
-    Granted,
-    UserNotFound,
-    AccessDenied
-}
-
-public sealed class PolicyAccessResult
-{
-    public PolicyAccessStatus Status { get; init; }
-    public string Message { get; init; } = string.Empty;
-    public bool IsGranted => Status == PolicyAccessStatus.Granted;
-    public Guid? UserId { get; init; }
-    public string? UserName { get; init; }
-
-    public static PolicyAccessResult Granted(Guid userId, string userName) =>
-        new()
+    public class PolicyData
+    {
+        private readonly ILogger<PolicyData> _log;
+        private readonly PolicyNonHeaderData _nonHeaderData;
+        private readonly PolicyTierOneIngeniumData _tierOneIngeniumData;
+        private readonly PolicyTierOneLife70Data _tierOneLife70Data;
+        private readonly DataverseAccessGuard _accessGuard;
+        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions()
         {
-            Status = PolicyAccessStatus.Granted,
-            Message = "Access granted.",
-            UserId = userId,
-            UserName = userName
+            PropertyNamingPolicy = new UpperCaseNamingPolicy(),
+            DictionaryKeyPolicy = new UpperCaseNamingPolicy(),
+            WriteIndented = false
         };
 
-    public static PolicyAccessResult UserNotFound(string message) =>
-        new() { Status = PolicyAccessStatus.UserNotFound, Message = message };
-
-    public static PolicyAccessResult AccessDenied(Guid userId, string userName, string message) =>
-        new()
+        public PolicyData(
+            ILogger<PolicyData> log,
+            PolicyNonHeaderData nonHeaderData,
+            PolicyTierOneIngeniumData tierOneIngeniumData,
+            PolicyTierOneLife70Data tierOneLife70Data,
+            DataverseAccessGuard accessGuard
+            )
         {
-            Status = PolicyAccessStatus.AccessDenied,
-            Message = message,
-            UserId = userId,
-            UserName = userName
-        };
-}
-
-/// <summary>
-/// Mirrors the eapp Dataverse pattern: connects to Dataverse via Managed Identity
-/// (<see cref="DataverseServiceClientFactory"/>), resolves the calling user, impersonates
-/// them via <see cref="ServiceClient.CallerId"/>, and lets Dataverse enforce whether that
-/// user can read the requested policy record.
-/// </summary>
-public class DataverseAccessGuard
-{
-    // 0x80048303 = principal user does not have the required privileges.
-    private const int PrivilegeDeniedErrorCode = unchecked((int)0x80048303);
-
-    private readonly ILogger<DataverseAccessGuard> _log;
-    private readonly ServiceClient _serviceClient;
-
-    public DataverseAccessGuard(ILogger<DataverseAccessGuard> log, ServiceClient serviceClient)
-    {
-        _log = log;
-        _serviceClient = serviceClient;
-    }
-
-    /// <summary>
-    /// Column on systemuser used as the upstream login/UPN (typically <c>domainname</c>).
-    /// Override with the DATAVERSE_USERNAME_FIELD app setting.
-    /// </summary>
-    private static string UserNameField =>
-        Environment.GetEnvironmentVariable("DATAVERSE_USERNAME_FIELD") ?? "domainname";
-
-    /// <summary>Dataverse entity that stores policies (optional). Set POLICY_DATAVERSE_ENTITY to enable the record-level check.</summary>
-    private static string? PolicyEntity =>
-        Environment.GetEnvironmentVariable("POLICY_DATAVERSE_ENTITY");
-
-    /// <summary>Column on the policy entity holding the policy number.</summary>
-    private static string PolicyNumberField =>
-        Environment.GetEnvironmentVariable("POLICY_DATAVERSE_POLICYNO_FIELD") ?? "kofc_policynumber";
-
-    /// <summary>Optional column on the policy entity holding the company code.</summary>
-    private static string? CompanyCodeField =>
-        Environment.GetEnvironmentVariable("POLICY_DATAVERSE_COMPANYCODE_FIELD");
-
-    /// <summary>
-    /// Resolves <paramref name="userId"/> to a Dataverse user, impersonates them, and
-    /// verifies they can read the requested policy record.
-    /// When <paramref name="policyRecordId"/> is supplied, performs a direct Retrieve on that
-    /// record (stronger row-level check) and cross-validates policy number / company code.
-    /// </summary>
-    public PolicyAccessResult CheckPolicyAccess(
-        Guid userId,
-        string companyCode,
-        string policyNo,
-        Guid? policyRecordId = null)
-    {
-        var resolvedUser = ResolveUserById(userId);
-        if (resolvedUser is null)
-        {
-            _log.LogWarning("No enabled Dataverse user found for userId {UserId}.", userId);
-            return PolicyAccessResult.UserNotFound($"User '{userId}' was not found in Dataverse.");
+            _log = log;
+            _nonHeaderData = nonHeaderData;
+            _tierOneIngeniumData = tierOneIngeniumData;
+            _tierOneLife70Data = tierOneLife70Data;
+            _accessGuard = accessGuard;
         }
 
-        var systemUserId = resolvedUser.Value.UserId;
-        var userName = resolvedUser.Value.UserName;
 
-        var policyEntity = PolicyEntity;
-        if (string.IsNullOrWhiteSpace(policyEntity))
+        [Function("getPolicyData")]
+        public async Task<IActionResult> RunAsync(
+            [Microsoft.Azure.Functions.Worker.HttpTrigger(Microsoft.Azure.Functions.Worker.AuthorizationLevel.Anonymous, "get", "post")]
+            HttpRequest req)
         {
-            if (policyRecordId.HasValue)
+            _log.LogInformation("C# HTTP trigger function processed a request.");
+
+            if (!FunctionAppRoleAuth.IsAuthenticated(req))
             {
-                _log.LogWarning(
-                    "policyRecordId {PolicyRecordId} was supplied but POLICY_DATAVERSE_ENTITY is not configured; "
-                    + "skipping the policy record-level access check.",
-                    policyRecordId);
+                return new UnauthorizedObjectResult("Authentication required.");
             }
 
-            _log.LogWarning(
-                "POLICY_DATAVERSE_ENTITY is not configured. Skipping the policy record-level access check; "
-                + "granting based on resolved user {UserId} ({UserName}) only.",
-                systemUserId,
-                userName);
-            return PolicyAccessResult.Granted(systemUserId, userName);
-        }
+            var callerRoles = FunctionAppRoleAuth.GetCallerRoles(req);
+            _log.LogInformation("Caller app roles: {Roles}", string.Join(", ", callerRoles));
 
-        try
-        {
+            if (!FunctionAppRoleAuth.HasAppRole(callerRoles, FunctionAppRoleAuth.PolicyReadRole))
+            {
+                return new ObjectResult($"Missing required app role: {FunctionAppRoleAuth.PolicyReadRole}.")
+                {
+                    StatusCode = StatusCodes.Status403Forbidden
+                };
+            }
+
+            string source = req.Query["source"];
+            string companyCode = req.Query["companyCode"];
+            string policyNo = req.Query["policyNo"];
+            string classificationCode = req.Query["classificationCode"];
+            string? userId = req.Query["userId"];
+            string? policyRecordId = req.Query["policyRecordId"];
+
+            if (req.Method == HttpMethods.Post)
+            {
+                using var reader = new StreamReader(req.Body);
+                var body = await reader.ReadToEndAsync();
+                var bodyJson = JsonDocument.Parse(body).RootElement;
+
+                source ??= bodyJson.TryGetProperty("source", out var ss) ? ss.GetString() : null;
+                companyCode ??= bodyJson.TryGetProperty("companyCode", out var cc) ? cc.GetString() : null;
+                policyNo ??= bodyJson.TryGetProperty("policyNo", out var pn) ? pn.GetString() : null;
+                classificationCode ??= bodyJson.TryGetProperty("classificationCode", out var cfc) ? cfc.GetString() : null;
+                userId ??= bodyJson.TryGetProperty("userId", out var uid) ? uid.GetString() : null;
+                policyRecordId ??= bodyJson.TryGetProperty("policyRecordId", out var prid) ? prid.GetString() : null;
+            }
+
+            if (string.IsNullOrEmpty(source))
+            {
+                _log.LogWarning("Source is missing in the request.");
+                return new ObjectResult(new { ERROR = "Source is missing in the request URL" })
+                {
+                    StatusCode = StatusCodes.Status400BadRequest
+                };
+            }
+
+            if (string.IsNullOrEmpty(companyCode))
+            {
+                _log.LogWarning("Company code is missing in the request.");
+                return new ObjectResult(new { ERROR = "Company Code is missing in the request URL" })
+                {
+                    StatusCode = StatusCodes.Status400BadRequest
+                };
+            }
+
+            if (string.IsNullOrEmpty(policyNo))
+            {
+                _log.LogWarning("Policy number is missing in the request.");
+                return new ObjectResult(new { ERROR = "Policy Number is missing in the request URL" })
+                {
+                    StatusCode = StatusCodes.Status400BadRequest
+                };
+            }
+
+            if (string.IsNullOrEmpty(classificationCode))
+            {
+                _log.LogWarning("Classification code is missing in the request.");
+                return new ObjectResult(new { ERROR = "Classification Code is missing in the request URL" })
+                {
+                    StatusCode = StatusCodes.Status400BadRequest
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(userId) || !Guid.TryParse(userId, out var dataverseUserId))
+            {
+                _log.LogWarning("userId is missing or not a valid GUID.");
+                return new BadRequestObjectResult("A valid userId query parameter is required.");
+            }
+
+            Guid? dataversePolicyRecordId = null;
+            if (!string.IsNullOrWhiteSpace(policyRecordId))
+            {
+                if (!Guid.TryParse(policyRecordId, out var parsedPolicyRecordId))
+                {
+                    _log.LogWarning("policyRecordId is not a valid GUID.");
+                    return new BadRequestObjectResult("policyRecordId must be a valid GUID when provided.");
+                }
+
+                dataversePolicyRecordId = parsedPolicyRecordId;
+            }
+
+            _log.LogInformation("CRM connection ready.");
             _log.LogInformation(
-                "Impersonating Dataverse user {UserId} ({UserName}) to verify policy access.",
-                systemUserId,
-                userName);
-            _serviceClient.CallerId = systemUserId;
+                "Processing policy request for source {Source}, policy {PolicyNo}, company {CompanyCode}, userId {UserId}, policyRecordId {PolicyRecordId}",
+                source,
+                policyNo,
+                companyCode,
+                dataverseUserId,
+                dataversePolicyRecordId);
 
-            var accessible = policyRecordId.HasValue
-                ? PolicyRecordAccessibleById(policyEntity, policyRecordId.Value, companyCode, policyNo)
-                : PolicyRecordAccessibleByNumber(policyEntity, companyCode, policyNo);
-
-            if (accessible)
-            {
-                return PolicyAccessResult.Granted(systemUserId, userName);
-            }
-
-            if (policyRecordId.HasValue)
+            // Dataverse access check (mirrors eapp): resolve userId -> userName, impersonate,
+            // and verify the user can read the specific policy record (by record ID when supplied).
+            var accessResult = _accessGuard.CheckPolicyAccess(
+                dataverseUserId,
+                companyCode,
+                policyNo,
+                dataversePolicyRecordId);
+            if (!accessResult.IsGranted)
             {
                 _log.LogWarning(
-                    "User {UserId} cannot access policy record {PolicyRecordId} or it does not match policy {PolicyNo} (company {CompanyCode}).",
-                    systemUserId,
-                    policyRecordId,
-                    policyNo,
-                    companyCode);
-                return PolicyAccessResult.AccessDenied(
-                    systemUserId,
-                    userName,
-                    $"User '{userName}' does not have access to the requested policy record.");
+                    "Policy access denied for userId {UserId} on policy {PolicyNo}: {Reason}",
+                    dataverseUserId, policyNo, accessResult.Message);
+                return new ObjectResult(new { ERROR = accessResult.Message })
+                {
+                    StatusCode = StatusCodes.Status403Forbidden
+                };
             }
 
-            _log.LogWarning(
-                "User {UserId} cannot access policy {PolicyNo} (company {CompanyCode}) in Dataverse entity {Entity}.",
-                systemUserId, policyNo, companyCode, policyEntity);
-            return PolicyAccessResult.AccessDenied(
-                systemUserId,
-                userName,
-                $"User '{userName}' does not have access to policy '{policyNo}'.");
-        }
-        catch (FaultException<OrganizationServiceFault> ex) when (ex.Detail.ErrorCode == PrivilegeDeniedErrorCode)
-        {
-            _log.LogWarning(
-                ex,
-                "Dataverse denied privileges for user {UserId} on policy {PolicyNo}, record {PolicyRecordId}.",
-                systemUserId,
-                policyNo,
-                policyRecordId);
-            return PolicyAccessResult.AccessDenied(
-                systemUserId,
-                userName,
-                policyRecordId.HasValue
-                    ? $"User '{userName}' does not have access to the requested policy record."
-                    : $"User '{userName}' does not have access to policy '{policyNo}'.");
-        }
-        finally
-        {
-            _serviceClient.CallerId = Guid.Empty;
-        }
-    }
+            var userName = accessResult.UserName
+                ?? throw new InvalidOperationException("Resolved user name is missing after access check.");
 
-    private (Guid UserId, string UserName)? ResolveUserById(Guid userId)
-    {
-        var query = new QueryExpression("systemuser")
-        {
-            TopCount = 1,
-            ColumnSet = new ColumnSet("systemuserid", UserNameField),
-            Criteria = new FilterExpression(LogicalOperator.And)
-        };
-        query.Criteria.AddCondition("systemuserid", ConditionOperator.Equal, userId);
-        query.Criteria.AddCondition("isdisabled", ConditionOperator.Equal, false);
-
-        EntityCollection result = _serviceClient.RetrieveMultiple(query);
-        if (result.Entities is null || result.Entities.Count == 0)
-        {
-            return null;
-        }
-
-        var entity = result.Entities[0];
-        var userName = entity.GetAttributeValue<string>(UserNameField);
-        if (string.IsNullOrWhiteSpace(userName))
-        {
-            _log.LogWarning(
-                "User {UserId} was found but {Field} is empty.",
-                userId,
-                UserNameField);
-            return null;
-        }
-
-        return (entity.Id, userName);
-    }
-
-    private bool PolicyRecordAccessibleById(
-        string policyEntity,
-        Guid policyRecordId,
-        string companyCode,
-        string policyNo)
-    {
-        var columns = new List<string> { PolicyNumberField };
-        var companyField = CompanyCodeField;
-        if (!string.IsNullOrWhiteSpace(companyField))
-        {
-            columns.Add(companyField);
-        }
-
-        Entity entity;
-        try
-        {
-            entity = _serviceClient.Retrieve(policyEntity, policyRecordId, new ColumnSet(columns.ToArray()));
-        }
-        catch (FaultException<OrganizationServiceFault> ex)
-        {
-            _log.LogWarning(
-                ex,
-                "Unable to retrieve policy record {PolicyRecordId} from entity {Entity}. ErrorCode={ErrorCode}",
-                policyRecordId,
-                policyEntity,
-                ex.Detail.ErrorCode);
-            return false;
-        }
-
-        if (!RecordMatchesPolicyRequest(entity, companyCode, policyNo, companyField))
-        {
-            _log.LogWarning(
-                "Policy record {PolicyRecordId} does not match requested policy {PolicyNo} (company {CompanyCode}).",
-                policyRecordId,
-                policyNo,
-                companyCode);
-            return false;
-        }
-
-        _log.LogInformation(
-            "Policy record {PolicyRecordId} verified for policy {PolicyNo} (company {CompanyCode}).",
-            policyRecordId,
-            policyNo,
-            companyCode);
-        return true;
-    }
-
-    private bool PolicyRecordAccessibleByNumber(string policyEntity, string companyCode, string policyNo)
-    {
-        _log.LogInformation(
-            "Verifying policy access by policy number because policyRecordId was not supplied.");
-
-        var query = new QueryExpression(policyEntity)
-        {
-            TopCount = 1,
-            ColumnSet = new ColumnSet(false),
-            Criteria = new FilterExpression(LogicalOperator.And)
-        };
-        query.Criteria.AddCondition(PolicyNumberField, ConditionOperator.Equal, policyNo);
-
-        var companyField = CompanyCodeField;
-        if (!string.IsNullOrWhiteSpace(companyField) && !string.IsNullOrWhiteSpace(companyCode))
-        {
-            query.Criteria.AddCondition(companyField, ConditionOperator.Equal, companyCode);
-        }
-
-        EntityCollection result = _serviceClient.RetrieveMultiple(query);
-        return result.Entities is { Count: > 0 };
-    }
-
-    private bool RecordMatchesPolicyRequest(
-        Entity entity,
-        string companyCode,
-        string policyNo,
-        string? companyField)
-    {
-        var recordPolicyNo = entity.GetAttributeValue<string>(PolicyNumberField);
-        if (!string.Equals(recordPolicyNo, policyNo, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        if (!string.IsNullOrWhiteSpace(companyField) && !string.IsNullOrWhiteSpace(companyCode))
-        {
-            var recordCompanyCode = entity.GetAttributeValue<string>(companyField);
-            if (!string.Equals(recordCompanyCode, companyCode, StringComparison.OrdinalIgnoreCase))
+            string finalJson = source.ToLower() switch
             {
-                return false;
+                "ing" => await BuildNonHeaderAndIngeniumResponse(policyNo, companyCode, source, userName),
+                "l70" => await BuildNonHeaderAndL70Response(policyNo, companyCode, source, userName),
+                "di" => await BuildNonHeader(policyNo, companyCode, source, userName),
+                "ltc" => await BuildNonHeader(policyNo, companyCode, source, userName),
+                _ => null
+            };
+
+            if (finalJson == null) {
+                _log.LogWarning("Unknown source value: {Source}", source);
+                return new ObjectResult(new { ERROR = $"Unknown soure system request :{source}, expected source - Ingenium OR L70" })
+                {
+                    StatusCode = StatusCodes.Status204NoContent
+                };
             }
+            else
+            {
+                _log.LogInformation("Policy JSON response:\n{JsonResult}", finalJson);
+                return new ContentResult
+                {
+                    Content = finalJson,
+                    ContentType = "application/json",
+                    StatusCode = StatusCodes.Status200OK
+                };
+            }
+
+            /*
+            #region PolicyNonHeader
+
+            try
+            {
+                var nonHeaderPayload = await _nonHeaderData.GetPolicyNonHeaderDataAsyn(source, companyCode, policyNo, userName);
+
+                if (nonHeaderPayload != null)
+                {
+                    var json = JsonSerializer.Serialize(nonHeaderPayload);
+                    return new ContentResult
+                    {
+                        Content = json,
+                        ContentType = "application/json",
+                        StatusCode = StatusCodes.Status200OK
+                    };
+
+                }
+                
+
+              
+            }
+            catch (Exception ex)
+            {
+                return new ObjectResult(new { ERROR = $"{ex.Message}"})
+                {
+                    StatusCode = StatusCodes.Status500InternalServerError
+                };
+            }
+
+
+            #endregion
+
+
+            #region PolicyTierOne
+
+            if (source.Equals("Ingenium"))
+            {
+                try
+                {
+                    TierOneINGResponseJson tierOneResponse = await _tierOneIngeniumData.GetPolicyTierOneIngeniumDataAsync(policyNo, companyCode);
+                    if (tierOneResponse == null) 
+                    {
+                        return new ObjectResult(new { ERROR = "Source system is currently unavailable" })
+                        {
+                            StatusCode = StatusCodes.Status503ServiceUnavailable
+                        };
+                    }
+
+                    var json = JsonSerializer.Serialize(tierOneResponse, _jsonOptions);
+                    return new ContentResult
+                    {
+                        Content = json,
+                        ContentType = "application/json",
+                        StatusCode=StatusCodes.Status200OK
+                    };
+                }
+                catch (Exception ex) {
+                    return new ObjectResult(new { ERROR = $"Internal server error - {ex.Message}" })
+                    {
+                        StatusCode = StatusCodes.Status500InternalServerError
+                    };
+                }
+                
+            }
+            else if (source.Equals("Life70"))
+            {
+                var tierOnePayload = _tierOneLife70Data.getPolicyTierOneLife70Data(policyNo);
+            }
+            else
+            {
+                _log.LogError("Invalid source value :", source);
+                return new ObjectResult(new { ERROR = $"Invalid source" })
+                {
+                    StatusCode = StatusCodes.Status400BadRequest
+                };
+            }
+
+            #endregion
+            */
         }
 
-        return true;
+        private async Task<string> BuildNonHeaderAndIngeniumResponse(string policyNo, string companyCode, string source, string userName)
+        {
+            try
+            {
+                var nonHeaderPayload = _nonHeaderData.GetPolicyNonHeaderDataAsyn(source, companyCode, policyNo, userName);
+                var tierOneResponse = _tierOneIngeniumData.GetPolicyTierOneIngeniumDataAsync(policyNo, companyCode);
+                await Task.WhenAll(nonHeaderPayload, tierOneResponse);
+
+                var nonHeaderResponse = nonHeaderPayload.Result;
+                var IngeniumResponse = tierOneResponse.Result;
+
+                var nonHeaderResponseJson = JsonSerializer.Serialize(nonHeaderResponse);
+                var IngeniumResponseJson = JsonSerializer.Serialize(IngeniumResponse, _jsonOptions);
+
+                if (!string.IsNullOrEmpty(nonHeaderResponseJson) && !string.IsNullOrEmpty(IngeniumResponseJson))
+                {
+                    var response = $"{{\"NonHeader\":{nonHeaderResponseJson},\"TIERONE\":{IngeniumResponseJson}}}";
+                    return response;
+                }
+                else
+                {
+                    _log.LogWarning("NonHeader or Ingenium response was empty for policy {PolicyNo}.", policyNo);
+                    return BuildErrorJson("One or more source systemns are unavailable");
+                }
+                //return MergedFinalJson("IngeniumSource", nonHeaderResponseJson, IngeniumResponseJson);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to build NonHeader + Ingenium response for policy {PolicyNo}.", policyNo);
+                return BuildErrorJson($"{ex.Message}");
+            };
+        }
+        private async Task<string> BuildNonHeaderAndL70Response(string policyNo, string companyCode, string source, string userName)
+        {
+            try
+            {
+              var nonHeaderPayload = _nonHeaderData.GetPolicyNonHeaderDataAsyn(source, companyCode, policyNo, userName);
+                var tierOnePayload = _tierOneLife70Data.getPolicyTierOneLife70Data(policyNo, companyCode);
+                await Task.WhenAll(nonHeaderPayload, tierOnePayload);
+
+                var nonHeaderResponse = nonHeaderPayload.Result;
+                var l70Response = tierOnePayload.Result;
+
+                var nonHeaderResponseJson = JsonSerializer.Serialize(nonHeaderResponse);
+                var l70ResponseJson = JsonSerializer.Serialize(l70Response, _jsonOptions);
+
+                if (!string.IsNullOrEmpty(nonHeaderResponseJson) && !string.IsNullOrEmpty(l70ResponseJson))
+                {
+                    var response = $"{{\"NonHeader\":{nonHeaderResponseJson},\"TIERONE\":{l70ResponseJson}}}";
+                    return response;
+                }
+                else
+                {
+                    _log.LogWarning("NonHeader or Ingenium response was empty for policy {PolicyNo}.", policyNo);
+                    return BuildErrorJson("One or more source systemns are unavailable");
+                }
+             
+            }
+            catch (Exception ex) {
+                _log.LogError(ex, "Failed to build NonHeader + Life70 response for policy {PolicyNo}.", policyNo);
+                return BuildErrorJson($"{ex.Message}");
+            }
+        }
+        private async Task<string> BuildNonHeader(string policyNo, string companyCode, string source, string userName)
+        {
+            try
+            {
+                var nonHeaderPayload = _nonHeaderData.GetPolicyNonHeaderDataAsyn(source, companyCode, policyNo, userName);
+                await Task.WhenAll(nonHeaderPayload);
+
+                var nonHeaderResponse = nonHeaderPayload.Result;
+
+                var nonHeaderResponseJson = JsonSerializer.Serialize(nonHeaderResponse);
+
+                if (!string.IsNullOrEmpty(nonHeaderResponseJson))
+                {
+                    var response = $"{{\"NonHeader\":{nonHeaderResponseJson}}}";
+                    return response;
+                }
+                else
+                {
+                    _log.LogWarning("NonHeader or Ingenium response was empty for policy {PolicyNo}.", policyNo);
+                    return BuildErrorJson("One or more source systemns are unavailable");
+                }
+                //return MergedFinalJson("IngeniumSource", nonHeaderResponseJson, IngeniumResponseJson);
+            }
+            catch (Exception ex)
+            {
+                _log.LogError(ex, "Failed to build NonHeader response for policy {PolicyNo}, source {Source}.", policyNo, source);
+                return BuildErrorJson($"{ex.Message}");
+            };
+        }
+        private static string BuildErrorJson(string message)
+            {
+                return JsonSerializer.Serialize(new { ERROR = message }, _jsonOptions);
+            }
     }
 }
-
