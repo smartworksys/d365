@@ -1,1 +1,311 @@
+using System.ServiceModel;
+using Microsoft.Extensions.Logging;
+using Microsoft.PowerPlatform.Dataverse.Client;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Query;
+
+namespace KOFC_FA_PolicyNonHeader_TierOne;
+
+public enum PolicyAccessStatus
+{
+    Granted,
+    UserNotFound,
+    AccessDenied
+}
+
+public sealed class PolicyAccessResult
+{
+    public PolicyAccessStatus Status { get; init; }
+    public string Message { get; init; } = string.Empty;
+    public bool IsGranted => Status == PolicyAccessStatus.Granted;
+    public Guid? UserId { get; init; }
+    public string? UserName { get; init; }
+
+    public static PolicyAccessResult Granted(Guid userId, string userName) =>
+        new()
+        {
+            Status = PolicyAccessStatus.Granted,
+            Message = "Access granted.",
+            UserId = userId,
+            UserName = userName
+        };
+
+    public static PolicyAccessResult UserNotFound(string message) =>
+        new() { Status = PolicyAccessStatus.UserNotFound, Message = message };
+
+    public static PolicyAccessResult AccessDenied(Guid userId, string userName, string message) =>
+        new()
+        {
+            Status = PolicyAccessStatus.AccessDenied,
+            Message = message,
+            UserId = userId,
+            UserName = userName
+        };
+}
+
+/// <summary>
+/// Mirrors the eapp Dataverse pattern: connects to Dataverse via Managed Identity
+/// (<see cref="DataverseServiceClientFactory"/>), resolves the calling user, impersonates
+/// them via <see cref="ServiceClient.CallerId"/>, and lets Dataverse enforce whether that
+/// user can read the requested policy record.
+/// </summary>
+public class DataverseAccessGuard
+{
+    // 0x80048303 = principal user does not have the required privileges.
+    private const int PrivilegeDeniedErrorCode = unchecked((int)0x80048303);
+
+    private readonly ILogger<DataverseAccessGuard> _log;
+    private readonly ServiceClient _serviceClient;
+
+    public DataverseAccessGuard(ILogger<DataverseAccessGuard> log, ServiceClient serviceClient)
+    {
+        _log = log;
+        _serviceClient = serviceClient;
+    }
+
+    /// <summary>
+    /// Column on systemuser used as the upstream login/UPN (typically <c>domainname</c>).
+    /// Override with the DATAVERSE_USERNAME_FIELD app setting.
+    /// </summary>
+    private static string UserNameField =>
+        Environment.GetEnvironmentVariable("DATAVERSE_USERNAME_FIELD") ?? "domainname";
+
+    /// <summary>Dataverse entity that stores policies (optional). Set POLICY_DATAVERSE_ENTITY to enable the record-level check.</summary>
+    private static string? PolicyEntity =>
+        Environment.GetEnvironmentVariable("POLICY_DATAVERSE_ENTITY");
+
+    /// <summary>Column on the policy entity holding the policy number.</summary>
+    private static string PolicyNumberField =>
+        Environment.GetEnvironmentVariable("POLICY_DATAVERSE_POLICYNO_FIELD") ?? "kofc_policynumber";
+
+    /// <summary>Optional column on the policy entity holding the company code.</summary>
+    private static string? CompanyCodeField =>
+        Environment.GetEnvironmentVariable("POLICY_DATAVERSE_COMPANYCODE_FIELD");
+
+    /// <summary>
+    /// Resolves <paramref name="userId"/> to a Dataverse user, impersonates them, and
+    /// verifies they can read the requested policy record.
+    /// When <paramref name="policyRecordId"/> is supplied, performs a direct Retrieve on that
+    /// record (stronger row-level check) and cross-validates policy number / company code.
+    /// </summary>
+    public PolicyAccessResult CheckPolicyAccess(
+        Guid userId,
+        string companyCode,
+        string policyNo,
+        Guid? policyRecordId = null)
+    {
+        var resolvedUser = ResolveUserById(userId);
+        if (resolvedUser is null)
+        {
+            _log.LogWarning("No enabled Dataverse user found for userId {UserId}.", userId);
+            return PolicyAccessResult.UserNotFound($"User '{userId}' was not found in Dataverse.");
+        }
+
+        var systemUserId = resolvedUser.Value.UserId;
+        var userName = resolvedUser.Value.UserName;
+
+        var policyEntity = PolicyEntity;
+        if (string.IsNullOrWhiteSpace(policyEntity))
+        {
+            if (policyRecordId.HasValue)
+            {
+                _log.LogWarning(
+                    "policyRecordId {PolicyRecordId} was supplied but POLICY_DATAVERSE_ENTITY is not configured; "
+                    + "skipping the policy record-level access check.",
+                    policyRecordId);
+            }
+
+            _log.LogWarning(
+                "POLICY_DATAVERSE_ENTITY is not configured. Skipping the policy record-level access check; "
+                + "granting based on resolved user {UserId} ({UserName}) only.",
+                systemUserId,
+                userName);
+            return PolicyAccessResult.Granted(systemUserId, userName);
+        }
+
+        try
+        {
+            _log.LogInformation(
+                "Impersonating Dataverse user {UserId} ({UserName}) to verify policy access.",
+                systemUserId,
+                userName);
+            _serviceClient.CallerId = systemUserId;
+
+            var accessible = policyRecordId.HasValue
+                ? PolicyRecordAccessibleById(policyEntity, policyRecordId.Value, companyCode, policyNo)
+                : PolicyRecordAccessibleByNumber(policyEntity, companyCode, policyNo);
+
+            if (accessible)
+            {
+                return PolicyAccessResult.Granted(systemUserId, userName);
+            }
+
+            if (policyRecordId.HasValue)
+            {
+                _log.LogWarning(
+                    "User {UserId} cannot access policy record {PolicyRecordId} or it does not match policy {PolicyNo} (company {CompanyCode}).",
+                    systemUserId,
+                    policyRecordId,
+                    policyNo,
+                    companyCode);
+                return PolicyAccessResult.AccessDenied(
+                    systemUserId,
+                    userName,
+                    $"User '{userName}' does not have access to the requested policy record.");
+            }
+
+            _log.LogWarning(
+                "User {UserId} cannot access policy {PolicyNo} (company {CompanyCode}) in Dataverse entity {Entity}.",
+                systemUserId, policyNo, companyCode, policyEntity);
+            return PolicyAccessResult.AccessDenied(
+                systemUserId,
+                userName,
+                $"User '{userName}' does not have access to policy '{policyNo}'.");
+        }
+        catch (FaultException<OrganizationServiceFault> ex) when (ex.Detail.ErrorCode == PrivilegeDeniedErrorCode)
+        {
+            _log.LogWarning(
+                ex,
+                "Dataverse denied privileges for user {UserId} on policy {PolicyNo}, record {PolicyRecordId}.",
+                systemUserId,
+                policyNo,
+                policyRecordId);
+            return PolicyAccessResult.AccessDenied(
+                systemUserId,
+                userName,
+                policyRecordId.HasValue
+                    ? $"User '{userName}' does not have access to the requested policy record."
+                    : $"User '{userName}' does not have access to policy '{policyNo}'.");
+        }
+        finally
+        {
+            _serviceClient.CallerId = Guid.Empty;
+        }
+    }
+
+    private (Guid UserId, string UserName)? ResolveUserById(Guid userId)
+    {
+        var query = new QueryExpression("systemuser")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("systemuserid", UserNameField),
+            Criteria = new FilterExpression(LogicalOperator.And)
+        };
+        query.Criteria.AddCondition("systemuserid", ConditionOperator.Equal, userId);
+        query.Criteria.AddCondition("isdisabled", ConditionOperator.Equal, false);
+
+        EntityCollection result = _serviceClient.RetrieveMultiple(query);
+        if (result.Entities is null || result.Entities.Count == 0)
+        {
+            return null;
+        }
+
+        var entity = result.Entities[0];
+        var userName = entity.GetAttributeValue<string>(UserNameField);
+        if (string.IsNullOrWhiteSpace(userName))
+        {
+            _log.LogWarning(
+                "User {UserId} was found but {Field} is empty.",
+                userId,
+                UserNameField);
+            return null;
+        }
+
+        return (entity.Id, userName);
+    }
+
+    private bool PolicyRecordAccessibleById(
+        string policyEntity,
+        Guid policyRecordId,
+        string companyCode,
+        string policyNo)
+    {
+        var columns = new List<string> { PolicyNumberField };
+        var companyField = CompanyCodeField;
+        if (!string.IsNullOrWhiteSpace(companyField))
+        {
+            columns.Add(companyField);
+        }
+
+        Entity entity;
+        try
+        {
+            entity = _serviceClient.Retrieve(policyEntity, policyRecordId, new ColumnSet(columns.ToArray()));
+        }
+        catch (FaultException<OrganizationServiceFault> ex)
+        {
+            _log.LogWarning(
+                ex,
+                "Unable to retrieve policy record {PolicyRecordId} from entity {Entity}. ErrorCode={ErrorCode}",
+                policyRecordId,
+                policyEntity,
+                ex.Detail.ErrorCode);
+            return false;
+        }
+
+        if (!RecordMatchesPolicyRequest(entity, companyCode, policyNo, companyField))
+        {
+            _log.LogWarning(
+                "Policy record {PolicyRecordId} does not match requested policy {PolicyNo} (company {CompanyCode}).",
+                policyRecordId,
+                policyNo,
+                companyCode);
+            return false;
+        }
+
+        _log.LogInformation(
+            "Policy record {PolicyRecordId} verified for policy {PolicyNo} (company {CompanyCode}).",
+            policyRecordId,
+            policyNo,
+            companyCode);
+        return true;
+    }
+
+    private bool PolicyRecordAccessibleByNumber(string policyEntity, string companyCode, string policyNo)
+    {
+        _log.LogInformation(
+            "Verifying policy access by policy number because policyRecordId was not supplied.");
+
+        var query = new QueryExpression(policyEntity)
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet(false),
+            Criteria = new FilterExpression(LogicalOperator.And)
+        };
+        query.Criteria.AddCondition(PolicyNumberField, ConditionOperator.Equal, policyNo);
+
+        var companyField = CompanyCodeField;
+        if (!string.IsNullOrWhiteSpace(companyField) && !string.IsNullOrWhiteSpace(companyCode))
+        {
+            query.Criteria.AddCondition(companyField, ConditionOperator.Equal, companyCode);
+        }
+
+        EntityCollection result = _serviceClient.RetrieveMultiple(query);
+        return result.Entities is { Count: > 0 };
+    }
+
+    private bool RecordMatchesPolicyRequest(
+        Entity entity,
+        string companyCode,
+        string policyNo,
+        string? companyField)
+    {
+        var recordPolicyNo = entity.GetAttributeValue<string>(PolicyNumberField);
+        if (!string.Equals(recordPolicyNo, policyNo, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(companyField) && !string.IsNullOrWhiteSpace(companyCode))
+        {
+            var recordCompanyCode = entity.GetAttributeValue<string>(companyField);
+            if (!string.Equals(recordCompanyCode, companyCode, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+}
 
