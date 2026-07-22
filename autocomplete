@@ -1,9 +1,28 @@
-Layer 1: Browser → Boomi
-D365 gets a user MSAL token (api://<ApiAppId>/access_as_user).
-Sent to Boomi as Authorization: Bearer <user-token> plus x-api-key.
-Boomi uses this to confirm who signed in at the gateway.
-Layer 2: Boomi → Function
-Boomi does not forward the user’s bearer token to the Function.
-Boomi gets its own token via client credentials (api://<ApiAppId>/.default).
-That token carries app roles (Contact.Read for EApp, Policy.Read for Policy).
-Easy Auth on the Function validates that token.
+Boomi confirms sign-in by validating the Entra JWT (signature, issuer, audience, expiry, access_as_user scope) and the x-api-key. That proves a real signed-in user hit your Boomi endpoint. Boomi then calls the Function as itself with a service token, passing userId as the Dataverse identity for impersonation.
+
+
+How Boomi confirms (gateway validation)
+Typical Boomi REST/API setup for this pattern:
+
+1. x-api-key (API gateway)
+Boomi checks the header against a configured key.
+Confirms the call is from your D365 integration (shared secret), not random internet traffic.
+Does not identify the user — only that the client knows the gateway key.
+2. Authorization: Bearer (user JWT)
+Boomi (or an OAuth/JWT step in the process) validates the access token, usually:
+
+Check	What it proves
+Signature
+Token was issued by Entra (tenant signing keys)
+Issuer (iss)
+From your tenant’s login endpoint
+Audience (aud)
+Intended for your API app (api://<ApiAppId> or similar)
+Expiry (exp)
+Token is still valid
+Scope (scp)
+Includes access_as_user (delegated permission)
+
+If any of that fails → Boomi returns 401/403 and never calls the Azure Function.
+
+That’s what “confirm who signed in at the gateway” means: a valid Entra user token for your API, not “Boomi trusts the userId query param by itself.”
