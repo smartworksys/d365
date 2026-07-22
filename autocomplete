@@ -1,42 +1,9 @@
-async function getAuthConfigFromEnvironment(boomiIntegrationUrl) {
-    "use strict";
-
-    var results = await Promise.all([
-        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.tenantId),
-        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.clientId),
-        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.apiAppId),
-        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.apiKey),
-        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.boomiUrl)
-    ]);
-
-    var tenantId = results[0];
-    var clientId = results[1];
-    var apiAppId = results[2];
-    var apiKey = results[3];
-    // Use env var; fall back to param if your navigate chain still passes it
-    var boomiUrl = boomiIntegrationUrl || results[4];
-
-    var missing = [];
-    if (!tenantId) { missing.push(AUTH_ENV_VARS.tenantId); }
-    if (!clientId) { missing.push(AUTH_ENV_VARS.clientId); }
-    if (!apiAppId) { missing.push(AUTH_ENV_VARS.apiAppId); }
-    if (!apiKey) { missing.push(AUTH_ENV_VARS.apiKey); }
-    if (!boomiUrl) { missing.push(AUTH_ENV_VARS.boomiUrl); }
-    if (missing.length > 0) {
-        throw new Error("Missing EApp SSO configuration value(s): " + missing.join(", "));
-    }
-
-    return {
-        tenantId: tenantId,
-        clientId: clientId,
-        apiAppId: apiAppId,
-        apiKey: apiKey,
-        boomiUrl: boomiUrl,
-        scope: AUTH_STATIC_CONFIG.scope,
-        httpMethod: AUTH_STATIC_CONFIG.httpMethod,
-        redirectWebResource: AUTH_STATIC_CONFIG.redirectWebResource,
-        msalWebResourcePath: AUTH_STATIC_CONFIG.msalWebResourcePath,
-        allowRedirect: AUTH_STATIC_CONFIG.allowRedirect,
-        debug: AUTH_STATIC_CONFIG.debug
-    };
-}
+Layer 1: Browser → Boomi
+D365 gets a user MSAL token (api://<ApiAppId>/access_as_user).
+Sent to Boomi as Authorization: Bearer <user-token> plus x-api-key.
+Boomi uses this to confirm who signed in at the gateway.
+Layer 2: Boomi → Function
+Boomi does not forward the user’s bearer token to the Function.
+Boomi gets its own token via client credentials (api://<ApiAppId>/.default).
+That token carries app roles (Contact.Read for EApp, Policy.Read for Policy).
+Easy Auth on the Function validates that token.
