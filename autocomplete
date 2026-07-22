@@ -1,92 +1,3 @@
-/*
- * ============================================================================
- * kofc_Opportunity form web resource — EApp SSO updates (environment-variable driven)
- * ============================================================================
- *
- * These are the ONLY changes needed in the kofc_Opportunity form script to use
- * the reusable auth client (kofc_authclient.js / namespace KOFC.Auth).
- *
- * Configuration is read from Dataverse ENVIRONMENT VARIABLES via the existing
- * getEnvironmentVariableCurrentValue(schemaName) helper already in this form
- * (ADO 51210). Nothing sensitive is hard-coded here.
- *
- * HOW TO APPLY:
- *   1) ADD the items below (AUTH_CLIENT_LIBRARY, AUTH_ENV_VARS, AUTH_STATIC_CONFIG,
- *      loadAuthClient, getAuthConfigFromEnvironment) once at the top level.
- *   2) REPLACE your existing callEappFunctionAPP(...) with the one below.
- *
- * REQUIRED ENVIRONMENT VARIABLES (create in D365; Text type):
- *   kofc_EappTenantId   -> Entra tenant (directory) ID
- *   kofc_EappClientId   -> SPA app (client) ID
- *   kofc_EappApiAppId   -> Function API app ID (used to build the api://<id>/scope scope)
- *   kofc_EappApiKey     -> Boomi x-api-key
- *   (Boomi URL + EApp URL already come from kofc_EappIntfunctionURL / kofc_EappURL.)
- *
- * Prerequisite web resources (uploaded + published):
- *   kofc_authclient.js       (reusable KOFC.Auth library)
- *   kofc_authcallback.html   (MSAL redirect page; registered in Entra as SPA redirect URI)
- *   kofc_msalbrowsermin      (MSAL.js library)
- * ============================================================================
- */
-
-
-/* ----------------------------------------------------------------------------
- * ADD #1 — Reusable auth client location + configuration sources.
- * -------------------------------------------------------------------------- */
-
-// Registered web resource name of the reusable auth client. Adjust if yours differs.
-var AUTH_CLIENT_LIBRARY = "/WebResources/kofc_authclient.js";
-
-// Environment variable schema names holding the per-environment auth settings.
-var AUTH_ENV_VARS = {
-    tenantId: "kofc_EappTenantId",
-    clientId: "kofc_EappClientId",
-    apiAppId: "kofc_EappApiAppId",
-    apiKey: "kofc_EappApiKey"
-};
-
-// Static, non-secret client settings (same across environments).
-var AUTH_STATIC_CONFIG = {
-    scope: "access_as_user",
-    httpMethod: "POST",
-    redirectWebResource: "kofc_authcallback.html",
-    msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
-    allowRedirect: true,
-    debug: false
-};
-
-
-/* ----------------------------------------------------------------------------
- * ADD #2 — Dynamically inject the auth client (resolves immediately if already
- * loaded). Same pattern used to load MSAL.
- * -------------------------------------------------------------------------- */
-function loadAuthClient() {
-    return new Promise(function (resolve, reject) {
-        if (window.KOFC && window.KOFC.Auth) {
-            resolve();
-            return;
-        }
-        var script = document.createElement("script");
-        script.src = Xrm.Utility.getGlobalContext().getClientUrl() + AUTH_CLIENT_LIBRARY;
-        script.onload = function () {
-            if (window.KOFC && window.KOFC.Auth) {
-                resolve();
-            } else {
-                reject(new Error("Auth client loaded but KOFC.Auth is undefined."));
-            }
-        };
-        script.onerror = function () {
-            reject(new Error("Failed to load auth client: " + script.src));
-        };
-        document.head.appendChild(script);
-    });
-}
-
-
-/* ----------------------------------------------------------------------------
- * ADD #3 — Build the KOFC.Auth config from environment variables.
- * Uses the existing getEnvironmentVariableCurrentValue(schemaName) helper.
- * -------------------------------------------------------------------------- */
 async function getAuthConfigFromEnvironment(boomiIntegrationUrl) {
     "use strict";
 
@@ -94,20 +5,23 @@ async function getAuthConfigFromEnvironment(boomiIntegrationUrl) {
         getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.tenantId),
         getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.clientId),
         getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.apiAppId),
-        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.apiKey)
+        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.apiKey),
+        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.boomiUrl)
     ]);
 
     var tenantId = results[0];
     var clientId = results[1];
     var apiAppId = results[2];
     var apiKey = results[3];
+    // Use env var; fall back to param if your navigate chain still passes it
+    var boomiUrl = boomiIntegrationUrl || results[4];
 
     var missing = [];
     if (!tenantId) { missing.push(AUTH_ENV_VARS.tenantId); }
     if (!clientId) { missing.push(AUTH_ENV_VARS.clientId); }
     if (!apiAppId) { missing.push(AUTH_ENV_VARS.apiAppId); }
     if (!apiKey) { missing.push(AUTH_ENV_VARS.apiKey); }
-    if (!boomiIntegrationUrl) { missing.push("Boomi URL (kofc_EappIntfunctionURL)"); }
+    if (!boomiUrl) { missing.push(AUTH_ENV_VARS.boomiUrl); }
     if (missing.length > 0) {
         throw new Error("Missing EApp SSO configuration value(s): " + missing.join(", "));
     }
@@ -117,7 +31,7 @@ async function getAuthConfigFromEnvironment(boomiIntegrationUrl) {
         clientId: clientId,
         apiAppId: apiAppId,
         apiKey: apiKey,
-        boomiUrl: boomiIntegrationUrl,
+        boomiUrl: boomiUrl,
         scope: AUTH_STATIC_CONFIG.scope,
         httpMethod: AUTH_STATIC_CONFIG.httpMethod,
         redirectWebResource: AUTH_STATIC_CONFIG.redirectWebResource,
@@ -126,37 +40,3 @@ async function getAuthConfigFromEnvironment(boomiIntegrationUrl) {
         debug: AUTH_STATIC_CONFIG.debug
     };
 }
-
-
-/* ----------------------------------------------------------------------------
- * REPLACE — your existing callEappFunctionAPP(...) with this version.
- * Called by navigateToEapp(...) after the member/contact check.
- * -------------------------------------------------------------------------- */
-async function callEappFunctionAPP(userId, opportunityId, eappUrl, boomiIntegrationUrl) {
-    "use strict";
-
-    // Loads the reusable auth client, configures it from environment variables, then
-    // launches EApp: acquires the user's MSAL token (silent from cache; full-page redirect
-    // the first time), calls Boomi with x-api-key, and opens eappUrl + "?soreq=<base64>".
-    //
-    // First-time users: if a full-page sign-in redirect is required, openEapp resolves to
-    // null and the redirect callback page (kofc_authcallback.html) finishes the flow
-    // automatically on return — the user does NOT have to click the button again.
-    Xrm.Utility.showProgressIndicator("Processing Request... Please Wait.");
-
-    try {
-        await loadAuthClient();
-        var authConfig = await getAuthConfigFromEnvironment(boomiIntegrationUrl);
-        KOFC.Auth.configure(authConfig);
-        await KOFC.Auth.openEapp(userId, opportunityId, eappUrl);
-        Xrm.Utility.closeProgressIndicator();
-        // openEapp resolves null when a sign-in redirect is in progress; the callback
-        // page finishes the flow on return.
-    } catch (err) {
-        Xrm.Utility.closeProgressIndicator();
-        Xrm.Navigation.openAlertDialog({
-            text: (err && err.message) ? err.message : String(err)
-        });
-    }
-}
-
