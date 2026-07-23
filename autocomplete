@@ -1,28 +1,136 @@
-Boomi confirms sign-in by validating the Entra JWT (signature, issuer, audience, expiry, access_as_user scope) and the x-api-key. That proves a real signed-in user hit your Boomi endpoint. Boomi then calls the Function as itself with a service token, passing userId as the Dataverse identity for impersonation.
+name: Infra_Deploy_$(BuildDefinitionName)_$(date:yyyyMMdd)$(rev:.r)
 
+trigger: none
 
-How Boomi confirms (gateway validation)
-Typical Boomi REST/API setup for this pattern:
+parameters:
+- name: environment
+  displayName: 'Deployment Environment'
+  type: string
+  default: 'dev'
+  values:
+  - dev
+  - test
+  - uat
+  - uat2
+  - prod
 
-1. x-api-key (API gateway)
-Boomi checks the header against a configured key.
-Confirms the call is from your D365 integration (shared secret), not random internet traffic.
-Does not identify the user — only that the client knows the gateway key.
-2. Authorization: Bearer (user JWT)
-Boomi (or an OAuth/JWT step in the process) validates the access token, usually:
+- name: veracode_scan
+  displayName: 'VeraCode Scan'
+  type: boolean
+  default: false
+  values:
+    - true
+    - false
 
-Check	What it proves
-Signature
-Token was issued by Entra (tenant signing keys)
-Issuer (iss)
-From your tenant’s login endpoint
-Audience (aud)
-Intended for your API app (api://<ApiAppId> or similar)
-Expiry (exp)
-Token is still valid
-Scope (scp)
-Includes access_as_user (delegated permission)
+- name: deploy_functionapp_workflows
+  displayName: 'Deploy Function App Workflows'
+  type: boolean
+  default: false
+  values:
+    - true
+    - false
 
-If any of that fails → Boomi returns 401/403 and never calls the Azure Function.
+variables:
+- name: solutionPath
+  value: 'KOFC-FA-AgentPortal-UserProfile/KOFC-FA-AgentPortal-UserProfile.sln'
+- name: functionProject
+  value: 'KOFC-FA-AgentPortal-UserProfile/KOFC-FA-AgentPortal-UserProfile.csproj'
+- ${{ if eq(parameters.environment, 'dev') }}:
+    - template: kofc-functionapp-variables/pipeline-vars-dev.yml
+- ${{ if eq(parameters.environment, 'test') }}:
+    - template: kofc-functionapp-variables/pipeline-vars-test.yml
+- ${{ if eq(parameters.environment, 'uat') }}:
+    - template: kofc-functionapp-variables/pipeline-vars-uat.yml
+- ${{ if eq(parameters.environment, 'uat2') }}:
+    - template: kofc-functionapp-variables/pipeline-vars-uat2.yml    
+- ${{ if eq(parameters.environment, 'prod') }}:
+    - template: kofc-functionapp-variables/pipeline-vars-prod.yml
 
-That’s what “confirm who signed in at the gateway” means: a valid Entra user token for your API, not “Boomi trusts the userId query param by itself.”
+stages:
+  - stage: build_artifacts
+    jobs:
+      - job: function_app_build
+        displayName: 'Build and publish function app'
+        pool:
+          name: Azure Pipelines
+          vmImage: $(vmImageName)
+        steps:
+
+        - task: DotNetCoreCLI@2
+          displayName: Restore
+          inputs:
+            command: restore
+            projects: '$(solutionPath)'
+
+        - task: DotNetCoreCLI@2
+          displayName: Build
+          inputs:
+            command: build
+            projects: '$(solutionPath)'
+            arguments: --configuration Release --no-restore
+
+        - task: DotNetCoreCLI@2
+          displayName: Test
+          inputs:
+            command: test
+            projects: '$(solutionPath)'
+            arguments: --configuration Release --no-build --logger trx
+
+        - task: DotNetCoreCLI@2
+          displayName: Publish function app
+          inputs:
+            command: publish
+            publishWebProjects: false
+            projects: '$(functionProject)'
+            arguments: --configuration Release --no-build --output $(System.DefaultWorkingDirectory)/publish_output
+            zipAfterPublish: false
+
+        - task: ArchiveFiles@2
+          displayName: 'Archive files'
+          inputs:
+            rootFolderOrFile: '$(System.DefaultWorkingDirectory)/publish_output'
+            includeRootFolder: false
+            archiveType: zip
+            archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+            replaceExistingArchive: true
+            
+        - task: Veracode.veracode-vsts-build-extension.veracode-scanner-task.Veracode@3
+          condition: eq('${{ parameters.veracode_scan }}', true)
+          displayName: 'Veracode Scan'
+          inputs:
+            AnalysisService: 'Veracode_Platform'
+            veracodeAppProfile: OneMember365
+            filepath: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+            optargs: '-criticality high -include **/*.dll -exclude **/*.exe -createsandbox true -sandboxname OneMember-FunctionApps-Scan -deleteIncompleteScan 1'
+            sandboxName: 'OneMember-FunctionApps-Scan'
+            createSandBox: true
+            importResults: true
+            failBuildOnPolicyFail: true
+            maximumWaitTime: 30
+
+        - publish: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+          artifact: drop
+ 
+  - stage: Deploy
+    dependsOn: build_artifacts
+    condition: succeeded()
+    jobs:
+    - deployment: Deploy
+      displayName: Deploy
+      environment: $(env)
+      pool:
+          name: Azure Pipelines
+          vmImage: $(vmImageName)
+
+      strategy:
+        runOnce:
+          deploy:
+
+            steps:
+            - task: AzureFunctionApp@1
+              displayName: 'Azure functions app deploy'
+              inputs:
+                azureSubscription: '$(serviceConnection)'
+                appType: functionApp
+                appName: $(functionAppName)
+                package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
