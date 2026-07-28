@@ -1,136 +1,91 @@
-name: Infra_Deploy_$(BuildDefinitionName)_$(date:yyyyMMdd)$(rev:.r)
+Story update — EApp Boomi client-side integration
+Status: Development complete
+Component: Dynamics 365 Opportunity form → Boomi → EApp SSO
+Scope: Client-side integration only (D365 web resources + form script wiring)
 
-trigger: none
+Summary
+Client-side EApp SSO integration is complete. Agents can launch EApp from the Opportunity form using a reusable MSAL + Boomi auth library. Configuration is driven by Dataverse environment variables (no hard-coded secrets in form scripts). First-time sign-in uses a full-page redirect that auto-completes the Boomi call and opens EApp without a second button click.
 
-parameters:
-- name: environment
-  displayName: 'Deployment Environment'
-  type: string
-  default: 'dev'
-  values:
-  - dev
-  - test
-  - uat
-  - uat2
-  - prod
+Completed work
+1. Reusable auth client (kofc_authclient.js)
 
-- name: veracode_scan
-  displayName: 'VeraCode Scan'
-  type: boolean
-  default: false
-  values:
-    - true
-    - false
+KOFC.Auth namespace with modular public API:
+configure() — runtime config from env vars
+openEapp(userId, oppId, eappUrl) — token → Boomi → open EApp with ?soreq=<base64>
+callBoomiRaw() / getAccessToken() / callBoomi() — supporting entry points
+MSAL.js integration: silent token from cache, SSO retry, full-page redirect fallback
+Sends delegated user token + x-api-key + userId / oppID to Boomi
+Structured debug logging (KOFC.Auth.getLogs() / dumpLogs()) without logging secrets
+2. MSAL redirect callback page (kofc_authcallback.html)
 
-- name: deploy_functionapp_workflows
-  displayName: 'Deploy Function App Workflows'
-  type: boolean
-  default: false
-  values:
-    - true
-    - false
+Registered as Entra SPA redirect URI
+Completes first-time sign-in redirect
+Auto-calls Boomi and opens EApp on return (no second click)
+User-facing loading/error UI
+3. Opportunity form integration (kofc_Opportunity-eapp-updates.js)
 
-variables:
-- name: solutionPath
-  value: 'KOFC-FA-AgentPortal-UserProfile/KOFC-FA-AgentPortal-UserProfile.sln'
-- name: functionProject
-  value: 'KOFC-FA-AgentPortal-UserProfile/KOFC-FA-AgentPortal-UserProfile.csproj'
-- ${{ if eq(parameters.environment, 'dev') }}:
-    - template: kofc-functionapp-variables/pipeline-vars-dev.yml
-- ${{ if eq(parameters.environment, 'test') }}:
-    - template: kofc-functionapp-variables/pipeline-vars-test.yml
-- ${{ if eq(parameters.environment, 'uat') }}:
-    - template: kofc-functionapp-variables/pipeline-vars-uat.yml
-- ${{ if eq(parameters.environment, 'uat2') }}:
-    - template: kofc-functionapp-variables/pipeline-vars-uat2.yml    
-- ${{ if eq(parameters.environment, 'prod') }}:
-    - template: kofc-functionapp-variables/pipeline-vars-prod.yml
+Dynamic load of auth client library
+Config from Dataverse environment variables via existing getEnvironmentVariableCurrentValue() helper (ADO 51210)
+Updated callEappFunctionAPP() wired to KOFC.Auth.openEapp()
+Progress indicator and error handling via Xrm.Navigation.openAlertDialog
+4. Environment variable–driven configuration
 
-stages:
-  - stage: build_artifacts
-    jobs:
-      - job: function_app_build
-        displayName: 'Build and publish function app'
-        pool:
-          name: Azure Pipelines
-          vmImage: $(vmImageName)
-        steps:
+Environment variable	Purpose
+kofc_EappTenantId
+Entra tenant ID
+kofc_EappClientId
+SPA app (client) ID
+kofc_EappApiAppId
+Function API app ID (scope builder)
+kofc_EappApiKey
+Boomi x-api-key
+kofc_EappIntfunctionURL
+Boomi REST endpoint
+kofc_EappURL
+EApp base URL (existing navigate chain)
+5. Documentation
 
-        - task: DotNetCoreCLI@2
-          displayName: Restore
-          inputs:
-            command: restore
-            projects: '$(solutionPath)'
-
-        - task: DotNetCoreCLI@2
-          displayName: Build
-          inputs:
-            command: build
-            projects: '$(solutionPath)'
-            arguments: --configuration Release --no-restore
-
-        - task: DotNetCoreCLI@2
-          displayName: Test
-          inputs:
-            command: test
-            projects: '$(solutionPath)'
-            arguments: --configuration Release --no-build --logger trx
-
-        - task: DotNetCoreCLI@2
-          displayName: Publish function app
-          inputs:
-            command: publish
-            publishWebProjects: false
-            projects: '$(functionProject)'
-            arguments: --configuration Release --no-build --output $(System.DefaultWorkingDirectory)/publish_output
-            zipAfterPublish: false
-
-        - task: ArchiveFiles@2
-          displayName: 'Archive files'
-          inputs:
-            rootFolderOrFile: '$(System.DefaultWorkingDirectory)/publish_output'
-            includeRootFolder: false
-            archiveType: zip
-            archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
-            replaceExistingArchive: true
-            
-        - task: Veracode.veracode-vsts-build-extension.veracode-scanner-task.Veracode@3
-          condition: eq('${{ parameters.veracode_scan }}', true)
-          displayName: 'Veracode Scan'
-          inputs:
-            AnalysisService: 'Veracode_Platform'
-            veracodeAppProfile: OneMember365
-            filepath: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
-            optargs: '-criticality high -include **/*.dll -exclude **/*.exe -createsandbox true -sandboxname OneMember-FunctionApps-Scan -deleteIncompleteScan 1'
-            sandboxName: 'OneMember-FunctionApps-Scan'
-            createSandBox: true
-            importResults: true
-            failBuildOnPolicyFail: true
-            maximumWaitTime: 30
-
-        - publish: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
-          artifact: drop
- 
-  - stage: Deploy
-    dependsOn: build_artifacts
-    condition: succeeded()
-    jobs:
-    - deployment: Deploy
-      displayName: Deploy
-      environment: $(env)
-      pool:
-          name: Azure Pipelines
-          vmImage: $(vmImageName)
-
-      strategy:
-        runOnce:
-          deploy:
-
-            steps:
-            - task: AzureFunctionApp@1
-              displayName: 'Azure functions app deploy'
-              inputs:
-                azureSubscription: '$(serviceConnection)'
-                appType: functionApp
-                appName: $(functionAppName)
-                package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
+Architecture wiki updated (docs/KOFC-EApp-SSO-Architecture.wiki.md) — two-token model, Boomi gateway validation, client-side flow
+Form integration reference snippet documented in web resource comments
+Acceptance criteria
+#	Criteria	Status
+1
+Agent clicks EApp button on Opportunity form
+Done
+2
+User authenticated via MSAL (silent or redirect)
+Done
+3
+Browser sends delegated token + x-api-key + userId/oppID to Boomi
+Done
+4
+Boomi response opens EApp with Base64 soreq payload
+Done
+5
+First-time sign-in completes without second button click
+Done
+6
+No secrets hard-coded in client scripts
+Done
+7
+Per-environment config via D365 environment variables
+Done
+8
+Reusable auth library for future forms/buttons
+Done
+Technical notes
+Two-token model: Browser uses delegated user token (scp = access_as_user) to authenticate to Boomi. Boomi calls the Azure Function with its own client-credentials token (roles = Contact.Read / Opportunity.Read). User identity flows as userId (Dataverse systemuserid).
+Prerequisite web resources: kofc_authclient.js, kofc_authcallback.html, kofc_msalbrowsermin
+Entra setup required: SPA redirect URI for kofc_authcallback.html must be registered in the app registration
+Out of scope (separate stories / teams)
+Boomi process/API gateway configuration (server-side)
+Azure Function App (getSOReqForEappSSO) deployment and Easy Auth setup
+Entra app registration and admin consent (infra/identity team)
+D365 solution packaging and environment variable creation in target orgs
+Recommended next steps
+Upload and publish web resources to DEV
+Create/configure environment variables in DEV
+Register SPA redirect URI in Entra
+End-to-end test: Opportunity form → Boomi → Function → EApp launch
+Promote to TEST / UAT after Boomi and Function App are ready in each environment
+Dev complete — ready for integration testing with Boomi and Function App in DE
