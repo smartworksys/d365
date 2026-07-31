@@ -1,1 +1,141 @@
+{
+  "info": {
+    "_postman_id": "kofc-simulate-boomi",
+    "name": "Simulate Boomi → GetSaasBlobUrl",
+    "description": "Simulates Boomi calling the Function.\n\nSet `accessToken` in the environment (your client-credentials token with Blob.Read).\nSet `userId` = Dataverse systemuserid (Boomi extracts from SPA oid).\n\nAzure: Bearer token only — Easy Auth validates and injects principal.\nLocal: also sends X-MS-CLIENT-PRINCIPAL to simulate Easy Auth (see environment `simulateLocal`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Simulate Boomi → GetSaasBlobUrl",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{accessToken}}",
+            "description": "Boomi client-credentials token (Blob.Read)"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "X-MS-CLIENT-PRINCIPAL",
+            "value": "{{boomiPrincipalBase64}}",
+            "description": "Local only — simulates Easy Auth after token validation. Disabled in Azure.",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{functionBaseUrl}}/api/GetSaasBlobUrl?path={{encodedPath}}&contactId={{contactId}}&userId={{userId}}&format=json",
+          "host": ["{{functionBaseUrl}}"],
+          "path": ["api", "GetSaasBlobUrl"],
+          "query": [
+            { "key": "path", "value": "{{encodedPath}}", "description": "Windows file path" },
+            { "key": "contactId", "value": "{{contactId}}", "description": "Regarding contact GUID" },
+            { "key": "userId", "value": "{{userId}}", "description": "D365 systemuserid (from SPA oid)" },
+            { "key": "format", "value": "json", "description": "Returns { sasUrl }" }
+          ]
+        },
+        "description": "Exactly what Boomi sends to the Function after validating the browser SPA token.\n\nBoomi does NOT forward the user SPA token — only userId/oid as query params."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// URL-encode path",
+              "const path = pm.environment.get('path') || pm.collectionVariables.get('path');",
+              "pm.variables.set('encodedPath', encodeURIComponent(path));",
+              "",
+              "// Build Easy Auth principal (Boomi SP + Blob.Read) for LOCAL simulation",
+              "const principal = {",
+              "    auth_typ: 'aad',",
+              "    claims: [",
+              "        { typ: 'roles', val: 'Blob.Read' },",
+              "        { typ: 'appid', val: pm.environment.get('boomiClientId') || 'boomi-service-principal' }",
+              "    ]",
+              "};",
+              "const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(principal))));",
+              "pm.variables.set('boomiPrincipalBase64', b64);",
+              "",
+              "// Enable X-MS-CLIENT-PRINCIPAL header only for local simulation",
+              "const isLocal = (pm.environment.get('simulateLocal') || 'true') === 'true';",
+              "const header = pm.request.headers.find(h => h.key === 'X-MS-CLIENT-PRINCIPAL');",
+              "if (header) { header.disabled = !isLocal; }",
+              "",
+              "if (!pm.environment.get('accessToken') && !isLocal) {",
+              "    console.warn('Set accessToken in environment — required for Azure.');",
+              "}"
+            ]
+          }
+        },
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', () => pm.response.to.have.status(200));",
+              "if (pm.response.code === 200) {",
+              "    const body = pm.response.json();",
+              "    pm.test('Response has sasUrl', () => {",
+              "        pm.expect(body.sasUrl).to.be.a('string').and.not.empty;",
+              "    });",
+              "    console.log('sasUrl:', body.sasUrl);",
+              "    pm.environment.set('lastSasUrl', body.sasUrl);",
+              "} else {",
+              "    console.log('Body:', pm.response.text());",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Simulate Boomi → by oid (optional)",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "Authorization", "value": "Bearer {{accessToken}}" },
+          { "key": "Accept", "value": "application/json" },
+          {
+            "key": "X-MS-CLIENT-PRINCIPAL",
+            "value": "{{boomiPrincipalBase64}}",
+            "disabled": true
+          }
+        ],
+        "url": {
+          "raw": "{{functionBaseUrl}}/api/GetSaasBlobUrl?path={{encodedPath}}&contactId={{contactId}}&oid={{oid}}&format=json",
+          "host": ["{{functionBaseUrl}}"],
+          "path": ["api", "GetSaasBlobUrl"],
+          "query": [
+            { "key": "path", "value": "{{encodedPath}}" },
+            { "key": "contactId", "value": "{{contactId}}" },
+            { "key": "oid", "value": "{{oid}}", "description": "Entra oid — Function resolves to systemuserid" },
+            { "key": "format", "value": "json" }
+          ]
+        },
+        "description": "Use when Boomi sends oid instead of userId. Function looks up systemuser.azureactivedirectoryobjectid."
+      },
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.variables.set('encodedPath', encodeURIComponent(pm.environment.get('path')));",
+              "const principal = { auth_typ: 'aad', claims: [{ typ: 'roles', val: 'Blob.Read' }] };",
+              "pm.variables.set('boomiPrincipalBase64', btoa(unescape(encodeURIComponent(JSON.stringify(principal)))));",
+              "const isLocal = (pm.environment.get('simulateLocal') || 'true') === 'true';",
+              "const header = pm.request.headers.find(h => h.key === 'X-MS-CLIENT-PRINCIPAL');",
+              "if (header) { header.disabled = !isLocal; }"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
 
