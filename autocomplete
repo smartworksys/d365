@@ -1,8 +1,7 @@
-Agent opens a Policy record in D365 and clicks Non-Header.
-Form validates policy fields and opens kofc_policy_details.html in a new tab.
-HTML page reads the policy record from Dataverse.
-Page gets an MSAL user token (silent, or redirect on first sign-in).
-Page calls Boomi with Bearer token + x-api-key + userId + policyRecordId + policy params.
-Boomi validates the user token, then calls the Azure Function with its own Policy.Read token.
-Function checks Dataverse access and returns Non-Header / Tier One JSON.
-HTML page renders the report (print supported).
+Thanks for the docs — we’ve reviewed the MS identity platform OBO and “web API calls web APIs” guidance.
+
+Our current blob flow intentionally matches the EApp/Policy pattern: Boomi validates the user SPA token and passes userId; the Function accepts only a Boomi service token (Blob.Read) and enforces contact access via Dataverse impersonation (CallerId), so the user SPA token never reaches the Function.
+
+We’re open to walking through your simplified approach in today’s call. To size effort, can you confirm whether you’re proposing OBO from Boomi → Function with a user-delegated token at the Function (replacing userId + impersonation), and whether that would apply to blob only or EApp/Policy as well?
+
+Rough estimate if we adopt standard OBO: ~2–4 weeks end-to-end (Entra OBO consent, Boomi OBO exchange, Function auth refactor, UAT), versus deploying the current fix which is aligned with existing integrations. Happy to compare trade-offs on the call.
