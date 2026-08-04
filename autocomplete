@@ -1,7 +1,145 @@
-Thanks for the docs — we’ve reviewed the MS identity platform OBO and “web API calls web APIs” guidance.
+using System.Security.Claims;
+using System.Text;
+using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json;
 
-Our current blob flow intentionally matches the EApp/Policy pattern: Boomi validates the user SPA token and passes userId; the Function accepts only a Boomi service token (Blob.Read) and enforces contact access via Dataverse impersonation (CallerId), so the user SPA token never reaches the Function.
+namespace KOFC_FA_PolicyNonHeader_TierOne.Helpers;
 
-We’re open to walking through your simplified approach in today’s call. To size effort, can you confirm whether you’re proposing OBO from Boomi → Function with a user-delegated token at the Function (replacing userId + impersonation), and whether that would apply to blob only or EApp/Policy as well?
+/// <summary>
+/// Validates Easy Auth tokens on inbound requests (mirrors EApp getSOReqForEappSSO).
+/// Boomi calls the function with a client-credentials token whose <c>roles</c> claim
+/// must include <see cref="PolicyReadRole"/>.
+/// </summary>
+public static class FunctionAppRoleAuth
+{
+    public const string PolicyReadRole = "Policy.Read";
 
-Rough estimate if we adopt standard OBO: ~2–4 weeks end-to-end (Entra OBO consent, Boomi OBO exchange, Function auth refactor, UAT), versus deploying the current fix which is aligned with existing integrations. Happy to compare trade-offs on the call.
+    public static bool IsAuthenticated(HttpRequest req)
+    {
+        if (req.HttpContext.User.Identity?.IsAuthenticated == true)
+        {
+            return true;
+        }
+
+        // Easy Auth on isolated Functions often injects X-MS-CLIENT-PRINCIPAL
+        // without populating HttpContext.User for app-only (client credentials) tokens.
+        if (IsRunningInAzure() && req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var principalHeader))
+        {
+            return !string.IsNullOrWhiteSpace(principalHeader.FirstOrDefault());
+        }
+
+        // Easy Auth is configured on the function app; locally there is no platform auth.
+        return !IsRunningInAzure();
+    }
+
+    public static IReadOnlyCollection<string> GetCallerRoles(HttpRequest req)
+    {
+        if (!IsRunningInAzure())
+        {
+            return new[] { PolicyReadRole };
+        }
+
+        return GetClaimValues(
+            req,
+            "roles",
+            ClaimTypes.Role,
+            "http://schemas.microsoft.com/ws/2008/06/identity/claims/role");
+    }
+
+    public static bool HasAppRole(IReadOnlyCollection<string> callerRoles, string role)
+    {
+        return callerRoles.Contains(role, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static IReadOnlyCollection<string> GetCallerScopes(HttpRequest req)
+    {
+        return GetClaimValues(
+                req,
+                "scp",
+                "http://schemas.microsoft.com/identity/claims/scope")
+            .SelectMany(value => value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public static bool HasScope(HttpRequest req, string scope)
+    {
+        return GetCallerScopes(req).Contains(scope, StringComparer.OrdinalIgnoreCase);
+    }
+
+    public static Guid? GetCallerObjectId(HttpRequest req)
+    {
+        var value = GetClaimValues(
+                req,
+                "oid",
+                "http://schemas.microsoft.com/identity/claims/objectidentifier")
+            .FirstOrDefault();
+
+        return Guid.TryParse(value, out var objectId) ? objectId : null;
+    }
+
+    public static bool IsDelegatedCaller(HttpRequest req)
+    {
+        return GetCallerObjectId(req).HasValue && GetCallerScopes(req).Count > 0;
+    }
+
+    private static bool IsRunningInAzure()
+    {
+        return !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
+    }
+
+    private static IReadOnlyCollection<string> GetClaimValues(HttpRequest req, params string[] claimTypes)
+    {
+        var values = req.HttpContext.User.Claims
+            .Where(c => claimTypes.Contains(c.Type, StringComparer.OrdinalIgnoreCase))
+            .Select(c => c.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
+
+        if (values.Count > 0)
+        {
+            return values;
+        }
+
+        if (!req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var header)
+            || string.IsNullOrWhiteSpace(header.FirstOrDefault()))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var json = Encoding.UTF8.GetString(Convert.FromBase64String(header.First()!));
+            var principal = JsonConvert.DeserializeObject<ClientPrincipal>(json);
+
+            return principal?.Claims?
+                .Where(c => claimTypes.Contains(c.Typ, StringComparer.OrdinalIgnoreCase))
+                .Select(c => c.Val)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToList() ?? [];
+        }
+        catch (FormatException)
+        {
+            return Array.Empty<string>();
+        }
+        catch (JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private sealed class ClientPrincipal
+    {
+        [JsonProperty("claims")]
+        public List<ClientPrincipalClaim>? Claims { get; set; }
+    }
+
+    private sealed class ClientPrincipalClaim
+    {
+        [JsonProperty("typ")]
+        public string Typ { get; set; } = "";
+
+        [JsonProperty("val")]
+        public string Val { get; set; } = "";
+    }
+}
