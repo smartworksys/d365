@@ -1,2 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Opening file...</title>
+    <!--
+      kofc_blob_open.html — Timeline / ADF blob opener
 
-https://YOURORG.crm.dynamics.com/WebResources/kofc_blob_open.html?path=D%3A%5Cfolder%5Cfile.xlsx&contactId=12345678-1234-1234-1234-123456789012
+      Preferred link (Xrm available + separate params in data):
+        {OrgUrl}/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html
+          &data=<uriComponent( path + "|" + contactId )>
+
+      Also:
+        /WebResources/kofc_blob_open.html?path=<uriComponent(path)>&contactId=<guid>
+        (works when ClientGlobalContext + Xrm.WebApi are available)
+
+      Env vars: kofc_TenantId, kofc_SPAClientId, kofc_BlobApiAppId,
+                kofc_EappApiKey, kofc_BlobBoomiUrl
+    -->
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f3f2f1;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: #323130;
+        }
+        .card {
+            background: #fff;
+            border: 1px solid #e1dfdd;
+            border-radius: 8px;
+            padding: 32px 28px;
+            max-width: 420px;
+            text-align: center;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+        }
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid #edebe9;
+            border-top-color: #0078d4;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error { color: #a4262c; white-space: pre-wrap; text-align: left; }
+        h1 { font-size: 18px; margin: 0 0 8px; }
+        p { margin: 0; color: #605e5c; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner" id="loader"></div>
+        <h1 id="title">Opening file</h1>
+        <p id="message">Starting...</p>
+        <pre class="error" id="error" style="display:none;"></pre>
+    </div>
+
+    <script src="/WebResources/ClientGlobalContext.js.aspx" type="text/javascript"></script>
+    <script src="/WebResources/kofc_authclient.js"></script>
+    <script src="/WebResources/kofc_blobClient.js"></script>
+    <script src="/WebResources/kofc_msalbrowsermin"></script>
+    <script>
+        (function () {
+            "use strict";
+
+            var ENV = {
+                tenantId: "kofc_TenantId",
+                clientId: "kofc_SPAClientId",
+                apiAppId: "kofc_BlobApiAppId",
+                apiKey: "kofc_EappApiKey",
+                boomiUrl: "kofc_BlobBoomiUrl"
+            };
+
+            var OVERALL_TIMEOUT_MS = 60000;
+
+            function setStatus(text) {
+                var el = document.getElementById("message");
+                if (el) { el.innerText = text; }
+            }
+
+            function showError(message) {
+                document.getElementById("loader").style.display = "none";
+                document.getElementById("title").innerText = "Unable to open file";
+                document.getElementById("message").style.display = "none";
+                var err = document.getElementById("error");
+                err.style.display = "block";
+                err.innerText = message || "Unknown error";
+            }
+
+            function getXrm() {
+                try { if (window.Xrm && window.Xrm.WebApi) { return window.Xrm; } } catch (e0) { /* ignore */ }
+                try { if (parent.Xrm && parent.Xrm.WebApi) { return parent.Xrm; } } catch (e1) { /* ignore */ }
+                try { if (window.top && window.top.Xrm && window.top.Xrm.WebApi) { return window.top.Xrm; } } catch (e2) { /* ignore */ }
+                return null;
+            }
+
+            function waitForXrm(maxMs) {
+                return new Promise(function (resolve, reject) {
+                    var started = Date.now();
+                    (function poll() {
+                        var x = getXrm();
+                        if (x) {
+                            resolve(x);
+                            return;
+                        }
+                        if (Date.now() - started > maxMs) {
+                            reject(new Error(
+                                "Dynamics Xrm.WebApi is not available on this page.\n\n" +
+                                "Open the file using a main.aspx webresource link (not a raw /WebResources URL), " +
+                                "while signed into Dynamics:\n\n" +
+                                "{org}/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html" +
+                                "&data=" + encodeURIComponent("D:\\folder\\file.xlsx|CONTACT-GUID")
+                            ));
+                            return;
+                        }
+                        setTimeout(poll, 200);
+                    })();
+                });
+            }
+
+            function stripBraces(value) {
+                return String(value || "").replace(/[{}]/g, "").trim();
+            }
+
+            function tryDecode(value) {
+                if (!value) { return value; }
+                try {
+                    return decodeURIComponent(value);
+                } catch (e) {
+                    return value;
+                }
+            }
+
+            function parseContext() {
+                var params = new URLSearchParams(window.location.search);
+                var path = params.get("path");
+                var contactId = params.get("contactId");
+                var data = params.get("data") || "";
+
+                if (path && contactId) {
+                    return {
+                        path: tryDecode(path),
+                        contactId: stripBraces(contactId)
+                    };
+                }
+
+                if (data) {
+                    var pipe = data.lastIndexOf("|");
+                    if (pipe > 0) {
+                        var maybeId = stripBraces(data.substring(pipe + 1));
+                        if (/^[0-9a-fA-F-]{36}$/.test(maybeId)) {
+                            return {
+                                path: tryDecode(data.substring(0, pipe)),
+                                contactId: maybeId
+                            };
+                        }
+                    }
+
+                    var nested = new URLSearchParams(data);
+                    var nestedPath = nested.get("path");
+                    var nestedContact = nested.get("contactId");
+                    if (nestedPath && nestedContact) {
+                        return {
+                            path: tryDecode(nestedPath),
+                            contactId: stripBraces(nestedContact)
+                        };
+                    }
+
+                    if (contactId) {
+                        return {
+                            path: tryDecode(data),
+                            contactId: stripBraces(contactId)
+                        };
+                    }
+                }
+
+                return {
+                    path: path ? tryDecode(path) : null,
+                    contactId: stripBraces(contactId)
+                };
+            }
+
+            function getEnvironmentVariable(xrmApi, schemaName) {
+                var escaped = schemaName.replace(/'/g, "''");
+                var query = "?$select=defaultvalue" +
+                    "&$filter=schemaname eq '" + escaped + "'" +
+                    "&$expand=environmentvariabledefinition_environmentvariablevalue($select=value)";
+                return xrmApi.WebApi.retrieveMultipleRecords("environmentvariabledefinition", query)
+                    .then(function (result) {
+                        if (!result || !result.entities || !result.entities.length) {
+                            return null;
+                        }
+                        var def = result.entities[0];
+                        return def.environmentvariabledefinition_environmentvariablevalue &&
+                            def.environmentvariabledefinition_environmentvariablevalue.length
+                            ? def.environmentvariabledefinition_environmentvariablevalue[0].value
+                            : def.defaultvalue;
+                    });
+            }
+
+            function loadConfig(xrmApi) {
+                return Promise.all([
+                    getEnvironmentVariable(xrmApi, ENV.tenantId),
+                    getEnvironmentVariable(xrmApi, ENV.clientId),
+                    getEnvironmentVariable(xrmApi, ENV.apiAppId),
+                    getEnvironmentVariable(xrmApi, ENV.apiKey),
+                    getEnvironmentVariable(xrmApi, ENV.boomiUrl)
+                ]).then(function (values) {
+                    var missing = [];
+                    if (!values[0]) { missing.push(ENV.tenantId); }
+                    if (!values[1]) { missing.push(ENV.clientId); }
+                    if (!values[2]) { missing.push(ENV.apiAppId); }
+                    if (!values[3]) { missing.push(ENV.apiKey); }
+                    if (!values[4]) { missing.push(ENV.boomiUrl); }
+                    if (missing.length) {
+                        throw new Error("Missing configuration: " + missing.join(", "));
+                    }
+                    return {
+                        tenantId: values[0],
+                        clientId: values[1],
+                        apiAppId: values[2],
+                        apiKey: values[3],
+                        boomiUrl: values[4],
+                        scope: "access_as_user",
+                        httpMethod: "GET",
+                        redirectWebResource: "kofc_authcallback.html",
+                        msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
+                        allowRedirect: true,
+                        debug: false
+                    };
+                });
+            }
+
+            function withTimeout(promise, ms, label) {
+                return new Promise(function (resolve, reject) {
+                    var timer = setTimeout(function () {
+                        reject(new Error(label + " timed out after " + (ms / 1000) + "s."));
+                    }, ms);
+                    promise.then(
+                        function (v) { clearTimeout(timer); resolve(v); },
+                        function (e) { clearTimeout(timer); reject(e); }
+                    );
+                });
+            }
+
+            async function init() {
+                try {
+                    if (!window.KOFC || !window.KOFC.Blob) {
+                        throw new Error("kofc_blobClient.js did not load (KOFC.Blob missing). Publish and hard-refresh.");
+                    }
+                    if (!window.KOFC.Auth) {
+                        throw new Error("kofc_authclient.js did not load (KOFC.Auth missing). Publish and hard-refresh.");
+                    }
+
+                    setStatus("Reading link parameters...");
+                    var ctx = parseContext();
+                    if (!ctx.path || !ctx.contactId) {
+                        throw new Error(
+                            "Missing path or contactId in link.\n\n" +
+                            "Use:\n" +
+                            "main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html" +
+                            "&data=<encode(path|contactId)>"
+                        );
+                    }
+
+                    var pending = KOFC.Blob.consumePendingResult();
+                    if (pending && pending.ok && pending.data && pending.data.sasUrl) {
+                        setStatus("Opening file...");
+                        window.location.href = pending.data.sasUrl;
+                        return;
+                    }
+                    if (pending && !pending.ok) {
+                        throw new Error(pending.raw || "Blob request failed after sign-in.");
+                    }
+
+                    setStatus("Connecting to Dynamics...");
+                    var xrmApi = await waitForXrm(8000);
+
+                    setStatus("Loading configuration...");
+                    var config = await withTimeout(loadConfig(xrmApi), 20000, "Loading configuration");
+                    KOFC.Blob.configure(config);
+
+                    setStatus("Signing in and requesting file access...");
+                    var result = await withTimeout(
+                        KOFC.Blob.openSaasBlob({
+                            path: ctx.path,
+                            contactId: ctx.contactId
+                        }),
+                        OVERALL_TIMEOUT_MS,
+                        "Sign-in / Boomi request"
+                    );
+
+                    if (result && result.redirecting) {
+                        setStatus("Redirecting to Microsoft sign-in...");
+                        return;
+                    }
+
+                    if (result && !result.ok) {
+                        throw new Error(
+                            "File request failed (HTTP " + (result.status || "?") + "): " +
+                            (result.raw || JSON.stringify(result.data) || "unknown")
+                        );
+                    }
+
+                    // openSaasBlob navigates to sasUrl on success; if still here, response was odd
+                    setStatus("File access granted. If the file did not open, check pop-up blocker.");
+                } catch (err) {
+                    showError(err && err.message ? err.message : String(err));
+                }
+            }
+
+            init();
+        })();
+    </script>
+</body>
+</html>
+
