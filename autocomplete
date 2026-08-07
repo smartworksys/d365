@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Opening file...</title>
     <!--
-      kofc_blob_open.html — Timeline / ADF link landing page
+      kofc_blob_open.html â€” Timeline / ADF link landing page
 
       Load order:
         1. kofc_authclient.js
@@ -17,8 +17,8 @@
         kofc_BlobTenantId, kofc_BlobClientId, kofc_BlobApiAppId,
         kofc_BlobApiKey, kofc_BlobBoomiUrl
 
-      Link contract (any integrator — ADF, plugin, flow):
-        Preferred (simple for ADF — encode data once):
+      Link contract (any integrator â€” ADF, plugin, flow):
+        Preferred (simple for ADF â€” encode data once):
           &data=<uriComponent( path + "|" + contactId )>
         Also supported:
           &data=<uriComponent( "path=" + path + "&contactId=" + contactId )>
@@ -67,6 +67,7 @@
         <pre class="error" id="error" style="display:none;"></pre>
     </div>
 
+    <script src="/WebResources/ClientGlobalContext.js.aspx" type="text/javascript"></script>
     <script src="/WebResources/kofc_authclient.js"></script>
     <script src="/WebResources/kofc_blobClient.js"></script>
     <script src="/WebResources/kofc_msalbrowsermin"></script>
@@ -83,7 +84,14 @@
             };
 
             function xrm() {
-                try { return parent.Xrm; } catch (e) { return null; }
+                try { if (window.Xrm) { return window.Xrm; } } catch (e0) { /* ignore */ }
+                try { if (parent.Xrm) { return parent.Xrm; } } catch (e1) { /* ignore */ }
+                try {
+                    if (typeof GetGlobalContext === "function") {
+                        return { Utility: { getGlobalContext: GetGlobalContext }, WebApi: null };
+                    }
+                } catch (e2) { /* ignore */ }
+                return null;
             }
 
             function showError(message) {
