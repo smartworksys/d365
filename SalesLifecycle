@@ -1,1 +1,51 @@
 
+/*
+ * KOFC.BlobLinkBuilder — build timeline links to kofc_blob_open.html
+ *
+ * Preferred (separate query parameters):
+ *   {OrgUrl}/WebResources/kofc_blob_open.html?path=...&contactId=...
+ *
+ * Usage:
+ *   KOFC.BlobLink.buildOpenerUrl({ filePath: "D:\\...", contactId: "{guid}" });
+ */
+(function (global) {
+    "use strict";
+
+    var DEFAULT_WEB_RESOURCE = "kofc_blob_open.html";
+
+    function stripBraces(value) {
+        return String(value || "").replace(/[{}]/g, "");
+    }
+
+    function buildOpenerUrl(options) {
+        if (!options || !options.filePath || !options.contactId) {
+            throw new Error("buildOpenerUrl requires filePath and contactId.");
+        }
+
+        var orgUrl = options.orgUrl;
+        if (!orgUrl && typeof Xrm !== "undefined" && Xrm.Utility) {
+            orgUrl = Xrm.Utility.getGlobalContext().getClientUrl();
+        }
+        if (!orgUrl) {
+            throw new Error("buildOpenerUrl requires orgUrl when not running inside Dynamics.");
+        }
+
+        var webResource = options.webResourceName || DEFAULT_WEB_RESOURCE;
+        var base = orgUrl.replace(/\/$/, "") + "/WebResources/" + webResource;
+        return base +
+            "?path=" + encodeURIComponent(options.filePath) +
+            "&contactId=" + encodeURIComponent(stripBraces(options.contactId));
+    }
+
+    function buildAnchorHtml(options) {
+        var label = options.label || "View file";
+        return '<a href="' + buildOpenerUrl(options) + '" target="_blank" rel="noopener noreferrer">' +
+            label + "</a>";
+    }
+
+    global.KOFC = global.KOFC || {};
+    global.KOFC.BlobLink = {
+        buildOpenerUrl: buildOpenerUrl,
+        buildAnchorHtml: buildAnchorHtml
+    };
+})(typeof window !== "undefined" ? window : this);
