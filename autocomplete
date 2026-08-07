@@ -1,1 +1,1904 @@
+///*
+//Author: Sreedeepthi Mamidala
+//#US - 1512
+//created onLoad, onChange, SetBPFStage
+//Date: 30/05/2023
+//*
 
+var Messages={
+	Resource: "kofc_/resx/messages",
+	SelectAllYesMoveKey: "Opportunity.SelectAllYesMove",
+	ProdCategorySubCategoryKey: "Opportunity.ProdCategorySubCategory",
+	ProductAddedKey: "Opportunity.ProductAdded",
+	SelectAllYesCloseKey: "Opportunity.SelectAllYesClose",
+	OpportunityProcessingKey: "General.ProcessingRequest",
+	ErrorKey:"General.Error"
+};
+var executionContext;
+var globalContext = Xrm.Utility.getGlobalContext();
+var clientUrl = globalContext.getClientUrl();
+
+// Opportunity BPFS
+var fraternalProcessID = "3112033E-FFD4-41C5-815A-7191676DF4CB";
+var newMemberProcessID = "32A593F9-95C9-EE11-9079-000D3A578997";
+var insuranceProcessID = "AC2E81E2-48D6-49EC-A087-522C7880CF61";
+var salesProcessID = "3E8EBEE6-A2BC-4451-9C5F-B146B085413A";
+var kccfProcessID = "959B80B2-AC50-48BE-9275-6F6F3D74BED7";
+var institutionalInvestmentProcessID = "96F11126-95C9-EE11-9079-000D3A578353";
+var charityProcessID = "F48943F0-2A72-4449-9415-23D7852BA584";
+var retailInvestmentProcessID = "0886E7CA-C121-4A9A-B728-52755346BABB";
+var recruitingFAProcessID = "DB58EF1F-250B-4681-AB0A-90CD51FBC290";
+// Commented below line as per US: 9947
+// var recruitingIARProcessID = "68D3DC14-38A9-4100-BC21-CD9504C0E803";
+
+// Opportunity Form Id's
+var fraternalFormID = "88d4b612-0b4e-4135-87fc-112910e3350b";
+var insuranceFormID = "7A73413A-631F-4C06-930A-89EA97FA1D45";
+var institutionalinvestmentFormID = "5f51bd3b-9c11-4df1-ac57-c2c2dd1bf986";
+var kccfFormID = "d890806e-3148-4b59-b335-d7bbd73a824f";
+var defaultOpportunityFormID = "86ca9222-e2b7-4e48-934c-c774ddd075fd";
+var charityFormID = "B24DBC11-C7E3-4DBF-957E-05340427805A";
+var retailInvestmentFormID = "1d4ea65c-04a0-4055-8c08-d7acc1ca888a";
+var recruitingFormID = "56F944A1-3887-4FD6-9787-389D0F9AA1E6";
+
+// Lead and Opportunity Institutional Develop and Propose Stage ID US:6038
+var leadInstitutionalInvestmentDevelop = "9b1d5cad-a07d-48f0-a599-4dab10273833";
+var leadInstitutionalInvestmentPropose = "af2d0bf2-31cc-4268-9e7f-4a76bacf372f";
+var opportunityInstitutionalInvestmentDevelop = "ff07c26a-ab9f-4053-9817-eb7958150feb";
+var opportunityInstitutionalInvestmentPropose = "7c84a7dd-ba85-47aa-87cd-b5124f3b56e6";
+
+//Sub Category Ids
+var institutionSubCategoryID = "30fac426-fe4d-ee11-be6f-000d3a578542";
+var councilSubCategoryID = "2635fe1d-fe4d-ee11-be6f-000d3a578542";
+var individualSubCategoryID = "29758dcb-db1c-ee11-8f6e-0022482ad7f9";
+
+//Product Ids
+var endowmentFundProductID = "10a191ef-db1c-ee11-8f6e-0022482ad7f9";
+var supportingOrganizationProductID = "1aa191ef-db1c-ee11-8f6e-0022482ad7f9";
+var restrictedFundProductID = "1ca191ef-db1c-ee11-8f6e-0022482ad7f9";
+var charitableFundProductID = "0ca191ef-db1c-ee11-8f6e-0022482ad7f9";
+
+var tabsAndSections = {
+    TabSummary: "Summary",
+    SectionAgentDetails: "Agent_Details",
+    SectionMemberDetails: "Member_Details",
+    SectionExamDetails: "ExamResults",
+    SectionCouncilDetails: "Summary_section_Council Details",
+    SectionCouncilAddress: "Summary_section_Council Address"
+};
+
+var opportunityType = {
+    Charity: 258510001,
+    CouncilReactivation: 258510008,
+    InstitutionalInvestment: 258510003,
+    NeedInsurance: 258510000,
+    NewCouncilDevelopment: 258510007,
+    NewMember: 258510006,
+    RetailInvestment: 258510002,
+    KCCF: 258510004,
+    EstablishCor: 258510005,
+    Recruiting: 258510009
+};
+
+var opportunityOptionSetType = {
+    Charity: { value: 258510001, text: "Charity" },
+    CouncilReactivation: { value: 258510008, text: "Council Reactivation" },
+    InstitutionalInvestment: { value: 258510003, text: "Institutional Investment" },
+    NeedInsurance: { value: 258510000, text: "Need Insurance" },
+    NewCouncilDevelopment: { value: 258510007, text: "New Council Development" },
+    NewMember: { value: 258510006, text: "New Member" },
+    RetailInvestment: { value: 258510002, text: "Retail Investment" },
+    KCCF: { value: 258510004, text: "KCCF" },
+    EstablishCor: { value: 258510005, text: "Establish Cor" },
+    Recruiting: { value: 258510009, text: "Recruiting" }
+};
+
+var councilStatusValue = {
+    Active: 258510000,
+    Suspended: 258510001
+};
+
+var opportunitySubType = {
+    FA: 258510002,
+    // Commented below line as per US: 9947
+    // IAR: 258510003,
+    Pledge: 258510001,
+    Donation: 258510000,
+    MajorGift: 258510005,
+    PlannedGift: 258510004
+};
+var retestOption = {
+    Yes: 100000001
+};
+var contactTypeOptionSet = {
+    Member: 258510000,
+    Agent: 258510001
+};
+
+var YesNoNaOptionValues = {
+    Yes: 258510000,
+    No: 258510001,
+    NA: 258510002
+};
+
+var YesNoOptionValues = {
+    Yes: 100000001,
+    No: 100000002
+};
+
+var donationTypeOptionValues = {
+    Cash: 258510000,
+    Pledge: 258510001
+};
+
+var productCategoryValues = {
+    RetailInvestment: 258510003,
+    KCCF: 258510004
+
+};
+
+function onLoad(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+    var formType = formContext.ui.getFormType();
+    var opportunityTypeValue = formContext.getAttribute('kofc_opportunitytype').getValue();
+    formContext.data.process.addOnProcessStatusChange(RefreshRibbon);//Added for US_6046 by Dipti
+HideKCCFClientOptionBasedOnRole(formContext);
+    var flag = true;
+
+    if (formType === 1 && currentFormID.toLowerCase() !== defaultOpportunityFormID.toLowerCase() && flag === true) {
+        formContext.data.addOnLoad(setDefaultForm);
+    }
+    else if (formType !== 1 && currentFormID.toLowerCase() === defaultOpportunityFormID.toLowerCase()) {
+        SetFormAndBPFStage(executionContext);
+        flag = false;
+    }
+
+    if (formType === 1 && currentFormID.toLowerCase() === defaultOpportunityFormID.toLowerCase()) {
+        GetLoggedInUserTeamSecurityRole(formContext);
+    }
+    formContext.data.addOnLoad(ShowHidePainPointValue);
+    formContext.data.addOnLoad(SetBPFStage);
+
+    /*Added as part of 6212 story by sreedeepthi*/
+    if (currentFormID === insuranceFormID.toLowerCase()) {
+        formContext.data.addOnLoad(ShowProductCategoryValues);
+    }
+
+    // Removed || currentFormID === institutionalinvestmentFormID form below if condition(Ref US : 6582)
+    if (currentFormID === insuranceFormID.toLowerCase() || currentFormID === kccfFormID || currentFormID === retailInvestmentFormID) {
+        formContext.data.addOnLoad(FilterProductSubCategory);
+    }
+
+    if (opportunityTypeValue === opportunityType.EstablishCor && currentFormID === fraternalFormID.toLowerCase()) {
+        formContext.data.addOnLoad(ShowHideCouncilSection);
+        formContext.data.addOnLoad(FilterParish);
+    }
+    if (opportunityTypeValue === opportunityType.NewMember && currentFormID === fraternalFormID.toLowerCase()) {
+        formContext.data.addOnLoad(ShowHideCouncilSection);
+        formContext.getControl("kofc_painpoints").setVisible(false);
+    }
+    //Added for US 5742
+    if (opportunityTypeValue === opportunityType.CouncilReactivation && currentFormID === fraternalFormID.toLowerCase()) {
+        formContext.data.addOnLoad(ShowHideCouncilSection);
+    }
+
+    if (opportunityTypeValue === opportunityType.Recruiting && currentFormID === recruitingFormID.toLowerCase()) {
+        //formContext.data.addOnLoad(RemoveOpportunitySubTypeValues);
+        formContext.data.addOnLoad(ShowHideContactSections);
+        // Added for fixing Bug 9725
+        // if (formContext.getAttribute("kofc_opportunitysubtype").getValue() !== null && formContext.getAttribute("kofc_opportunitysubtype").getValue() !== undefined) {
+        //     var oppSubType = formContext.getAttribute("kofc_opportunitysubtype").getValue();
+        //     if (oppSubType === opportunitySubType.FA) {
+                formContext.getAttribute("parentcontactid").addOnChange(ShowHideContactSections);
+        //         formContext.getAttribute("kofc_opportunitysubtype").addOnChange(ShowExamDetails);
+        //     }
+        // }
+
+        // if (formContext.getAttribute("kofc_retest").getValue() !== null && formContext.getAttribute("kofc_retest").getValue() !== undefined) {
+        //     formContext.data.addOnLoad(ShowExamDetails);
+        // }
+    }
+    //Added for Issue 6256
+    if (opportunityTypeValue === opportunityType.Charity && currentFormID === charityFormID.toLowerCase()) {
+        formContext.data.addOnLoad(RemoveOpportunitySubTypeValues);
+    }
+
+    //Added for 6044 - by sreedeepthi
+    if (opportunityTypeValue === opportunityType.KCCF && currentFormID === kccfFormID.toLowerCase()) {
+        formContext.data.addOnLoad(SetProductSubCategoryValue);
+    }
+
+    // Added for 6038 - by Bheemesh
+    if (opportunityTypeValue === opportunityType.InstitutionalInvestment && currentFormID === institutionalinvestmentFormID.toLowerCase()) {
+        formContext.data.process.addOnPreStageChange(InstitutionalInvestmentBPFStageMoveHandle);
+    }
+
+    // Added for 6457 - by Dipti
+    if (opportunityTypeValue === opportunityType.KCCF && currentFormID === kccfFormID.toLowerCase()) {
+        formContext.data.process.addOnPreProcessStatusChange(KccfBPFStatusChangeHandle);
+    }
+
+    //disable form selector
+    formContext.ui.formSelector.items.forEach(
+        function (f) {
+            f.setVisible(false);
+        }
+    );
+}
+
+//Function will be called on change of lead form.
+
+
+///*
+//Author: Dipti Mishra
+//#US - 6457
+//Date: 15/11/2023
+//*
+//Function to Refresh Ribbon on Save of Opportunity.
+function OnSave(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+        var opportunityTypeValue = formContext.getAttribute('kofc_opportunitytype').getValue();
+        var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+        if (opportunityTypeValue === opportunityType.KCCF && currentFormID === kccfFormID.toLowerCase())
+            RefreshRibbon(executionContext);
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in OnSave: ' + (error.description || error.message));
+    }
+}
+
+function setDefaultForm(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    var recordId = formContext.data.entity.getId();
+    formContext.ui.formSelector.items.get(defaultOpportunityFormID).navigate();
+
+    /*
+        Xrm.Navigation.openForm(
+            {
+                entityName: "opportunity",
+                entityId: recordId,
+                formId: defaultOpportunityFormID
+            }
+        ).then(
+            function success(result) {
+                // Form loaded successfully
+                //here we should call bpf load
+            },
+            function error(error) {
+                // Error occurred while loading the form
+               Xrm.Navigation.openAlertDialog('Error in loading form: ' + (error.description || error.message));
+            }
+        );
+        */
+}
+
+function GetLoggedInUserTeamSecurityRole(formContext) {
+    "use strict";
+    // Get the current user's role
+    var loggedUserRoles = Xrm.Utility.getGlobalContext().userSettings.roles;
+    var flag_Insurance = true;
+    var flag_Fraternal = true;
+    var flag_Investment = true;
+    var flag_Retail = true;
+    var flag_Charity = true;
+    var flag_KCCF = true;
+    var optionSetControl = formContext.getControl("kofc_opportunitytype");
+    // Clear existing options from the option set   
+    optionSetControl.clearOptions();
+    loggedUserRoles.forEach(function hasRoleName(item, index) {
+        if ((item.name === "Insurance Leader" || item.name === "Insurance Sales" || item.name === "Agency Support" || item.name === "Home Office" || item.name === "System Administrator" || item.name === "System Customizer") && flag_Insurance) {
+            optionSetControl.addOption(opportunityOptionSetType.NeedInsurance);
+            optionSetControl.addOption(opportunityOptionSetType.Recruiting);
+            flag_Insurance = false;
+        }
+        if ((item.name === "Fraternal Manager" || item.name === "System Administrator" || item.name === "System Customizer") && flag_Fraternal) {
+            optionSetControl.addOption(opportunityOptionSetType.NewCouncilDevelopment);
+            optionSetControl.addOption(opportunityOptionSetType.CouncilReactivation);
+            optionSetControl.addOption(opportunityOptionSetType.NewMember);
+            optionSetControl.addOption(opportunityOptionSetType.EstablishCor);
+            flag_Fraternal = false;
+        }
+        if ((item.name === "Investment Manager" || item.name === "Investment Support" || item.name === "Investment Leaderâ€‹â€‹" || item.name === "System Administrator" || item.name === "System Customizer") && flag_Investment) {
+            optionSetControl.addOption(opportunityOptionSetType.InstitutionalInvestment);
+            flag_Investment = false;
+        }
+        if ((item.name == "Retail Investment Sales" || item.name == "System Administrator" || item.name == "System Customizer") && flag_Retail) {
+            optionSetControl.addOption(opportunityOptionSetType.RetailInvestment);
+            flag_Retail = false;
+        }
+        if ((item.name === "Charity Leader" || item.name === "Charity User" || item.name === "System Administrator" || item.name === "System Customizer") && flag_Charity) {
+            optionSetControl.addOption(opportunityOptionSetType.Charity);
+            flag_Charity = false;
+        }
+        if ((item.name === "KCCF Leader" || item.name === "KCCF User" || item.name === "System Administrator" || item.name === "System Customizer") && flag_KCCF) {
+            optionSetControl.addOption(opportunityOptionSetType.KCCF);
+            flag_KCCF = false;
+        }
+    });
+}
+
+
+//Author:Dipti Mishra
+//Created On: 22 August 2024
+//US:18375
+//Function to remove KCCF Client option based on Security Role
+
+function HideKCCFClientOptionBasedOnRole(formContext){
+	 "use strict";
+
+    try {
+	var quickViewControl = formContext.ui.quickForms.get("Contact_Details");
+	if(quickViewControl !== undefined && quickViewControl !== null){
+		if(quickViewControl.isLoaded()){
+
+		if(quickViewControl.getControl('kofc_contacttype') !== null && !HasKCCFRole()){
+			        var contactTypeCtrl = quickViewControl.getControl('kofc_contacttype');
+					contactTypeCtrl.removeOption(258510007);
+		}
+		return;
+	}
+	else{
+		setTimeout(HideKCCFClientOptionBasedOnRole, 10, formContext);
+	}
+	}
+else{
+	console.log("No data in quick view Control ");
+	return;
+}	
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in HideKCCFClientOptionBasedOnRole: ' + (error.description || error.message));
+    }
+}
+
+//Author:Dipti Mishra
+//Created On: 22 August 2024
+//US:18375
+//Function to check if User has KCCF roles.
+
+function HasKCCFRole() {
+    "use strict";
+
+    var userRoles = Xrm.Utility.getGlobalContext().userSettings.roles;
+    var hasKCCFRoleFlag = false;
+    if (userRoles !== null && userRoles !== undefined) {
+        userRoles.forEach(function (item) {
+            if (item.name.toLowerCase() === "kccf leader" || item.name.toLowerCase() === "kccf user" || item.name.toLowerCase() === "kccf vip user") {
+                hasKCCFRoleFlag = true;
+				return hasKCCFRoleFlag;
+            }
+        });
+    }
+    return hasKCCFRoleFlag;
+}
+
+
+// Modified for fixing Bug 9725
+function onChangeOpportunityType(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+         var opportunityTypeValue = formContext.getAttribute('kofc_opportunitytype').getValue();
+        // if (opportunityTypeValue === opportunityType.Recruiting)
+        //     RemoveOpportunitySubTypeValues(executionContext);
+        // else {
+            var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+            if (currentFormID === defaultOpportunityFormID.toLowerCase()) {
+                //  if (formContext.data.entity.getIsDirty()) {
+                if (formContext.getAttribute('closeprobability') !== null)
+                    formContext.getAttribute('closeprobability').setValue(50);
+                if (formContext.getAttribute('kofc_productcategory') !== null) {
+                    if (opportunityTypeValue === opportunityType.RetailInvestment)
+                        formContext.getAttribute('kofc_productcategory').setValue(productCategoryValues.RetailInvestment);
+                    if (opportunityTypeValue === opportunityType.KCCF)
+                        formContext.getAttribute('kofc_productcategory').setValue(productCategoryValues.KCCF);
+                }
+
+                formContext.data.save().then(
+                    function success(result) {
+                        SetFormAndBPFStage(executionContext);
+                       
+                    },
+                    function error(error) {
+                        //error message
+                    }
+                );
+            }
+        //}
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in onChangeOpportunityType: ' + (error.description || error.message));
+    }
+}
+
+// Added for fixing Bug 9725
+function onChangeOpportunitySubType(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+        var opportunitySubTypeValue = formContext.getAttribute('kofc_opportunitysubtype').getValue();
+        var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+        if (currentFormID === defaultOpportunityFormID.toLowerCase()) {
+            if (formContext.getAttribute('closeprobability') !== null)
+                formContext.getAttribute('closeprobability').setValue(50);
+            formContext.data.save().then(
+                function success(result) {
+                    SetFormAndBPFStage(executionContext);
+                },
+                function error(error) {
+                    //error message
+                }
+            );
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in onChangeOpportunitySubType: ' + (error.description || error.message));
+    }
+}
+
+function SetFormAndBPFStage(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    var opportunityTypeValue = formContext.getAttribute('kofc_opportunitytype').getValue();
+    var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+    var currentProcessName = formContext.data.process.getActiveProcess();
+    var formType = formContext.ui.getFormType();
+    var recordId = formContext.data.entity.getId();
+    var formID;
+
+    var parameters = {};
+
+    try {
+        if (opportunityTypeValue === opportunityType.NewCouncilDevelopment || opportunityTypeValue === opportunityType.NewMember || opportunityTypeValue === opportunityType.CouncilReactivation || opportunityTypeValue === opportunityType.EstablishCor) {
+            if (fraternalFormID.toLowerCase() !== currentFormID.toLowerCase()) {
+                formID = fraternalFormID;
+            }
+        }
+        else if (opportunityTypeValue === opportunityType.NeedInsurance) {
+            if (insuranceFormID.toLowerCase() !== currentFormID.toLowerCase()) {
+                formID = insuranceFormID;
+            }
+        }
+        else if (opportunityTypeValue === opportunityType.KCCF) {
+            if (kccfFormID.toLowerCase() !== currentFormID.toLowerCase()) {
+                formID = kccfFormID;
+            }
+        }
+        else if (opportunityTypeValue === opportunityType.InstitutionalInvestment) {
+            if (institutionalinvestmentFormID.toLowerCase() !== currentFormID.toLowerCase()) {
+                formID = institutionalinvestmentFormID;
+            }
+        }
+        else if (opportunityTypeValue === opportunityType.Charity) {
+            if (charityFormID.toLowerCase() !== currentFormID.toLowerCase()) {
+                formID = charityFormID;
+            }
+        }
+        else if (opportunityTypeValue === opportunityType.RetailInvestment) {
+            if (retailInvestmentFormID.toLowerCase() !== currentFormID.toLowerCase()) {
+                formID = retailInvestmentFormID;
+            }
+        }
+        else if (opportunityTypeValue === opportunityType.Recruiting) {
+            if (recruitingFormID.toLowerCase() !== currentFormID.toLowerCase()) {
+                formID = recruitingFormID;
+            }
+        }
+
+        Xrm.Navigation.openForm(
+            {
+                entityName: "opportunity",
+                entityId: recordId,
+                formId: formID
+            }
+        ).then(
+            function success(result) {
+                // Form loaded successfully
+                //here we should call bpf load
+                   
+
+            },
+            function error(error) {
+                // Error occurred while loading the form
+                Xrm.Navigation.openAlertDialog('Error in loading form ' + (error.description || error.message));
+            }
+        );
+
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in SetFormAndBPFStage: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+function SetBPFStage(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    var opportunityTypeValue = formContext.getAttribute('kofc_opportunitytype').getValue();
+    var currentProcessName = formContext.data.process.getActiveProcess();
+    var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+    currentFormID = currentFormID.toLowerCase();
+    //var opportunityTypeValue = formContext.getAttribute('kofc_opportunitytype').getValue();
+    try {
+        if (formContext.getAttribute("originatingleadid") && formContext.getAttribute("originatingleadid").getValue() === null && currentProcessName !== null) {
+
+            if (currentProcessName.getName() !== "Opportunity Sales Process KCCF" && currentFormID === kccfFormID.toLowerCase()) {
+                formContext.data.process.setActiveProcess(kccfProcessID);
+            }
+            else if (currentProcessName.getName() !== "Opportunity Sales Process Fraternal" && currentFormID === fraternalFormID.toLowerCase() && opportunityTypeValue !== opportunityType.NewMember) {
+                formContext.data.process.setActiveProcess(fraternalProcessID);
+            }
+            else if (currentProcessName.getName() !== "Opportunity Sales Process New Member" && currentFormID === fraternalFormID.toLowerCase() && opportunityTypeValue === opportunityType.NewMember) {
+                formContext.data.process.setActiveProcess(newMemberProcessID);
+            }
+            else if (currentProcessName.getName() !== "Opportunity Sales Process Insurance" && currentFormID === insuranceFormID.toLowerCase()) {
+                formContext.data.process.setActiveProcess(insuranceProcessID);
+            }
+            else if (currentProcessName.getName() !== "Opportunity Sales Process Charity" && currentFormID === charityFormID.toLowerCase()) {
+                formContext.data.process.setActiveProcess(charityProcessID);
+            }
+            else if (currentProcessName.getName() !== "Opportunity Sales Process Retail Investment" && currentFormID === retailInvestmentFormID.toLowerCase()) {
+                formContext.data.process.setActiveProcess(retailInvestmentProcessID);
+            }
+            else if (currentProcessName.getName() !== "Opportunity Sales Process Institutional Investment" && currentFormID === institutionalinvestmentFormID.toLowerCase()) {
+                formContext.data.process.setActiveProcess(institutionalInvestmentProcessID);
+            }
+           // else if (currentProcessName.getName() !== "Opportunity Sales Process Recruiting" && currentFormID === recruitingFormID.toLowerCase() && formContext.getAttribute("kofc_opportunitysubtype").getValue() === opportunitySubType.FA) {
+            else if (currentProcessName.getName() !== "Opportunity Sales Process Recruiting" && currentFormID === recruitingFormID.toLowerCase()) {
+                formContext.data.process.setActiveProcess(recruitingFAProcessID);
+            }
+            // Commented below line as per US: 9947
+            //else if (currentProcessName.getName() !== "Opportunity Sales Process Recruiting IAR" && currentFormID === recruitingFormID.toLowerCase() && formContext.getAttribute("kofc_opportunitysubtype").getValue() === opportunitySubType.IAR) {
+            //    formContext.data.process.setActiveProcess(recruitingIARProcessID);
+            //}
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in SetBPFStage: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+function FilterProductSubCategory(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+
+    if (formContext.getControl('kofc_productcategory') !== null) {
+        formContext.getControl('kofc_productsubcategory').addPreSearch(AddProductSubCategoryFilter);
+    }
+    if (formContext.getControl('kofc_productsubcategory') !== null) {
+        formContext.getControl('kofc_product').addPreSearch(AddProductFilter);
+    }
+}
+
+function AddProductSubCategoryFilter(executionContext) {
+    "use strict";
+    var productCategoryOptionSet;
+    var formContext = executionContext.getFormContext();
+    var fetchQuery;
+    try {
+        productCategoryOptionSet = formContext.getControl('kofc_productcategory').getAttribute().getValue();
+        if (productCategoryOptionSet !== null && productCategoryOptionSet !== undefined) {
+            fetchQuery = "<filter type='and'><condition attribute = 'kofc_productcategory' operator = 'eq' value = '" + productCategoryOptionSet + "' /></filter>";
+            formContext.getControl('kofc_productsubcategory').addCustomFilter(fetchQuery);
+            formContext.getAttribute('kofc_productcategory').addOnChange(ClearSubCategory);
+        }
+    }
+    catch (e) {
+        Xrm.Navigation.openAlertDialog('AddProductSubCategoryFilter Error: ' + (e.description || e.message));
+    }
+}
+
+function AddProductFilter(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+    var productCategoryOptionSet = formContext.getControl('kofc_productcategory').getAttribute().getValue();
+    var fetchQuery1;
+    try {
+        /* commented as part of 6044 story
+        if (currentFormID === kccfFormID && productCategoryOptionSet === 258510004) {
+            var filterProduct = "<filter type='and'><condition attribute='kofc_productcategory' value ='258510004' operator='eq'/></filter >";
+            formContext.getControl('kofc_product').addCustomFilter(filterProduct);
+        }
+        else {*/
+        var productSubCategoryValue = formContext.getAttribute('kofc_productsubcategory').getValue();
+        if (productSubCategoryValue !== null && productSubCategoryValue !== undefined) {
+            var fetchQuery1 = "<filter type='and'><condition attribute='kofc_productsubcategory' value ='" + productSubCategoryValue[0].id + "' operator='eq'/></filter >";
+            formContext.getControl('kofc_product').addCustomFilter(fetchQuery1);
+            formContext.getAttribute('kofc_productsubcategory').addOnChange(ClearProduct);
+            //}
+        }
+    }
+    catch (e) {
+        Xrm.Navigation.openAlertDialog('AddProductFilter Error: ' + (e.description || e.message));
+    }
+}
+
+function ClearSubCategory(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    formContext.getAttribute('kofc_productsubcategory').setValue(null);
+    formContext.getAttribute('kofc_product').setValue(null);
+}
+
+function ClearProduct(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    formContext.getAttribute('kofc_product').setValue(null);
+}
+
+function ShowHidePainPointValue(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    var painPointOptionSet = formContext.getControl("kofc_painpoints");
+    var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+    try {
+        if (currentFormID === fraternalFormID.toLowerCase()) {
+            painPointOptionSet.removeOption(258510005);
+            painPointOptionSet.removeOption(258510006);
+            painPointOptionSet.removeOption(258510007);
+            painPointOptionSet.removeOption(258510008);
+            painPointOptionSet.removeOption(258510009);
+            painPointOptionSet.removeOption(258510010);
+            painPointOptionSet.removeOption(258510011);
+            painPointOptionSet.removeOption(258510012);
+            painPointOptionSet.removeOption(258510013);
+        }
+        if (currentFormID === kccfFormID.toLowerCase()) {
+            painPointOptionSet.removeOption(258510000);
+            painPointOptionSet.removeOption(258510001);
+            painPointOptionSet.removeOption(258510002);
+            painPointOptionSet.removeOption(258510003);
+            painPointOptionSet.removeOption(258510004);
+            painPointOptionSet.removeOption(258510009);
+            painPointOptionSet.removeOption(258510010);
+            painPointOptionSet.removeOption(258510011);
+            painPointOptionSet.removeOption(258510012);
+            painPointOptionSet.removeOption(258510013);
+        }
+        if (currentFormID === charityFormID.toLowerCase()) {
+            painPointOptionSet.removeOption(258510000);
+            painPointOptionSet.removeOption(258510001);
+            painPointOptionSet.removeOption(258510002);
+            painPointOptionSet.removeOption(258510003);
+            painPointOptionSet.removeOption(258510004);
+            painPointOptionSet.removeOption(258510008);
+            painPointOptionSet.removeOption(258510009);
+            painPointOptionSet.removeOption(258510010);
+            painPointOptionSet.removeOption(258510011);
+            painPointOptionSet.removeOption(258510012);
+            painPointOptionSet.removeOption(258510013);
+        }
+        if (currentFormID === retailInvestmentFormID) {
+            painPointOptionSet.removeOption(258510000);
+            painPointOptionSet.removeOption(258510001);
+            painPointOptionSet.removeOption(258510002);
+            painPointOptionSet.removeOption(258510003);
+            painPointOptionSet.removeOption(258510004);
+            painPointOptionSet.removeOption(258510005);
+            painPointOptionSet.removeOption(258510006);
+            painPointOptionSet.removeOption(258510007);
+            painPointOptionSet.removeOption(258510008);
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in ShowHidePainPointValue: ' + (error.description || error.message));
+
+    }
+}
+
+/*Added as part of 6212 story by sreedeepthi*/
+function ShowProductCategoryValues(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    var ProductCategoryOptionSet = formContext.getControl("kofc_productcategory");
+
+    try {
+        ProductCategoryOptionSet.removeOption(258510002);//Institutional Investment
+        ProductCategoryOptionSet.removeOption(258510004);//KCCF
+        ProductCategoryOptionSet.removeOption(258510003);//Retail Investment            
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in ShowHidePainPointValue: ' + (error.description || error.message));
+
+    }
+}
+
+
+function ShowHideCouncilSection(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+        formContext.ui.tabs.get(tabsAndSections.TabSummary).sections.get(tabsAndSections.SectionCouncilDetails).setVisible(false);
+        formContext.ui.tabs.get(tabsAndSections.TabSummary).sections.get(tabsAndSections.SectionCouncilAddress).setVisible(false);
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in ShowHideCouncilSection: ' + (error.description || error.message));
+    }
+}
+
+function FilterParish(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    //var opportunityType = formContext.getAttribute('kofc_opportunitytype').getValue();
+    //var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+    try {
+        formContext.getControl('kofc_parish').addPreSearch(FilterParishValue);
+    }
+    catch (error) {
+
+        Xrm.Navigation.openAlertDialog('Error in FilterParish: ' + (error.description || error.message));
+    }
+}
+
+function FilterParishValue(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+        var fetchXML = "<filter type='and'><condition attribute='kofc_corestablished' value='0' operator='eq'/></filter>";
+        formContext.getControl('kofc_parish').addCustomFilter(fetchXML);
+    }
+    catch (error) {
+
+        Xrm.Navigation.openAlertDialog('Error in FilterParishValue: ' + (error.description || error.message));
+    }
+}
+
+function SetProductSubCategoryValue(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    var OriginatingLead = formContext.getAttribute('originatingleadid').getValue();
+    if (OriginatingLead !== null && OriginatingLead !== "undefined") {
+        var OriginatingLeadId = OriginatingLead[0].id;
+        try {
+            /*To read lead subtype value*/
+            Xrm.WebApi.retrieveMultipleRecords("lead", "?$select=_kofc_leadsubtype_value&$filter=leadid eq '" + OriginatingLeadId + "'").then(
+                function success(results) {
+                    for (var i = 0; i < results.entities.length; i++) {
+                        var result = results.entities[i];
+                        // Columns
+                        //var leadid = result["leadid"]; // Guid
+                        //var kofc_leadsubtype = result["_kofc_leadsubtype_value"]; // Lookup
+                        var leadsubtypeValue = result["_kofc_leadsubtype_value@OData.Community.Display.V1.FormattedValue"];
+                        //var kofc_leadsubtype_lookuplogicalname = result["_kofc_leadsubtype_value@Microsoft.Dynamics.CRM.lookuplogicalname"];
+                        /*To set product sub category value*/
+                        Xrm.WebApi.retrieveMultipleRecords("kofc_productsubcategory", "?$select=kofc_name&$filter=kofc_name eq '" + leadsubtypeValue + "'").then(
+                            function success(results) {
+                                for (var i = 0; i < results.entities.length; i++) {
+                                    var result = results.entities[i];
+                                    // Columns
+                                    //var kofc_productsubcategoryid = result["kofc_productsubcategoryid"]; // Guid
+                                    //var kofc_name = result["kofc_name"]; // Text
+                                    var lookup = new Array();
+                                    lookup[0] = new Object;
+                                    lookup[0].id = result["kofc_productsubcategoryid"];
+                                    lookup[0].name = result["kofc_name"];
+                                    lookup[0].entityType = "kofc_productsubcategory";
+                                    formContext.getAttribute("kofc_productsubcategory").setValue(lookup);
+                                }
+                            },
+                            function (error) {
+                                Xrm.Navigation.openAlertDialog('Error in SetProductSubCategoryValue: ' + (error.description || error.message));
+                            }
+                        );
+                    }
+                },
+                function (error) {
+                    Xrm.Navigation.openAlertDialog('Error in SetProductSubCategoryValue: ' + (error.description || error.message));
+                }
+            );
+        }
+        catch (error) {
+            Xrm.Navigation.openAlertDialog('Error in SetProductSubCategoryValue: ' + (error.description || error.message));
+        }
+    }
+}
+
+///*
+//Author: Harshada Pimple
+//#US - 1369
+//Date: 01/06/2023
+//*
+//Function to Call Environment Variable.
+function CallEnvVar(PrimaryControl) {
+    "use strict";
+    GetEnvironmentVariableValue("kofc_CloneOpportunityFlowURL", PrimaryControl);
+}
+
+// ADO 51210 | Veera Kolan | 03/30/2026
+// Refactored to use getEnvironmentVariableCurrentValue() for env var resolution.
+
+// Function to get the environment variable value for clone opportunity power automate flow
+async function GetEnvironmentVariableValue(name, PrimaryControl) {
+    "use strict";
+
+    try {
+        const variable = await getEnvironmentVariableCurrentValue(name);
+        console.log("[EnvVar] Current value found for: " + name);
+        console.log("[EnvVar] Current value: " + variable);
+
+        if (variable) {
+            CallFlow(PrimaryControl, variable);
+        }
+    } catch (error) {
+        console.error(error);
+        Xrm.Navigation.openAlertDialog({
+            text: "Error retrieving environment variable value."
+        });
+    }
+}
+
+//Function to Call Clone Opportunity Power automate Flow and get the cloned opportunity record id in response.
+function CallFlow(PrimaryControl, envVarValue) {
+    "use strict";
+    try {
+        Xrm.Utility.showProgressIndicator(" Processing Request... Please Wait.");
+        var formContext = PrimaryControl;
+        var flowURL = envVarValue;
+        var recordId = formContext.data.entity.getId();
+        recordId = recordId.replace('{', '').replace('}', '');
+        var input = JSON.stringify({
+            "Opportunityid": formContext.data.entity.getId().replace("{", "").replace("}", "")
+        });
+        var req = new XMLHttpRequest();
+        req.open("POST", flowURL, true);
+        req.setRequestHeader("Content-Type", "application/json");
+        req.onreadystatechange = function () {
+            if (this.readyState === 4) {
+                req.onreadystatechange = null;
+                if (this.status === 200) {
+                    var resultJson = this.response;
+                    OpenRecordInNewTab(resultJson);
+                } else {
+                    Xrm.Utility.closeProgressIndicator();
+                    var alertStrings = {
+                        confirmButtonLabel: "OK",
+                        text: "Error At function CallFlow(Opportunity.js)" + this.statusText,
+                        title: "ERROR"
+                    };
+                    var alertOptions = {
+                        height: 120,
+                        width: 260
+                    };
+                    Xrm.Navigation.openAlertDialog(alertStrings, alertOptions).then(
+                        function (success) { },
+                        function (error) { });
+                }
+            }
+        };
+        req.send(input);
+        //Xrm.Utility.closeProgressIndicator();
+    } catch (error) {
+        Xrm.Utility.closeProgressIndicator();
+        var alertStrings = {
+            confirmButtonLabel: "OK",
+            text: "Error At function CallFlow(Opportunity.js)" + error.message,
+            title: "ERROR"
+        };
+        var alertOptions = {
+            height: 120,
+            width: 260
+        };
+        Xrm.Navigation.openAlertDialog(alertStrings, alertOptions).then(
+            function (success) { },
+            function (error) { });
+    }
+}
+//Function to open cloned opportunity record in New Tab.
+function OpenRecordInNewTab(resultJson) {
+    "use strict";
+    try {
+        var entityFormOptions = {};
+        entityFormOptions["entityName"] = "opportunity";
+        entityFormOptions["entityId"] = resultJson;
+        entityFormOptions["openInNewWindow"] = true;
+        Xrm.Navigation.openForm(entityFormOptions);
+        Xrm.Utility.closeProgressIndicator();
+    } catch (error) {
+        var alertStrings = {
+            confirmButtonLabel: "OK",
+            text: "Error At function OpenRecordInNewTab(Opportunity.js)" + error.message,
+            title: "ERROR"
+        };
+        var alertOptions = {
+            height: 120,
+            width: 260
+        };
+        Xrm.Navigation.openAlertDialog(alertStrings, alertOptions).then(
+            function (success) { },
+            function (error) { });
+    }
+}
+// ///*
+// //Author: Harshada Pimple
+// //#US - 1369
+// //Date: 01/06/2023
+// //*
+
+// //Function to Open Opportunity-Clone Opportunity Custom Page as a confirm dialog(popup) on click of Clone Opportunity button.
+// function OpenCloneOpportunityCustomPage(PrimaryControl) {
+// "use strict";
+// var formContext = PrimaryControl;
+// var pageInput = {
+// pageType: "custom",
+// name: "kofc_opportunitycloneopportunitycustompage_596a0",
+// recordId: formContext.data.entity.getId().replace('{', '').replace('}', '')
+// };
+// var navigationOptions = {
+// target: 2,
+// position: 1,
+// width:
+// {
+// value: 25,
+// unit: "%"
+// },
+// height:
+// {
+// value: 260,
+// unit: "px"
+// },
+// title: "Confirm Dialog"
+// };
+// Xrm.Navigation.navigateTo(pageInput, navigationOptions)
+// .then(
+// function (success) {
+// // Called when the dialog closes
+// }
+// ).catch(
+// function (error) {
+// // Handle error
+// }
+// );
+// }
+//Function to Show Hide Clone Opportunity Button on Opportunity Form.
+function ShowHideButton(PrimaryControl) {
+    "use strict";
+    var formContext = PrimaryControl;
+    var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+    if (insuranceFormID.toLowerCase() === currentFormID.toLowerCase() || kccfFormID.toLowerCase() === currentFormID.toLowerCase() || institutionalinvestmentFormID.toLowerCase() === currentFormID.toLowerCase() || fraternalFormID.toLowerCase() === currentFormID.toLowerCase()) {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+//Function to Show Hide Tools Button on Opportunity Form.
+function ShowHideToolsButton(PrimaryControl) {
+    "use strict";
+    var formContext = PrimaryControl;
+    var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+    if (insuranceFormID.toLowerCase() === currentFormID.toLowerCase()) {
+        return true;
+    }
+    else {
+        return false;
+    }
+}
+
+//Added as part of US 1529
+//Author:Harshada Pimple
+//Created On:
+//US:1529
+//Function to show hide Navigator and Eapp button to specific roles.
+
+function ShowHideEappandNavigatorButton(PrimaryControl) {
+    "use strict";
+    var formContext = PrimaryControl;
+    try {
+        var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+        var roles = Xrm.Utility.getGlobalContext().userSettings.roles;
+        var hasRole = false;
+        if (insuranceFormID.toLowerCase() === currentFormID.toLowerCase() && roles !== null && roles !== undefined) {
+            roles.forEach(function (item) {
+                if (item.name.toLowerCase() === "insurance leader" ||
+                    item.name.toLowerCase() === "insurance sales" ||
+                    item.name.toLowerCase() === "agency support") {
+                    //return true;
+                    hasRole = true;
+                }
+            });
+        }
+        return hasRole;
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in ShowHideEappandNavigatorButton: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+
+//Author:Dipti Mishra
+//Created On:
+//US:10179
+//Function to make Product Category mandatory on click of EApp button
+function OnClickEAppButton(PrimaryControl) {
+    "use strict";
+    try {
+        var formContext = PrimaryControl;
+        var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+        if (insuranceFormID.toLowerCase() === currentFormID.toLowerCase()) {
+            if (formContext.getAttribute('kofc_productcategory') !== null) {
+                if (formContext.getAttribute('kofc_productcategory').getValue() === null || formContext.getAttribute('kofc_productsubcategory').getValue() === null) {
+                 var prodCategorySubCategoryKeyMessage = Xrm.Utility.getResourceString(Messages.Resource, Messages.ProdCategorySubCategoryKey);
+				//Product Category and Subcategory are required fields for an application
+							var errorKeyMessage = Xrm.Utility.getResourceString(Messages.Resource, Messages.ErrorKey);
+						var alertStringsProdCategorySubCategory = {
+							confirmButtonLabel: "OK",
+							text: prodCategorySubCategoryKeyMessage,
+							title: errorKeyMessage
+						};
+                    var alertOptionsProdCategorySubCategory = {
+                        height: 120,
+                        width: 260
+                    };
+                    Xrm.Navigation.openAlertDialog(alertStringsProdCategorySubCategory, alertOptionsProdCategorySubCategory).then(
+                        function (success) { },
+                        function (error) { });
+                }
+                else {
+                    var isDirty = CheckFormIsDirty(formContext);
+                    if (isDirty) {
+                        Xrm.Navigation.openAlertDialog("Please save the record to proceed further.");
+                        return false;
+                    }
+                    else{
+                    
+                CallEappEnvVar(formContext);
+                    }
+                }
+            }
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in OnClickEAppButton: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+
+function OnClickNavigatorButton(PrimaryControl) {
+    "use strict";
+    
+    navigateToNavigator(PrimaryControl);
+    
+    }
+
+//Author:Susmitha THokala
+//Created On:
+//US:10179
+//Function to call E-app
+function CallEappEnvVar(PrimaryControl) { 
+
+    "use strict";
+    GetEnvironmentVariableValueForEapp("kofc_EappURL", PrimaryControl);
+}
+//Function to get the environment variable value for agent portal API by environment
+async function GetEnvironmentVariableValueForEapp(name, PrimaryControl) {
+    "use strict";
+    let results = await Xrm.WebApi.retrieveMultipleRecords("environmentvariabledefinition", "?$select=defaultvalue&$filter=schemaname eq '" + name + "'");
+    if (!results || !results.entities || results.entities.length < 1) return null;
+    let url = results.entities[0]['defaultvalue'];
+    if (url) {
+  GetEnvironmentVariableValueForEappIntFunctionApp(url, "kofc_EappIntfunctionURL", PrimaryControl);
+        
+    }
+}
+
+
+//Function to get the environment variable value for Agent portal Eapp API
+async function GetEnvironmentVariableValueForEappIntFunctionApp(eappURL, name, PrimaryControl) {
+    "use strict";
+    let results = await Xrm.WebApi.retrieveMultipleRecords("environmentvariabledefinition", "?$select=defaultvalue&$filter=schemaname eq '" + name + "'");
+    if (!results || !results.entities || results.entities.length < 1) return null;
+    let url = results.entities[0]['defaultvalue'];
+    if (url) {
+  
+       navigateToEapp(eappURL, PrimaryControl, url);
+    }
+}
+
+
+
+
+
+function navigateToEapp(eappURL, PrimaryControl, eappIntFunAppURL)
+{
+	
+     Xrm.Utility.showProgressIndicator(" Processing Request... Please Wait.");
+	var userSettings = Xrm.Utility.getGlobalContext().userSettings;
+	var currentuserid = userSettings.userId;
+	var userID = userSettings.userId;
+	userID = userID.replace('{', '').replace('}', '');
+	var username = userSettings.userName;
+	var formContext = PrimaryControl;
+	var oppID = formContext.data.entity.getId();
+	oppID = oppID.replace('{', '').replace('}', '');
+
+	var entityLogicalName = "systemuser";
+	var data = {
+		"kofc_opportunityid": oppID
+	}
+    
+    
+    
+     var clientFetchXML =             "<fetch>"
+                                        +"<entity name = 'opportunity'>"
+                                        +"<attribute name = 'opportunityid'/>"
+                                        +"     <filter type = 'and' >"
+                                        +"         <condition attribute = 'parentcontactid' operator= 'not-null'/>"
+                                        +"         <condition attribute='opportunityid' operator='eq' value='"+oppID+"' />"
+                                        +"    </filter>"
+                                        +"       <link-entity name = 'contact' from = 'contactid' to = 'parentcontactid' visible = 'false' link-type = 'outer' alias = 'c' >"
+                                        +"           <attribute name = 'kofc_clientid'/>"
+                                        +"           <attribute name = 'kofc_contacttype'/>"
+                                        +"          <attribute name = 'birthdate'/>"
+                                       
+                                        +"     </link-entity>"
+                                        +"  </entity>"
+                                        +"</fetch>" ;
+    // Encode the FetchXML query
+    var fetchXmlEncoded = encodeURIComponent(clientFetchXML);
+
+    // Construct the URL to call the Web API
+    var apiUrl = Xrm.Utility.getGlobalContext().getClientUrl() + "/api/data/v9.2/opportunities?fetchXml=" + fetchXmlEncoded;
+
+    
+    var globalContext = Xrm.Utility.getGlobalContext();
+                    var req = new XMLHttpRequest();
+                    req.open("GET",apiUrl, false);
+                    req.setRequestHeader("OData-MaxVersion", "4.0");
+                    req.setRequestHeader("OData-Version", "4.0");
+                    req.setRequestHeader("Content-Type", "application/json; charset=utf-8");
+                    req.setRequestHeader("Accept", "application/json");
+                    req.setRequestHeader("Prefer", "odata.include-annotations=*");
+                    
+                    req.onreadystatechange = function () {
+                        if (this.readyState === 4) {
+                           /* req.onreadystatechange = null;*/
+                            if (this.status === 200) {
+                                var result = JSON.parse(this.response);
+                                //var contactid = result["contactid"]; // Guid
+                                var type = result.value[0]["c.kofc_contacttype"]; // Choices
+                            //    var contactType = result["kofc_contacttype@OData.Community.Display.V1.FormattedValue"];
+                                Xrm.Utility.closeProgressIndicator();
+                           if ((type) && type.includes(contactTypeOptionSet.Member)) {
+                           
+                                    callEappFunctionAPP(oppID, eappURL, eappIntFunAppURL );
+
+                                }
+                                else {
+                                    var confirmStrings = { text:"Non-Member client information cannot be transferred to the application. Click OK to Proceed to eApp anyway, or Cancel.", title:"Message" };
+
+                                        var confirmOptions = { height: 200, width: 450 };
+
+                                        Xrm.Navigation.openConfirmDialog(confirmStrings, confirmOptions).then(
+
+                                        function (success) {    
+
+                                          if (success.confirmed) {
+
+                                              callEappFunctionAPP(oppID, eappURL, eappIntFunAppURL );
+
+                                          }
+
+                                        });
+                                }
+                               
+                            } else {
+                                Xrm.Navigation.openAlertDialog(this.statusText);
+                                 Xrm.Utility.closeProgressIndicator();
+                            }
+                        }
+                    };
+                    req.send();
+    
+    
+    
+	
+}
+
+/* US : 15963
+   Author:Rejoy Jacob
+   Created On: 09/10/24
+   US:15966
+   Function launch Navigator from Opportunity 
+*/
+
+function CallNavEnvVar(PrimaryControl) { 
+    "use strict";
+  Xrm.Utility.showProgressIndicator(" Processing Request... Please Wait.");
+    GetEnvironmentVariableValueForNavigator("kofc_NavigatorIntfunctionURL", PrimaryControl);
+}
+
+// ADO 51210 | Veera Kolan | 03/30/2026
+// Refactored to use getEnvironmentVariableCurrentValue() for env var resolution.
+
+// Function to get the environment variable value for agent portal API by environment
+async function GetEnvironmentVariableValueForNavigator(name, PrimaryControl) {
+    "use strict";
+
+    try {
+        const navFunctionAppURL = await getEnvironmentVariableCurrentValue(name);
+
+        if (navFunctionAppURL) {
+            GetEnvironmentVariableValueByName(
+                navFunctionAppURL,
+                "kofc_navigatorURL",
+                PrimaryControl
+            );
+        }
+    } catch (error) {
+        console.error(error);
+        Xrm.Navigation.openAlertDialog({
+            text: "Error retrieving environment variable value."
+        });
+    }
+}
+
+// ADO 51210 | Veera Kolan | 03/30/2026
+// Refactored to use getEnvironmentVariableCurrentValue() for env var resolution.
+
+async function GetEnvironmentVariableValueByName(navFunctionAppURL, name, PrimaryControl) {
+    "use strict";
+
+    try {
+        const url = await getEnvironmentVariableCurrentValue(name);
+
+        if (url) {
+            navigateToNavigator(navFunctionAppURL, PrimaryControl, url);
+        }
+    } catch (error) {
+        console.error(error);
+        Xrm.Navigation.openAlertDialog({
+            text: "Error retrieving environment variable value."
+        });
+    }
+}
+
+function navigateToNavigator(navFunctionAppURL,PrimaryControl,navigatorURL)
+{
+
+ try {
+        
+	 var formContext = PrimaryControl;
+     var contactLookup = PrimaryControl._ui._formContext.getAttribute("parentcontactid");
+
+    if (contactLookup != null && contactLookup.getValue() != null) {
+        // Retrieve the contact ID
+        var contactId = contactLookup.getValue()[0].id;  // The ID of the contact in the lookup
+
+        // Clean the GUID format
+        contactId = contactId.replace("{", "").replace("}", "");
+    
+    } else {
+        // Show an error message if contact lookup is empty
+        Xrm.Navigation.openAlertDialog({ text: "Contact is not selected in the Opportunity form." });
+    }
+
+
+
+        // Construct the Function App URL with the contact ID
+        var functionappURL = `${navFunctionAppURL}&type=contact&contactId=${contactId}`;
+
+        var requestOptions = {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json; charset=utf-8",
+                "Accept": "application/json"
+            }
+        };
+
+        // Show progress indicator to the user
+        Xrm.Utility.showProgressIndicator("Processing Request... Please Wait.");
+
+        // Make the fetch call
+        fetch(functionappURL, requestOptions)
+            .then(response => {
+                if (!response.ok) {
+                    const errorMessage = response.status === 404
+                        ? "Client Not Found."
+                        : "Failed to fetch response!";
+                   
+                    // Show alert dialog and wait for the dialog to complete
+                    return Xrm.Navigation.openAlertDialog({ text: errorMessage }).then(() => {
+                        throw new Error(errorMessage);
+                    });
+                }
+                return response.json(); // Parse JSON response if the call is successful
+            })
+            .then(responseData => {
+                if (!responseData || (!responseData.indicator && !responseData.data)) {
+                    Xrm.Utility.closeProgressIndicator();
+                    return Xrm.Navigation.openAlertDialog({
+                        text: "This functionality is not yet available. Build in progress!"
+                    });
+                }
+
+                // Extract tracking ID and build the final navigator URL
+                var transTrackingID = responseData.data.replace(/"/g, '');
+                var finalNavigatorURL = `${navigatorURL}&CurrentPage=Client&GatewayServicePayloadId=${transTrackingID}`;
+
+                // Open the navigator URL in a new window
+                Xrm.Utility.closeProgressIndicator();
+                const newWindow = window.open(finalNavigatorURL, "_blank");
+
+                if (!newWindow) {
+                    console.error("The new window is not accessible.");
+                    return Xrm.Navigation.openAlertDialog({
+                        text: "Failed to open new window."
+                    });
+                }
+
+            })
+            .catch(error => {
+                console.error('Error in fetch operation:', error.message);
+                Xrm.Utility.closeProgressIndicator();
+                Xrm.Navigation.openAlertDialog({ text: error.message });
+            });
+    } catch (error) {
+        console.error('Error in navigateToNavigator:', error.message);
+        Xrm.Utility.closeProgressIndicator();
+        Xrm.Navigation.openAlertDialog({ text: error.message });
+    }
+}
+
+
+//Author:Dipti Mishra
+//Created On:
+//US:10179
+//Function to Check if Form is Dirty if Yes return True else false
+function CheckFormIsDirty(formContext) {
+    "use strict";
+    try {
+        var isDirty = false;
+        if (formContext.data.entity.getIsDirty()) {
+            isDirty = true;
+        }
+        return isDirty;
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in CheckFormIsDirty: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+
+//Function to remove option set values from opportunity sub type for recruiting opportunity.
+function RemoveOpportunitySubTypeValues(executionContext) {
+    "use strict";
+    try {
+        var formContext = executionContext.getFormContext();
+        if (formContext.getAttribute("kofc_opportunitytype").getValue() !== null && formContext.getAttribute("kofc_opportunitytype").getValue() !== undefined) {
+            var oppType = formContext.getAttribute("kofc_opportunitytype").getValue();
+            if (oppType === opportunityType.Recruiting) {
+                var oppSubTypeOptionSet = formContext.getControl("kofc_opportunitysubtype");
+                oppSubTypeOptionSet.removeOption(opportunitySubType.Donation);
+                oppSubTypeOptionSet.removeOption(opportunitySubType.Pledge);
+                oppSubTypeOptionSet.removeOption(opportunitySubType.MajorGift);
+                oppSubTypeOptionSet.removeOption(opportunitySubType.PlannedGift);
+            }
+            else if (oppType === opportunityType.Charity) {
+                var oppSubTypeOptionSet = formContext.getControl("kofc_opportunitysubtype");
+                // Commented below line as per US: 9947
+                //oppSubTypeOptionSet.removeOption(opportunitySubType.IAR);
+                oppSubTypeOptionSet.removeOption(opportunitySubType.FA);
+            }
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in RemoveOpportunitySubTypeValues: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+//Function to show hide Agent and Member Sections based on Contact and Opportunity Type and Sub Type.
+function ShowHideContactSections(executionContext) {
+    "use strict";
+    try {
+        var formContext = executionContext.getFormContext();
+        var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+        var formType = formContext.ui.getFormType();
+        if (formContext.getAttribute("parentcontactid").getValue() === null && formContext.getAttribute("parentcontactid").getValue() === undefined) {
+            var sectionMember = formContext.ui.tabs.get(tabsAndSections.TabSummary).sections.get(tabsAndSections.SectionMemberDetails);
+            sectionMember.setVisible(false);
+            var sectionAgent = formContext.ui.tabs.get(tabsAndSections.TabSummary).sections.get(tabsAndSections.SectionAgentDetails);
+            sectionAgent.setVisible(false);
+        }
+        else {
+            //if (formContext.getAttribute("kofc_opportunitytype").getValue() !== null && formContext.getAttribute("kofc_opportunitytype").getValue() !== undefined && formContext.getAttribute("kofc_opportunitysubtype").getValue() !== null && formContext.getAttribute("kofc_opportunitysubtype").getValue() !== undefined && formContext.getAttribute("parentcontactid").getValue() !== null && formContext.getAttribute("parentcontactid").getValue() !== undefined && currentFormID === recruitingFormID.toLowerCase()) {
+            if (formContext.getAttribute("kofc_opportunitytype").getValue() !== null && formContext.getAttribute("kofc_opportunitytype").getValue() !== undefined && formContext.getAttribute("parentcontactid").getValue() !== null && formContext.getAttribute("parentcontactid").getValue() !== undefined && currentFormID === recruitingFormID.toLowerCase()) {
+                var contact = formContext.getAttribute("parentcontactid").getValue();
+                var contactID = contact[0].id.replace('{', '').replace('}', '');
+                //var oppSubType = formContext.getAttribute("kofc_opportunitysubtype").getValue();
+                var oppType = formContext.getAttribute("kofc_opportunitytype").getValue();
+               // if (oppType === opportunityType.Recruiting && oppSubType === opportunitySubType.FA) { change to remove opportunitysubtype #26141
+                if (oppType === opportunityType.Recruiting) {
+                    var globalContext = Xrm.Utility.getGlobalContext();
+                    var req = new XMLHttpRequest();
+                    req.open("GET", globalContext.getClientUrl() + "/api/data/v9.2/contacts(" + contactID + ")?$select=kofc_contacttype", false);
+                    req.setRequestHeader("OData-MaxVersion", "4.0");
+                    req.setRequestHeader("OData-Version", "4.0");
+                    req.setRequestHeader("Content-Type", "application/json; charset=utf-8");
+                    req.setRequestHeader("Accept", "application/json");
+                    req.setRequestHeader("Prefer", "odata.include-annotations=*");
+                    req.onreadystatechange = function () {
+                        if (this.readyState === 4) {
+                            req.onreadystatechange = null;
+                            if (this.status === 200) {
+                                var result = JSON.parse(this.response);
+                                //var contactid = result["contactid"]; // Guid
+                                var type = result["kofc_contacttype"]; // Choices
+                                var contactType = result["kofc_contacttype@OData.Community.Display.V1.FormattedValue"];
+                                if (type.includes(contactTypeOptionSet.Member)) {
+                                    var sectionMember = formContext.ui.tabs.get(tabsAndSections.TabSummary).sections.get(tabsAndSections.SectionMemberDetails);
+                                    sectionMember.setVisible(true);
+                                }
+                                else {
+                                    var sectionMember = formContext.ui.tabs.get(tabsAndSections.TabSummary).sections.get(tabsAndSections.SectionMemberDetails);
+                                    sectionMember.setVisible(false);
+                                }
+                                if (type.includes(contactTypeOptionSet.Agent)) {
+                                    var sectionAgent = formContext.ui.tabs.get(tabsAndSections.TabSummary).sections.get(tabsAndSections.SectionAgentDetails);
+                                    sectionAgent.setVisible(true);
+                                }
+                                else {
+                                    var sectionAgent = formContext.ui.tabs.get(tabsAndSections.TabSummary).sections.get(tabsAndSections.SectionAgentDetails);
+                                    sectionAgent.setVisible(false);
+                                }
+                            } else {
+                                Xrm.Navigation.openAlertDialog(this.statusText);
+                            }
+                        }
+                    };
+                    req.send();
+                }
+            }
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in ShowHideContactSections: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+//Function to Show Hide Exam Details Section For IAR.
+function ShowExamDetails(executionContext) {
+    "use strict";
+    try {
+        var formContext = executionContext.getFormContext();
+        var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+        //var formType = formContext.ui.getFormType();
+        if (formContext.getAttribute("kofc_opportunitytype").getValue() !== null && formContext.getAttribute("kofc_opportunitytype").getValue() !== undefined && formContext.getAttribute("kofc_opportunitysubtype").getValue() !== null && formContext.getAttribute("kofc_opportunitysubtype").getValue() !== undefined && currentFormID === recruitingFormID.toLowerCase()) {
+            // var oppSubType = formContext.getAttribute("kofc_opportunitysubtype").getValue();
+            // var oppType = formContext.getAttribute("kofc_opportunitytype").getValue();
+            // Commented below line as per US: 9947
+            //if (oppType === opportunityType.Recruiting && oppSubType === opportunitySubType.IAR) {
+            //    //if (formContext.getAttribute("kofc_retest").getValue() !== null && formContext.getAttribute("kofc_retest").getValue() !== undefined) {
+            //    //var retest = formContext.getAttribute("kofc_retest").getValue();
+            //    //if (retest === retestOption.Yes) {
+            //    var sectionExamDetails = formContext.ui.tabs.get("Summary").sections.get("ExamResults");
+            //    sectionExamDetails.setVisible(true);
+            //    //}
+            //    //}
+            //}
+            //else {
+            var sectionExamDetails = formContext.ui.tabs.get("Summary").sections.get("ExamResults");
+            sectionExamDetails.setVisible(false);
+            // }
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in ShowExamDetails: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+// Restring Stage moving for Oppo Type is Institutional Investment Start US:6038
+function InstitutionalInvestmentBPFStageMoveHandle(executionContext) {
+    "use strict";
+    try {
+        // get the event arguments
+        var bpfArguments = executionContext.getEventArgs();
+        var formContext = executionContext.getFormContext();
+        var currentStageId = formContext.data.process.getActiveProcess()._activeStageId;
+        if ((currentStageId === leadInstitutionalInvestmentDevelop || currentStageId === opportunityInstitutionalInvestmentDevelop) && bpfArguments.getDirection() === "Next") {
+            var initialMeeting = formContext.getAttribute("kofc_initialmeeting").getValue();
+            var meetingWithIT = formContext.getAttribute("kofc_meetingwithinvestmentteam").getValue();
+            var RPFOrRFICompleted = formContext.getAttribute("kofc_rfprficompleted").getValue();
+            if (initialMeeting !== null && meetingWithIT !== null && RPFOrRFICompleted !== null && RPFOrRFICompleted !== null &&
+                (initialMeeting === YesNoNaOptionValues.No || meetingWithIT === YesNoNaOptionValues.No || RPFOrRFICompleted === YesNoNaOptionValues.No)) {
+                // stop the stage movement
+                bpfArguments.preventDefault();
+		var selectAllYesMoveKeyMessage = Xrm.Utility.getResourceString(Messages.Resource, Messages.SelectAllYesMoveKey);
+                formContext.ui.setFormNotification(selectAllYesMoveKeyMessage, "WARNING", "DevelopProposeNotification");//"Please select all Yes/NA to move forward."
+                return;
+            }
+            else {
+                formContext.ui.clearFormNotification("DevelopProposeNotification");
+            }
+        }
+        if ((currentStageId === leadInstitutionalInvestmentPropose || currentStageId === opportunityInstitutionalInvestmentPropose) && bpfArguments.getDirection() === "Next") {
+            var finalPresentation = formContext.getAttribute("kofc_finalspresentation").getValue();
+            var followupMeetings = formContext.getAttribute("kofc_followupmeetings").getValue();
+            var verbalCommitment = formContext.getAttribute("kofc_verbalcommitment").getValue();
+            if (finalPresentation !== null && followupMeetings !== null && verbalCommitment !== null &&
+                (finalPresentation === YesNoNaOptionValues.No || followupMeetings === YesNoNaOptionValues.No || verbalCommitment === YesNoNaOptionValues.No)) {
+                // stop the stage movement
+                bpfArguments.preventDefault();
+	var selectAllYesMoveKeyMessage = Xrm.Utility.getResourceString(Messages.Resource, Messages.SelectAllYesMoveKey);
+
+                formContext.ui.setFormNotification(selectAllYesMoveKeyMessage, "WARNING", "DevelopProposeNotification");
+                return;
+            }
+            else {
+                formContext.ui.clearFormNotification("DevelopProposeNotification");
+            }
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in InstitutionalInvestmentBPFStageMoveHandle: ' + (error.description || error.message));
+    }
+}
+// End US:6038
+
+// On Change Opportunity Value Set Cash Amount Field and Est. Revenue for Charity Type Opportunity Start US:6043
+function OnChangeOpportunityValue(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+        var opportunityTypeValue = formContext.getAttribute('kofc_opportunitytype').getValue();
+        if (opportunityTypeValue === opportunityType.Charity) {
+            var opportunityValue = formContext.getAttribute("budgetamount").getValue();
+            if (opportunityValue !== null && opportunityValue !== "undefined" && formContext.getAttribute("kofc_cashamount") && formContext.getAttribute("estimatedvalue")) {
+                formContext.getAttribute("kofc_cashamount").setValue(parseFloat(opportunityValue));
+                formContext.getAttribute("estimatedvalue").setValue(opportunityValue);
+            }
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in OnChangeOpportunityValue: ' + (error.description || error.message));
+    }
+}
+// End 6043
+
+// Bheemesh: US Start 6440 Calling below functions in KCCF Form
+function OnChangeAccountOpen(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+        var accountOpen = formContext.getAttribute("kofc_accountopen").getValue();
+        if (accountOpen !== null && accountOpen === YesNoOptionValues.Yes) {
+            formContext.getAttribute("kofc_accountopeneddate").setValue(new Date);
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in OnChangeAccountOpen: ' + (error.description || error.message));
+    }
+}
+
+function OnChangeFundTheAccount(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+        var fundTheAccount = formContext.getAttribute("kofc_fundtheaccount").getValue();
+        if (fundTheAccount !== null && fundTheAccount === YesNoOptionValues.Yes) {
+            formContext.getAttribute("kofc_accountfundeddate").setValue(new Date);
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in OnChangeFundTheAccount: ' + (error.description || error.message));
+    }
+}
+// End 6440
+
+///*
+//Author: Dipti Mishra
+//#US - 6046, 6457
+//Date: 30/10/2023
+//*
+//Function to Show Close As Won Button on clicking Finish.
+function ShowCloseAsWonButtonOnFinish(executionContext) {
+    "use strict";
+    try {
+        var bpfStatus = executionContext.data.process.getStatus();
+        if (executionContext.getAttribute('kofc_opportunitytype') !== null) {
+            var opportunityTypeValue = executionContext.getAttribute('kofc_opportunitytype').getValue();
+            var currentFormID = executionContext.ui.formSelector.getCurrentItem().getId();
+            if (opportunityTypeValue === opportunityType.KCCF && currentFormID === kccfFormID.toLowerCase()) {
+                if (executionContext.getAttribute("kofc_product") !== null && executionContext.getAttribute("kofc_fundtheaccount") !== null && executionContext.getAttribute("kofc_accountopen") !== null && executionContext.getAttribute("kofc_productsubcategory") !== null) {
+                    var product = executionContext.getAttribute("kofc_product").getValue();
+                    var fundTheAccount = executionContext.getAttribute("kofc_fundtheaccount").getValue();
+                    var accountOpen = executionContext.getAttribute("kofc_accountopen").getValue();
+                    var productSubCategory = executionContext.getAttribute("kofc_productsubcategory").getValue();
+                    var productId = null;
+                    var productSubCategoryId = null;
+                    if (product !== null && productSubCategory !== null && accountOpen !== null && accountOpen === YesNoOptionValues.Yes && fundTheAccount !== null && fundTheAccount === YesNoOptionValues.Yes && bpfStatus === "finished") {
+                        productSubCategoryId = productSubCategory[0].id.replace('{', '').replace('}', '').toLowerCase();
+
+                        if (productSubCategoryId === councilSubCategoryID || productSubCategoryId === institutionSubCategoryID) {
+                            return true;
+                        }
+                        else if (productSubCategoryId === individualSubCategoryID) {
+                            productId = product[0].id.replace('{', '').replace('}', '').toLowerCase();
+                            if (executionContext.getAttribute("kofc_endowmentvalue") !== null && executionContext.getAttribute("kofc_supportingorganizationvalue") !== null && executionContext.getAttribute("budgetamount") !== null) {
+                                var endowmentValue = executionContext.getAttribute("kofc_endowmentvalue").getValue();
+                                var supportingOrgValue = executionContext.getAttribute("kofc_supportingorganizationvalue").getValue();
+                                var opportunityValue = executionContext.getAttribute("budgetamount").getValue();
+                                if ((opportunityValue !== null && (productId === restrictedFundProductID || productId === charitableFundProductID))) {
+                                    return true;
+                                }
+								//Added as part of UAT Finding 17277
+								else if (productId === endowmentFundProductID || productId === supportingOrganizationProductID) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            else if (bpfStatus === "finished") {
+                return true;
+            }
+        }
+        return false;
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in ShowCloseAsWonButtonOnFinish: ' + (error.description || error.message));
+    }
+}
+
+
+///*
+//Author: Dipti Mishra
+//#US - 6046
+//Date: 30/10/2023
+//*
+//Function to Refresh Ribbon.
+function RefreshRibbon(executionContext) {
+    "use strict";
+    var formContext = executionContext.getFormContext();
+    try {
+        formContext.ui.refreshRibbon();
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in RefreshRibbon: ' + (error.description || error.message));
+    }
+}
+
+function KccfBPFStatusChangeHandle(executionContext) {
+    "use strict";
+    try {
+        // get the event arguments
+        var bpfArguments = executionContext.getEventArgs();
+        var formContext = executionContext.getFormContext();
+        var bpfStatus = bpfArguments.getStatus().toLowerCase();
+        var fundTheAccount = formContext.getAttribute("kofc_fundtheaccount").getValue();
+        var accountOpen = formContext.getAttribute("kofc_accountopen").getValue();
+        if (bpfStatus === "finished" && (accountOpen === null || accountOpen !== YesNoOptionValues.Yes || fundTheAccount === null || fundTheAccount !== YesNoOptionValues.Yes)) {
+            bpfArguments.preventDefault();
+         var selectAllYesCloseKeyMessage = Xrm.Utility.getResourceString(Messages.Resource, Messages.SelectAllYesCloseKey);
+                formContext.ui.setFormNotification(selectAllYesCloseKeyMessage, "WARNING", "BPFFinishStatusNotification"); //"Please select all Yes in Close stage to Finish."	;
+            return;
+        }
+        else {
+            formContext.ui.clearFormNotification("BPFFinishStatusNotification");
+        }
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in KccfBPFStatusChangeHandle: ' + (error.description || error.message));
+    }
+}
+// End US 6457
+
+//Added as part of US 15966
+//Author:Rejoy Jacob
+//Created On:
+//US:15966
+//Function to show hide Navigator button to specific roles.
+
+function ShowHideNavigatorButton(PrimaryControl) {
+    "use strict";
+    var formContext = PrimaryControl;
+    try {
+        var currentFormID = formContext.ui.formSelector.getCurrentItem().getId();
+        var roles = Xrm.Utility.getGlobalContext().userSettings.roles;
+        var hasRole = false;
+        if (roles !== null && roles !== undefined) {
+            roles.forEach(function (item) {
+                if (item.name.toLowerCase() === "insurance leader" || item.name.toLowerCase() === "insurance sales" || item.name.toLowerCase() === "home office navigator role" || item.name.toLowerCase() === "agency support") {
+                    //return true;
+                    hasRole = true;
+                }
+            });
+        }
+        return hasRole;
+    }
+    catch (error) {
+        Xrm.Navigation.openAlertDialog('Error in ShowHideNavigatorButton: ' + (error.description || error.message));
+        return false;
+    }
+}
+
+// End US 15966
+
+
+// ADO Item: 51210
+// Author: Veera Kolan
+// Date: 03/30/2026
+// Description: Updated environment variable handling to use a centralized,
+// reusable helper that resolves Current Value first with Default Value fallback
+// to ensure consistent behavior across environments.
+
+async function getEnvironmentVariableCurrentValue(schemaName) {
+    "use strict";
+
+    const query =
+        "?$select=defaultvalue" +
+        "&$filter=schemaname eq '" + schemaName + "'" +
+        "&$expand=environmentvariabledefinition_environmentvariablevalue($select=value)";
+
+    const result = await Xrm.WebApi.retrieveMultipleRecords(
+        "environmentvariabledefinition",
+        query
+    );
+
+    if (!result || !result.entities || result.entities.length < 1) {
+        return null;
+    }
+
+    const definition = result.entities[0];
+
+    // Prefer current value, fallback to default
+    return definition.environmentvariabledefinition_environmentvariablevalue?.length
+        ? definition.environmentvariabledefinition_environmentvariablevalue[0].value
+        : definition.defaultvalue;
+}
+
+/*
+ * ============================================================================
+ * kofc_Opportunity — EApp SSO (KOFC.Auth + KOFC.Eapp; no userId)
+ * ============================================================================
+ *
+ * Env vars:
+ *   kofc_TenantId, kofc_SPAClientId, kofc_EappApiAppId (or kofc_eAppApiAppId),
+ *   kofc_EappApiKey, kofc_BoomieAppUrl
+ *   (+ kofc_EappURL from existing navigate chain)
+ *
+ * Web resources:
+ *   kofc_authclient.js, kofc_eappClient.js, kofc_authcallback.html, kofc_msalbrowsermin
+ * ============================================================================
+ */
+
+var AUTH_CLIENT_LIBRARY = "/WebResources/kofc_authclient.js";
+var EAPP_CLIENT_LIBRARY = "/WebResources/kofc_eappClient.js";
+
+var AUTH_ENV_VARS = {
+    tenantId: "kofc_TenantId",
+    clientId: "kofc_SPAClientId",
+    apiAppId: "kofc_EappApiAppId",
+    apiKey: "kofc_EappApiKey",
+    boomiUrl: "kofc_BoomieAppUrl"
+};
+
+var AUTH_STATIC_CONFIG = {
+    scope: "access_as_user",
+    httpMethod: "POST",
+    redirectWebResource: "kofc_authcallback.html",
+    msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
+    allowRedirect: true,
+    debug: false
+};
+
+function loadScriptLibrary(path, isReady) {
+    return new Promise(function (resolve, reject) {
+        if (isReady()) {
+            resolve();
+            return;
+        }
+        var script = document.createElement("script");
+        script.src = Xrm.Utility.getGlobalContext().getClientUrl() + path;
+        script.onload = function () {
+            if (isReady()) { resolve(); }
+            else { reject(new Error("Library loaded but API missing: " + path)); }
+        };
+        script.onerror = function () {
+            reject(new Error("Failed to load: " + script.src));
+        };
+        document.head.appendChild(script);
+    });
+}
+
+function loadEappClients() {
+    return loadScriptLibrary(AUTH_CLIENT_LIBRARY, function () {
+        return window.KOFC && window.KOFC.Auth;
+    }).then(function () {
+        return loadScriptLibrary(EAPP_CLIENT_LIBRARY, function () {
+            return window.KOFC && window.KOFC.Eapp;
+        });
+    });
+}
+
+async function getAuthConfigFromEnvironment(boomiIntegrationUrl) {
+    "use strict";
+
+    var results = await Promise.all([
+        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.tenantId),
+        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.clientId),
+        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.apiAppId),
+        getEnvironmentVariableCurrentValue("kofc_eAppApiAppId"), // legacy schema fallback
+        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.apiKey),
+        getEnvironmentVariableCurrentValue(AUTH_ENV_VARS.boomiUrl)
+    ]);
+
+    var tenantId = results[0];
+    var clientId = results[1];
+    var apiAppId = results[2] || results[3];
+    var apiKey = results[4];
+    var boomiUrl = results[5] || boomiIntegrationUrl;
+
+    var missing = [];
+    if (!tenantId) { missing.push(AUTH_ENV_VARS.tenantId); }
+    if (!clientId) { missing.push(AUTH_ENV_VARS.clientId); }
+    if (!apiAppId) { missing.push(AUTH_ENV_VARS.apiAppId); }
+    if (!apiKey) { missing.push(AUTH_ENV_VARS.apiKey); }
+    if (!boomiUrl) { missing.push(AUTH_ENV_VARS.boomiUrl); }
+    if (missing.length > 0) {
+        throw new Error("Missing EApp SSO configuration value(s): " + missing.join(", "));
+    }
+
+    return {
+        tenantId: tenantId,
+        clientId: clientId,
+        apiAppId: apiAppId,
+        apiKey: apiKey,
+        boomiUrl: boomiUrl,
+        scope: AUTH_STATIC_CONFIG.scope,
+        httpMethod: AUTH_STATIC_CONFIG.httpMethod,
+        redirectWebResource: AUTH_STATIC_CONFIG.redirectWebResource,
+        msalWebResourcePath: AUTH_STATIC_CONFIG.msalWebResourcePath,
+        allowRedirect: AUTH_STATIC_CONFIG.allowRedirect,
+        debug: AUTH_STATIC_CONFIG.debug
+    };
+}
+
+/**
+ * Called by navigateToEapp after member/contact check.
+ * No userId — Function identity from SPA token oid.
+ *
+ * Requires published web resources:
+ *   kofc_authclient.js  (KOFC.Auth)
+ *   kofc_eappClient.js  (KOFC.Eapp)  ← openEapp lives HERE, not on Auth
+ */
+async function callEappFunctionAPP(opportunityId, eappUrl, boomiIntegrationUrl) {
+    "use strict";
+
+    Xrm.Utility.showProgressIndicator("Processing Request... Please Wait.");
+
+    try {
+        await loadEappClients();
+
+        if (!window.KOFC || !window.KOFC.Eapp || typeof window.KOFC.Eapp.openEapp !== "function") {
+            throw new Error(
+                "KOFC.Eapp.openEapp is not available. Publish web resource " +
+                "kofc_eappClient.js (Name must include .js), then hard-refresh the form."
+            );
+        }
+
+        var authConfig = await getAuthConfigFromEnvironment(boomiIntegrationUrl);
+        KOFC.Eapp.configure(authConfig);
+        // Prefer Eapp (correct API). Do not call KOFC.Auth.openEapp.
+        await KOFC.Eapp.openEapp(opportunityId, eappUrl);
+        Xrm.Utility.closeProgressIndicator();
+    } catch (err) {
+        Xrm.Utility.closeProgressIndicator();
+        Xrm.Navigation.openAlertDialog({
+            text: (err && err.message) ? err.message : String(err)
+        });
+    }
+}
