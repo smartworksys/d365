@@ -1,71 +1,7 @@
-using Azure.Identity;
-using Azure.Storage.Blobs;
-using Azure.Security.KeyVault.Secrets;
-using Azure.Extensions.AspNetCore.Configuration.Secrets;
-using Microsoft.Azure.Functions.Worker;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-
-var host = new HostBuilder()
-    .ConfigureFunctionsWorkerDefaults()
-    .ConfigureAppConfiguration((context, config) =>
-    {
-        // Add Key Vault configuration
-        var keyVaultUri = Environment.GetEnvironmentVariable("KeyVaultUri");
-        if (!string.IsNullOrEmpty(keyVaultUri))
-        {
-            var credential = new DefaultAzureCredential();
-            var secretClient = new SecretClient(new Uri(keyVaultUri), credential);
-            config.AddAzureKeyVault(secretClient, new AzureKeyVaultConfigurationOptions());
-        }
-        
-        // Add local settings for development
-        if (context.HostingEnvironment.IsDevelopment())
-        {
-            config.AddJsonFile("local.settings.json", optional: true, reloadOnChange: true);
-        }
-    })
-    .ConfigureServices((context, services) =>
-    {
-        // Add logging
-        services.AddLogging();
-        
-        // Add BlobServiceClient
-        services.AddSingleton(provider =>
-        {
-            var configuration = provider.GetRequiredService<IConfiguration>();
-            var connectionString = configuration["Blob--ConnectionString"];
-            
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                throw new InvalidOperationException("Blob--ConnectionString not found in configuration");
-            }
-            
-            return new BlobServiceClient(connectionString);
-        });
-        
-        // Add DataverseService
-        services.AddSingleton<DataverseService>(provider =>
-        {
-            var configuration = provider.GetRequiredService<IConfiguration>();
-            var logger = provider.GetRequiredService<ILogger<DataverseService>>();
-            
-            var clientId = configuration["Dataverse--ClientId"];
-            var clientSecret = configuration["Dataverse--ClientSecret"];
-            var tenantId = configuration["Dataverse--TenantId"];
-            var dataverseUrl = configuration["Dataverse--Url"];
-            
-            if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret) || 
-                string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(dataverseUrl))
-            {
-                throw new InvalidOperationException("Required Dataverse configuration not found in Key Vault");
-            }
-            
-            return new DataverseService(clientId, clientSecret, tenantId, dataverseUrl, logger);
-        });
-    })
-    .Build();
-
-host.Run();
+Quick DevTools shortcut (recommended for testing)
+F12 → Application tab
+Left panel → Clear storage
+Check all boxes
+Click Clear site data
+Refresh page — user will be prompted to sign in fresh
+This is the cleanest single-click approach during development/testing.
