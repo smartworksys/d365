@@ -1,1 +1,112 @@
 
+============================================================
+Application Insights - KQL Queries for Presenting Requests
+============================================================
+Run in: Application Insights → Logs
+Note: Sampling must be disabled in host.json for complete data.
+
+
+------------------------------------------------------------
+1. ALL REQUESTS (Full Audit)
+------------------------------------------------------------
+
+requests
+| where timestamp > ago(30d)
+| extend oid = tostring(customDimensions["oid"])
+| project
+    timestamp,
+    endpoint = name,
+    httpStatus = resultCode,
+    durationMs = duration,
+    userOid = oid,
+    clientIP = client_IP
+| order by timestamp desc
+
+
+------------------------------------------------------------
+2. USER ACTIVITY REPORT (Who, What, When, How Many)
+------------------------------------------------------------
+
+requests
+| where timestamp > ago(30d)
+| extend oid = tostring(customDimensions["oid"])
+| where isnotempty(oid)
+| summarize
+    totalRequests = count(),
+    firstAccess = min(timestamp),
+    lastAccess = max(timestamp),
+    endpoints = make_set(name),
+    statusCodes = make_set(resultCode)
+    by oid
+| order by lastAccess desc
+
+
+------------------------------------------------------------
+3. DAILY ACTIVE USERS
+------------------------------------------------------------
+
+requests
+| where timestamp > ago(30d)
+| extend oid = tostring(customDimensions["oid"])
+| where isnotempty(oid)
+| summarize uniqueUsers = dcount(oid), totalCalls = count()
+    by bin(timestamp, 1d)
+| order by timestamp desc
+
+
+------------------------------------------------------------
+4. FAILED REQUESTS (401 / 403 / 500)
+------------------------------------------------------------
+
+requests
+| where timestamp > ago(30d)
+| where toint(resultCode) >= 400
+| extend oid = tostring(customDimensions["oid"])
+| project
+    timestamp,
+    endpoint = name,
+    httpStatus = resultCode,
+    userOid = oid,
+    durationMs = duration
+| order by timestamp desc
+
+
+------------------------------------------------------------
+5. SPECIFIC USER LOOKUP (Replace OID)
+------------------------------------------------------------
+
+let targetOid = "PUT-USER-OID-HERE";
+requests
+| where timestamp > ago(30d)
+| extend oid = tostring(customDimensions["oid"])
+| where oid == targetOid
+| project timestamp, endpoint = name, httpStatus = resultCode, durationMs = duration
+| order by timestamp desc
+
+
+------------------------------------------------------------
+6. EXPORT-FRIENDLY (For InfoSec Spreadsheet)
+------------------------------------------------------------
+
+requests
+| where timestamp > ago(30d)
+| extend oid = tostring(customDimensions["oid"])
+| project
+    Date = format_datetime(timestamp, "yyyy-MM-dd"),
+    Time = format_datetime(timestamp, "HH:mm:ss"),
+    User_OID = oid,
+    Endpoint = name,
+    HTTP_Status = resultCode,
+    Duration_ms = round(duration, 0),
+    Client_IP = client_IP
+| order by Date desc, Time desc
+
+
+============================================================
+NOTES:
+- Click "Export → CSV" after running any query.
+- Adjust "ago(30d)" to change the time window.
+- oid comes from the SPA token validated by Easy Auth.
+- Ensure host.json has sampling disabled:
+    "samplingSettings": { "isEnabled": false }
+============================================================
