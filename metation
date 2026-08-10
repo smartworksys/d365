@@ -1,415 +1,302 @@
-using Azure;
-using KOFC_FA_PolicyNonHeader_TierOne.Helpers;
-using KOFC_FA_PolicyNonHeader_TierOne.Models;
-using KOFC_FA_PolicyNonHeader_TierOne.Services;
+using System.Diagnostics;
+using System.ServiceModel;
+using System.Text;
+using KOFC_FA_AgentPortal_UserProfile.Helpers;
+using KOFC_FA_AgentPortal_UserProfile.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.Functions.Worker.Http;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
-using System.Net;
-using System.Text.Json;
+using Microsoft.Xrm.Sdk;
+using Microsoft.Xrm.Sdk.Messages;
+using Microsoft.Xrm.Sdk.Metadata;
+using Microsoft.Xrm.Sdk.Query;
+using Newtonsoft.Json;
+using Formatting = Newtonsoft.Json.Formatting;
 
-namespace KOFC_FA_PolicyNonHeader_TierOne
+namespace KOFC_FA_AgentPortal_UserProfile;
+
+public class EappSSO
 {
-    public class PolicyData
+    private readonly ILogger<EappSSO> _log;
+    private readonly IDataverseService _dataverseService;
+
+    public EappSSO(ILogger<EappSSO> log, IDataverseService dataverseService)
     {
-        private readonly ILogger<PolicyData> _log;
-        private readonly IPolicyNonHeaderData _nonHeaderData;
-        private readonly IPolicyTierOneIngeniumData _tierOneIngeniumData;
-        private readonly IPolicyTierOneLife70Data _tierOneLife70Data;
-        private readonly DataverseAccessGuard _accessGuard;
-        private static readonly JsonSerializerOptions _jsonOptions = new JsonSerializerOptions()
+        _log = log;
+        _dataverseService = dataverseService;
+    }
+
+    [Function("getSOReqForEappSSO")]
+    public IActionResult Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequest req)
+    {
+        _log.LogInformation("C# HTTP trigger function processed a request.");
+
+        if (!EappFunctionAuth.IsAuthenticated(req))
         {
-            PropertyNamingPolicy = new UpperCaseNamingPolicy(),
-            DictionaryKeyPolicy = new UpperCaseNamingPolicy(),
-            WriteIndented = false
+            return new UnauthorizedObjectResult("Authentication required.");
+        }
+
+        var callerRoles = EappFunctionAuth.GetCallerRoles(req);
+        var callerScopes = EappFunctionAuth.GetCallerScopes(req);
+        var callerOid = EappFunctionAuth.GetCallerObjectId(req);
+        var isDelegatedCaller = EappFunctionAuth.IsDelegatedCaller(req);
+
+        var principalName = req.Headers.ContainsKey("X-MS-CLIENT-PRINCIPAL-NAME")
+            ? req.Headers["X-MS-CLIENT-PRINCIPAL-NAME"].ToString()
+            : null;
+        Activity.Current?.SetTag("oid", callerOid?.ToString() ?? "");
+        Activity.Current?.SetTag("userName", principalName ?? "");
+        Activity.Current?.SetTag("authMode", isDelegatedCaller ? "delegated" : "app");
+
+        _log.LogInformation(
+            "Auth context: roles={Roles}, scopes={Scopes}, oid={Oid}, delegated={IsDelegated}",
+            string.Join(", ", callerRoles),
+            string.Join(", ", callerScopes),
+            callerOid,
+            isDelegatedCaller);
+
+        var hasContactPermission =
+            EappFunctionAuth.HasAppRole(callerRoles, EappFunctionAuth.ContactReadRole)
+            || (isDelegatedCaller
+                && EappFunctionAuth.HasScope(req, EappFunctionAuth.ContactReadRole));
+
+        if (!hasContactPermission)
+        {
+            return new ObjectResult(
+                $"Missing required app role or delegated scope: {EappFunctionAuth.ContactReadRole}.")
+            {
+                StatusCode = StatusCodes.Status403Forbidden
+            };
+        }
+
+        var queryParams = req.Query;
+        string? userId = queryParams["userId"];
+        string? opportunityId = queryParams["oppID"];
+
+        Guid dataverseUserId;
+        if (isDelegatedCaller)
+        {
+            var resolvedUserId = callerOid.HasValue
+                ? ResolveSystemUserIdByEntraOid(callerOid.Value)
+                : null;
+
+            if (!resolvedUserId.HasValue)
+            {
+                return new ObjectResult("The signed-in user was not found in Dataverse.")
+                {
+                    StatusCode = StatusCodes.Status403Forbidden
+                };
+            }
+
+            dataverseUserId = resolvedUserId.Value;
+            if (!string.IsNullOrWhiteSpace(userId))
+            {
+                _log.LogInformation(
+                    "Ignoring legacy userId parameter for delegated caller. Using user {UserId} resolved from token oid {Oid}.",
+                    dataverseUserId,
+                    callerOid);
+            }
+        }
+        else if (string.IsNullOrWhiteSpace(userId)
+            || !Guid.TryParse(userId, out dataverseUserId))
+        {
+            return new BadRequestObjectResult("A valid userId query parameter is required.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(opportunityId) && !Guid.TryParse(opportunityId, out _))
+        {
+            return new BadRequestObjectResult("oppID must be a valid GUID when provided.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(opportunityId)
+            && !EappFunctionAuth.HasAppRole(callerRoles, EappFunctionAuth.OpportunityReadRole)
+            && !(isDelegatedCaller
+                && EappFunctionAuth.HasScope(req, EappFunctionAuth.OpportunityReadRole)))
+        {
+            return new ObjectResult(
+                $"Missing required app role or delegated scope: {EappFunctionAuth.OpportunityReadRole}.")
+            {
+                StatusCode = StatusCodes.Status403Forbidden
+            };
+        }
+
+        _log.LogInformation("CRM connection ready.");
+        _log.LogInformation(
+            "Processing request for user {UserId}, opportunity {OpportunityId}",
+            dataverseUserId,
+            string.IsNullOrWhiteSpace(opportunityId) ? "(none)" : opportunityId);
+        _log.LogInformation("Impersonating Dataverse user: {UserId}", dataverseUserId);
+
+        try
+        {
+            _dataverseService.CallerId = dataverseUserId;
+            return BuildSoReqResponse(dataverseUserId.ToString(), opportunityId);
+        }
+        catch (FaultException<OrganizationServiceFault> ex) when (IsInsufficientPrivilege(ex))
+        {
+            _log.LogWarning(ex, "Dataverse access denied for user {UserId}", dataverseUserId);
+            return new ObjectResult("Access denied for the requested Dataverse records.")
+            {
+                StatusCode = StatusCodes.Status403Forbidden
+            };
+        }
+        finally
+        {
+            _dataverseService.CallerId = Guid.Empty;
+        }
+    }
+
+    private Guid? ResolveSystemUserIdByEntraOid(Guid entraOid)
+    {
+        var query = new QueryExpression("systemuser")
+        {
+            TopCount = 1,
+            ColumnSet = new ColumnSet("systemuserid"),
+            Criteria = new FilterExpression(LogicalOperator.And)
+        };
+        query.Criteria.AddCondition(
+            "azureactivedirectoryobjectid",
+            ConditionOperator.Equal,
+            entraOid);
+        query.Criteria.AddCondition("isdisabled", ConditionOperator.Equal, false);
+
+        var result = _dataverseService.RetrieveMultiple(query);
+        return result.Entities is { Count: > 0 } ? result.Entities[0].Id : null;
+    }
+
+    private IActionResult BuildSoReqResponse(string userId, string? opportunityId)
+    {
+        string userFetchXml = $@"
+                                    <fetch top='50'>
+                                      <entity name='systemuser'>
+                                         <attribute name='kofc_agentid' />
+                                         <attribute name='kofc_user_ldap_id' />
+                                         <attribute name='windowsliveid' />
+                                         <attribute name='kofc_insurancerole' />
+                                        <filter>
+                                          <condition attribute='systemuserid' operator='eq' value='{userId}' />
+                                        </filter>
+                                      </entity>
+                                    </fetch>";
+
+        var userFetchExpression = new FetchExpression(userFetchXml);
+        EntityCollection userResult = _dataverseService.RetrieveMultiple(userFetchExpression);
+        var soReq = new SoReqData();
+
+        if (userResult.Entities == null || userResult.Entities.Count == 0)
+        {
+            return new NotFoundObjectResult("User not found.");
+        }
+
+        Entity userEntity = userResult.Entities[0];
+        string? roleLabel;
+
+        if (userEntity.Contains("kofc_insurancerole"))
+        {
+            OptionSetValue roleCodeId = userEntity.GetAttributeValue<OptionSetValue>("kofc_insurancerole");
+            roleLabel = GetOptionSetValueLabel("systemuser", "kofc_insurancerole", roleCodeId.Value);
+        }
+        else
+        {
+            _log.LogWarning(
+                "kofc_insurancerole not present for user {UserId}. Attributes returned: {Attributes}. "
+                + "Likely causes: field is empty, field-level security hides it under impersonation, or wrong userId.",
+                userId,
+                string.Join(", ", userEntity.Attributes.Keys));
+            return new BadRequestObjectResult("Role not found for the user.");
+        }
+
+        string roletype = EappRoleMapper.ResolveRoleType(roleLabel);
+
+        soReq.reqAction = "EAPP";
+        string dateTime = DateTime.Now.ToString("yyyy-MM-dd.HH:mm:ss");
+        soReq.gmtStamp = dateTime;
+        soReq.agentId = userEntity.GetAttributeValue<string>("kofc_agentid") ?? " ";
+        soReq.loginUserID = userEntity.GetAttributeValue<string>("kofc_user_ldap_id") ?? " ";
+
+        _log.LogInformation("Resolved user role type: {RoleType}", roletype);
+
+        EappRoleMapper.ApplyRoleFlags(soReq, roletype);
+
+        if (!string.IsNullOrEmpty(opportunityId))
+        {
+            string clientFetchXml = $@"<fetch>
+                                        <entity name = 'opportunity'>
+                                            <attribute name = 'opportunityid'/>
+                                             <filter type = 'and' >
+                                                 <condition attribute = 'parentcontactid' operator= 'not-null'/>
+                                                 <condition attribute='opportunityid' operator='eq' value='{opportunityId}'/>
+                                            </filter>
+                                                <link-entity name = 'contact' from = 'contactid' to = 'parentcontactid' visible = 'false' link-type = 'outer' alias = 'c' >
+                                                    <attribute name = 'kofc_clientid'/>
+                                                    <attribute name = 'kofc_contacttype'/>
+                                                    <attribute name = 'kofc_birthdate'/>
+                                                </link-entity>
+                                             </entity>
+                                        </fetch>";
+
+            var clientFetchExpression = new FetchExpression(clientFetchXml);
+            EntityCollection clientResult = _dataverseService.RetrieveMultiple(clientFetchExpression);
+
+            if (clientResult.Entities != null && clientResult.Entities.Count > 0)
+            {
+                Entity client = clientResult.Entities[0];
+                var clientId = client.GetAttributeValue<AliasedValue>("c.kofc_clientid");
+                soReq.clientId = clientId?.Value.ToString() ?? string.Empty;
+
+                var clientDob = client.GetAttributeValue<AliasedValue>("c.kofc_birthdate");
+                if (clientDob != null && DateTime.TryParse(clientDob.Value.ToString(), out DateTime dob))
+                {
+                    soReq.clientDob = dob.ToString("yyyy-MM-dd");
+                }
+            }
+        }
+
+        string jsonResult = JsonConvert.SerializeObject(soReq, Formatting.Indented);
+        _log.LogInformation("JSON Results:\n{JsonResult}", jsonResult);
+
+        string base64encodedStr = Base64Encode(jsonResult);
+        _log.LogInformation("Base64 Encoded String:\n{Base64Result}", base64encodedStr);
+
+        return new ContentResult
+        {
+            Content = base64encodedStr,
+            ContentType = "text/plain",
+            StatusCode = StatusCodes.Status200OK
+        };
+    }
+
+    private static bool IsInsufficientPrivilege(FaultException<OrganizationServiceFault> ex)
+    {
+        const int PrivilegeDeniedErrorCode = unchecked((int)0x80048303);
+        return ex.Detail.ErrorCode == PrivilegeDeniedErrorCode;
+    }
+
+    private static string Base64Encode(string jsonStr)
+    {
+        return Convert.ToBase64String(Encoding.UTF8.GetBytes(jsonStr));
+    }
+
+    private string? GetOptionSetValueLabel(string entityName, string fieldName, int optionSetValue)
+    {
+        var attReq = new RetrieveAttributeRequest
+        {
+            EntityLogicalName = entityName,
+            LogicalName = fieldName,
+            RetrieveAsIfPublished = true
         };
 
-        public PolicyData(
-            ILogger<PolicyData> log,
-            IPolicyNonHeaderData nonHeaderData,
-            IPolicyTierOneIngeniumData tierOneIngeniumData,
-            IPolicyTierOneLife70Data tierOneLife70Data,
-            DataverseAccessGuard accessGuard
-            )
+        var attResponse = (RetrieveAttributeResponse)_dataverseService.Execute(attReq);
+        if (attResponse.AttributeMetadata is not EnumAttributeMetadata attMetadata
+            || attMetadata.OptionSet?.Options == null)
         {
-            _log = log;
-            _nonHeaderData = nonHeaderData;
-            _tierOneIngeniumData = tierOneIngeniumData;
-            _tierOneLife70Data = tierOneLife70Data;
-            _accessGuard = accessGuard;
+            return null;
         }
 
-
-        [Function("getPolicyData")]
-        public async Task<IActionResult> RunAsync(
-            [Microsoft.Azure.Functions.Worker.HttpTrigger(Microsoft.Azure.Functions.Worker.AuthorizationLevel.Anonymous, "get", "post")]
-            HttpRequest req)
-        {
-            _log.LogInformation("C# HTTP trigger function processed a request.");
-
-            if (!FunctionAppRoleAuth.IsAuthenticated(req))
-            {
-                return new UnauthorizedObjectResult("Authentication required.");
-            }
-
-            var callerRoles = FunctionAppRoleAuth.GetCallerRoles(req);
-            var callerScopes = FunctionAppRoleAuth.GetCallerScopes(req);
-            var callerOid = FunctionAppRoleAuth.GetCallerObjectId(req);
-            var isDelegatedCaller = FunctionAppRoleAuth.IsDelegatedCaller(req);
-
-            var principalName = req.Headers.ContainsKey("X-MS-CLIENT-PRINCIPAL-NAME")
-                ? req.Headers["X-MS-CLIENT-PRINCIPAL-NAME"].ToString()
-                : null;
-            Activity.Current?.SetTag("oid", callerOid?.ToString() ?? "");
-            Activity.Current?.SetTag("userName", principalName ?? "");
-            Activity.Current?.SetTag("authMode", isDelegatedCaller ? "delegated" : "app");
-
-            _log.LogInformation(
-                "Auth context: roles={Roles}, scopes={Scopes}, oid={Oid}, delegated={IsDelegated}",
-                string.Join(", ", callerRoles),
-                string.Join(", ", callerScopes),
-                callerOid,
-                isDelegatedCaller);
-
-            var isAuthorizedAppCaller = FunctionAppRoleAuth.HasAppRole(
-                callerRoles,
-                FunctionAppRoleAuth.PolicyReadRole);
-            var isAuthorizedUserCaller = isDelegatedCaller
-                && FunctionAppRoleAuth.HasDelegatedPolicyAccess(req);
-
-            if (!isAuthorizedAppCaller && !isAuthorizedUserCaller)
-            {
-                return new ObjectResult(
-                    $"Missing required app role or delegated scope: {FunctionAppRoleAuth.PolicyReadRole}.")
-                {
-                    StatusCode = StatusCodes.Status403Forbidden
-                };
-            }
-
-            string source = req.Query["source"];
-            string companyCode = req.Query["companyCode"];
-            string policyNo = req.Query["policyNo"];
-            string classificationCode = req.Query["classificationCode"];
-            string? userId = req.Query["userId"];
-            string? policyRecordId = req.Query["policyRecordId"];
-
-            if (req.Method == HttpMethods.Post)
-            {
-                using var reader = new StreamReader(req.Body);
-                var body = await reader.ReadToEndAsync();
-                if (string.IsNullOrWhiteSpace(body))
-                {
-                    return new BadRequestObjectResult("Request body is required for POST.");
-                }
-
-                var bodyJson = JsonDocument.Parse(body).RootElement;
-
-                source ??= bodyJson.TryGetProperty("source", out var ss) ? ss.GetString() : null;
-                companyCode ??= bodyJson.TryGetProperty("companyCode", out var cc) ? cc.GetString() : null;
-                policyNo ??= bodyJson.TryGetProperty("policyNo", out var pn) ? pn.GetString() : null;
-                classificationCode ??= bodyJson.TryGetProperty("classificationCode", out var cfc) ? cfc.GetString() : null;
-                userId ??= bodyJson.TryGetProperty("userId", out var uid) ? uid.GetString() : null;
-                policyRecordId ??= bodyJson.TryGetProperty("policyRecordId", out var prid) ? prid.GetString() : null;
-            }
-
-            if (string.IsNullOrEmpty(source))
-            {
-                _log.LogWarning("Source is missing in the request.");
-                return new ObjectResult(new { ERROR = "Source is missing in the request URL" })
-                {
-                    StatusCode = StatusCodes.Status400BadRequest
-                };
-            }
-
-            if (string.IsNullOrEmpty(companyCode))
-            {
-                _log.LogWarning("Company code is missing in the request.");
-                return new ObjectResult(new { ERROR = "Company Code is missing in the request URL" })
-                {
-                    StatusCode = StatusCodes.Status400BadRequest
-                };
-            }
-
-            if (string.IsNullOrEmpty(policyNo))
-            {
-                _log.LogWarning("Policy number is missing in the request.");
-                return new ObjectResult(new { ERROR = "Policy Number is missing in the request URL" })
-                {
-                    StatusCode = StatusCodes.Status400BadRequest
-                };
-            }
-
-            if (string.IsNullOrEmpty(classificationCode))
-            {
-                _log.LogWarning("Classification code is missing in the request.");
-                return new ObjectResult(new { ERROR = "Classification Code is missing in the request URL" })
-                {
-                    StatusCode = StatusCodes.Status400BadRequest
-                };
-            }
-
-            Guid dataverseUserId;
-            if (isDelegatedCaller)
-            {
-                if (!callerOid.HasValue)
-                {
-                    return new UnauthorizedObjectResult(
-                        "The delegated token does not contain a valid oid claim.");
-                }
-
-                var resolvedUserId = _accessGuard.ResolveSystemUserIdByEntraOid(callerOid.Value);
-                if (!resolvedUserId.HasValue)
-                {
-                    return new ObjectResult("The signed-in user was not found in Dataverse.")
-                    {
-                        StatusCode = StatusCodes.Status403Forbidden
-                    };
-                }
-
-                dataverseUserId = resolvedUserId.Value;
-                if (!string.IsNullOrWhiteSpace(userId))
-                {
-                    _log.LogInformation(
-                        "Ignoring legacy userId parameter for delegated caller. Using user {UserId} resolved from token oid {Oid}.",
-                        dataverseUserId,
-                        callerOid);
-                }
-            }
-            else if (string.IsNullOrWhiteSpace(userId)
-                || !Guid.TryParse(userId, out dataverseUserId))
-            {
-                _log.LogWarning("userId is missing or not a valid GUID.");
-                return new BadRequestObjectResult("A valid userId query parameter is required.");
-            }
-
-            Guid? dataversePolicyRecordId = null;
-            if (!string.IsNullOrWhiteSpace(policyRecordId))
-            {
-                if (!Guid.TryParse(policyRecordId, out var parsedPolicyRecordId))
-                {
-                    _log.LogWarning("policyRecordId is not a valid GUID.");
-                    return new BadRequestObjectResult("policyRecordId must be a valid GUID when provided.");
-                }
-
-                dataversePolicyRecordId = parsedPolicyRecordId;
-            }
-
-            _log.LogInformation("CRM connection ready.");
-            _log.LogInformation(
-                "Processing policy request for source {Source}, policy {PolicyNo}, company {CompanyCode}, userId {UserId}, policyRecordId {PolicyRecordId}",
-                source,
-                policyNo,
-                companyCode,
-                dataverseUserId,
-                dataversePolicyRecordId);
-
-            // Dataverse access check (mirrors eapp): resolve userId -> userName, impersonate,
-            // and verify the user can read the specific policy record (by record ID when supplied).
-            var accessResult = _accessGuard.CheckPolicyAccess(
-                dataverseUserId,
-                companyCode,
-                policyNo,
-                dataversePolicyRecordId);
-            if (!accessResult.IsGranted)
-            {
-                _log.LogWarning(
-                    "Policy access denied for userId {UserId} on policy {PolicyNo}: {Reason}",
-                    dataverseUserId, policyNo, accessResult.Message);
-                return new ObjectResult(new { ERROR = accessResult.Message })
-                {
-                    StatusCode = StatusCodes.Status403Forbidden
-                };
-            }
-
-            var userName = accessResult.UserName
-                ?? throw new InvalidOperationException("Resolved user name is missing after access check.");
-
-            string finalJson = source.ToLower() switch
-            {
-                "ing" => await BuildNonHeaderAndIngeniumResponse(policyNo, companyCode, source, userName),
-                "l70" => await BuildNonHeaderAndL70Response(policyNo, companyCode, source, userName),
-                "di" => await BuildNonHeader(policyNo, companyCode, source, userName),
-                "ltc" => await BuildNonHeader(policyNo, companyCode, source, userName),
-                _ => null
-            };
-
-            if (finalJson == null) {
-                _log.LogWarning("Unknown source value: {Source}", source);
-                return new ObjectResult(new { ERROR = $"Unknown soure system request :{source}, expected source - Ingenium OR L70" })
-                {
-                    StatusCode = StatusCodes.Status204NoContent
-                };
-            }
-            else
-            {
-                _log.LogInformation("Policy JSON response:\n{JsonResult}", finalJson);
-                return new ContentResult
-                {
-                    Content = finalJson,
-                    ContentType = "application/json",
-                    StatusCode = StatusCodes.Status200OK
-                };
-            }
-
-            /*
-            #region PolicyNonHeader
-
-            try
-            {
-                var nonHeaderPayload = await _nonHeaderData.GetPolicyNonHeaderDataAsyn(source, companyCode, policyNo, userName);
-
-                if (nonHeaderPayload != null)
-                {
-                    var json = JsonSerializer.Serialize(nonHeaderPayload);
-                    return new ContentResult
-                    {
-                        Content = json,
-                        ContentType = "application/json",
-                        StatusCode = StatusCodes.Status200OK
-                    };
-
-                }
-                
-
-              
-            }
-            catch (Exception ex)
-            {
-                return new ObjectResult(new { ERROR = $"{ex.Message}"})
-                {
-                    StatusCode = StatusCodes.Status500InternalServerError
-                };
-            }
-
-
-            #endregion
-
-
-            #region PolicyTierOne
-
-            if (source.Equals("Ingenium"))
-            {
-                try
-                {
-                    TierOneINGResponseJson tierOneResponse = await _tierOneIngeniumData.GetPolicyTierOneIngeniumDataAsync(policyNo, companyCode);
-                    if (tierOneResponse == null) 
-                    {
-                        return new ObjectResult(new { ERROR = "Source system is currently unavailable" })
-                        {
-                            StatusCode = StatusCodes.Status503ServiceUnavailable
-                        };
-                    }
-
-                    var json = JsonSerializer.Serialize(tierOneResponse, _jsonOptions);
-                    return new ContentResult
-                    {
-                        Content = json,
-                        ContentType = "application/json",
-                        StatusCode=StatusCodes.Status200OK
-                    };
-                }
-                catch (Exception ex) {
-                    return new ObjectResult(new { ERROR = $"Internal server error - {ex.Message}" })
-                    {
-                        StatusCode = StatusCodes.Status500InternalServerError
-                    };
-                }
-                
-            }
-            else if (source.Equals("Life70"))
-            {
-                var tierOnePayload = _tierOneLife70Data.getPolicyTierOneLife70Data(policyNo);
-            }
-            else
-            {
-                _log.LogError("Invalid source value :", source);
-                return new ObjectResult(new { ERROR = $"Invalid source" })
-                {
-                    StatusCode = StatusCodes.Status400BadRequest
-                };
-            }
-
-            #endregion
-            */
-        }
-
-        private async Task<string> BuildNonHeaderAndIngeniumResponse(string policyNo, string companyCode, string source, string userName)
-        {
-            try
-            {
-                var nonHeaderResponse = await _nonHeaderData.GetPolicyNonHeaderDataAsyn(source, companyCode, policyNo, userName);
-                var ingeniumResponse = await _tierOneIngeniumData.GetPolicyTierOneIngeniumDataAsync(policyNo, companyCode);
-
-                var nonHeaderResponseJson = JsonSerializer.Serialize(nonHeaderResponse);
-                var ingeniumResponseJson = JsonSerializer.Serialize(ingeniumResponse, _jsonOptions);
-
-                if (!string.IsNullOrEmpty(nonHeaderResponseJson) && !string.IsNullOrEmpty(ingeniumResponseJson))
-                {
-                    return $"{{\"NonHeader\":{nonHeaderResponseJson},\"TIERONE\":{ingeniumResponseJson}}}";
-                }
-
-                _log.LogWarning("NonHeader or Ingenium response was empty for policy {PolicyNo}.", policyNo);
-                return BuildErrorJson("One or more source systemns are unavailable");
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to build NonHeader + Ingenium response for policy {PolicyNo}.", policyNo);
-                return BuildErrorJson($"{ex.Message}");
-            }
-        }
-
-        private async Task<string> BuildNonHeaderAndL70Response(string policyNo, string companyCode, string source, string userName)
-        {
-            try
-            {
-                var nonHeaderResponse = await _nonHeaderData.GetPolicyNonHeaderDataAsyn(source, companyCode, policyNo, userName);
-                var l70Response = await _tierOneLife70Data.GetPolicyTierOneLife70Data(policyNo, companyCode);
-
-                var nonHeaderResponseJson = JsonSerializer.Serialize(nonHeaderResponse);
-                var l70ResponseJson = JsonSerializer.Serialize(l70Response, _jsonOptions);
-
-                if (!string.IsNullOrEmpty(nonHeaderResponseJson) && !string.IsNullOrEmpty(l70ResponseJson))
-                {
-                    return $"{{\"NonHeader\":{nonHeaderResponseJson},\"TIERONE\":{l70ResponseJson}}}";
-                }
-
-                _log.LogWarning("NonHeader or Life70 response was empty for policy {PolicyNo}.", policyNo);
-                return BuildErrorJson("One or more source systemns are unavailable");
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to build NonHeader + Life70 response for policy {PolicyNo}.", policyNo);
-                return BuildErrorJson($"{ex.Message}");
-            }
-        }
-
-        private async Task<string> BuildNonHeader(string policyNo, string companyCode, string source, string userName)
-        {
-            try
-            {
-                var nonHeaderResponse = await _nonHeaderData.GetPolicyNonHeaderDataAsyn(source, companyCode, policyNo, userName);
-                var nonHeaderResponseJson = JsonSerializer.Serialize(nonHeaderResponse);
-
-                if (!string.IsNullOrEmpty(nonHeaderResponseJson))
-                {
-                    return $"{{\"NonHeader\":{nonHeaderResponseJson}}}";
-                }
-
-                _log.LogWarning("NonHeader response was empty for policy {PolicyNo}.", policyNo);
-                return BuildErrorJson("One or more source systemns are unavailable");
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "Failed to build NonHeader response for policy {PolicyNo}, source {Source}.", policyNo, source);
-                return BuildErrorJson($"{ex.Message}");
-            }
-        }
-        private static string BuildErrorJson(string message)
-            {
-                return JsonSerializer.Serialize(new { ERROR = message }, _jsonOptions);
-            }
+        return attMetadata.OptionSet.Options
+            .FirstOrDefault(x => x.Value == optionSetValue)
+            ?.Label?.UserLocalizedLabel?.Label;
     }
 }
