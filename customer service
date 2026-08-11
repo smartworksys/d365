@@ -180,6 +180,8 @@
 
     <button id="btnToken" type="button">1. Validate token</button>
     <button id="btnCall" type="button">2. Validate full integration</button>
+    <button id="btnMalformed" type="button">3. Test malformed token</button>
+    <button id="btnExpired" type="button">4. Test expired token</button>
     <button id="btnClear" type="button">Clear log</button>
 
     <h2>Validation log</h2>
@@ -801,6 +803,74 @@
                     }
                 } catch (e) {
                     log("Integration validation failed: " + (e.message || e), true);
+                }
+            });
+
+            function buildFakeJwt(claims) {
+                var header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }))
+                    .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+                var payload = btoa(JSON.stringify(claims))
+                    .replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+                return header + "." + payload + ".INVALID_SIGNATURE_FOR_TESTING";
+            }
+
+            document.getElementById("btnMalformed").addEventListener("click", async function () {
+                try {
+                    var cfg = getConfig();
+                    validateConfig(cfg, true);
+
+                    var malformedToken = "this-is-not-a-valid-jwt-token-12345";
+                    showToken(malformedToken);
+                    log("=== MALFORMED TOKEN TEST ===", false);
+                    log("Sending a garbage string as Bearer token...", false);
+                    log("Expected: Boomi or Function should reject with 401.", false);
+
+                    var result = await callBoomi(cfg, malformedToken);
+                    log("Unexpected: Boomi returned HTTP " + result.status + " (expected rejection)", true);
+                    log("Response: " + result.body.substring(0, 200), true);
+                } catch (e) {
+                    var msg = e.message || String(e);
+                    if (msg.indexOf("401") >= 0 || msg.indexOf("403") >= 0) {
+                        log("PASS: Malformed token correctly rejected: " + msg, false);
+                    } else {
+                        log("Result: " + msg, true);
+                    }
+                }
+            });
+
+            document.getElementById("btnExpired").addEventListener("click", async function () {
+                try {
+                    var cfg = getConfig();
+                    validateConfig(cfg, true);
+
+                    var expiredClaims = {
+                        aud: "api://" + cfg.apiAppId,
+                        iss: "https://login.microsoftonline.com/" + cfg.tenantId + "/v2.0",
+                        sub: "test-user@fake.onmicrosoft.com",
+                        oid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+                        scp: "access_as_user",
+                        exp: Math.floor(Date.now() / 1000) - 3600,
+                        iat: Math.floor(Date.now() / 1000) - 7200,
+                        nbf: Math.floor(Date.now() / 1000) - 7200
+                    };
+                    var expiredToken = buildFakeJwt(expiredClaims);
+                    showToken(expiredToken);
+                    log("=== EXPIRED / FAKE SIGNATURE TOKEN TEST ===", false);
+                    log("Sending a structurally valid JWT with:", false);
+                    log("  - exp: " + new Date(expiredClaims.exp * 1000).toLocaleString() + " (expired)", false);
+                    log("  - signature: INVALID (not signed by Microsoft)", false);
+                    log("Expected: Function Easy Auth rejects with 401.", false);
+
+                    var result = await callBoomi(cfg, expiredToken);
+                    log("Unexpected: Boomi returned HTTP " + result.status + " (expected rejection)", true);
+                    log("Response: " + result.body.substring(0, 200), true);
+                } catch (e) {
+                    var msg = e.message || String(e);
+                    if (msg.indexOf("401") >= 0 || msg.indexOf("403") >= 0) {
+                        log("PASS: Expired/fake token correctly rejected: " + msg, false);
+                    } else {
+                        log("Result: " + msg, true);
+                    }
                 }
             });
 
