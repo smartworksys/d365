@@ -1,1 +1,366 @@
+using System.Diagnostics;
+using System.Net;
+using System.Text.Json;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using KOFC.Azure.Functions.GetSaasBlobUrl.Helpers;
+using KOFC.Azure.Functions.GetSaasBlobUrl.Services;
+
+namespace KOFC.Azure.Functions.GetSaasBlobUrl;
+
+public class GetSaasBlobUrl
+{
+    private readonly ILogger<GetSaasBlobUrl> _logger;
+    private readonly IPrincipalService _principalService;
+    private readonly IDataverseService _dataverseService;
+    private readonly IContactAccessGuard _contactAccessGuard;
+    private readonly IBlobService _blobService;
+    private readonly IConfiguration _configuration;
+
+    public GetSaasBlobUrl(
+        ILogger<GetSaasBlobUrl> logger,
+        IPrincipalService principalService,
+        IDataverseService dataverseService,
+        IContactAccessGuard contactAccessGuard,
+        IBlobService blobService,
+        IConfiguration configuration)
+    {
+        _logger = logger;
+        _principalService = principalService;
+        _dataverseService = dataverseService;
+        _contactAccessGuard = contactAccessGuard;
+        _blobService = blobService;
+        _configuration = configuration;
+    }
+
+    [Function("GetSaasBlobUrl")]
+    public async Task<HttpResponseData> Run(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post", Route = null)] HttpRequestData req)
+    {
+        _logger.LogInformation("Processing request for GetSaasBlobUrl");
+
+        try
+        {
+            var queryParams = ParseQuery(req);
+            await MergePostBodyAsync(req, queryParams);
+            var rawPath = GetParam(queryParams, "path");
+            var contactId = GetParam(queryParams, "contactId");
+            var responseFormat = (GetParam(queryParams, "format") ?? "redirect").ToLowerInvariant();
+
+            if (string.IsNullOrWhiteSpace(rawPath))
+            {
+                return await CreateErrorResponse(req, HttpStatusCode.BadRequest,
+                    "Bad Request: Missing 'path' parameter");
+            }
+
+            if (string.IsNullOrWhiteSpace(contactId) || !Guid.TryParse(contactId, out var contactGuid))
+            {
+                return await CreateErrorResponse(req, HttpStatusCode.BadRequest,
+                    "Bad Request: Missing or invalid 'contactId' parameter");
+            }
+
+            var callerRoles = FunctionAppRoleAuth.GetCallerRoles(req);
+            var accessToken = GetHeaderValue(req, "X-MS-TOKEN-AAD-ACCESS-TOKEN");
+            var principalHeader = GetHeaderValue(req, "X-MS-CLIENT-PRINCIPAL");
+            var isDelegatedCaller = FunctionAppRoleAuth.IsDelegatedCaller(req);
+
+            var callerOidForTelemetry = FunctionAppRoleAuth.GetCallerObjectId(req);
+            var principalNameForTelemetry = GetHeaderValue(req, "X-MS-CLIENT-PRINCIPAL-NAME");
+            var forwardedFor = GetHeaderValue(req, "X-Forwarded-For");
+
+            using var telemetryScope = _logger.BeginScope(new Dictionary<string, object?>
+            {
+                ["oid"] = callerOidForTelemetry?.ToString() ?? "",
+                ["userName"] = principalNameForTelemetry ?? "",
+                ["authMode"] = isDelegatedCaller ? "delegated" : "app",
+                ["clientIP"] = forwardedFor ?? ""
+            });
+            Activity.Current?.SetTag("oid", callerOidForTelemetry?.ToString() ?? "");
+            Activity.Current?.SetTag("userName", principalNameForTelemetry ?? "");
+            Activity.Current?.SetTag("authMode", isDelegatedCaller ? "delegated" : "app");
+            Activity.Current?.SetTag("clientIP", forwardedFor ?? "");
+            // Boomi uses client-credentials OAuth (Blob.Read on the service principal).
+            // User identity comes from userId/oid parameters — NOT from the Bearer token.
+            // Forwarded SPA tokens use the Blob.Read delegated scope and bind the
+            // Dataverse impersonation identity to the token's oid claim.
+            var isBoomiCaller = FunctionAppRoleAuth.HasAppRole(
+                callerRoles,
+                FunctionAppRoleAuth.BlobReadRole);
+            var isLegacyCaller = !isDelegatedCaller
+                && !isBoomiCaller
+                && !string.IsNullOrWhiteSpace(accessToken)
+                && !string.IsNullOrWhiteSpace(principalHeader);
+
+            _logger.LogInformation(
+                "Auth mode: Delegated={IsDelegated}, Boomi={IsBoomi}, Legacy={IsLegacy}, Roles={Roles}",
+                isDelegatedCaller,
+                isBoomiCaller,
+                isLegacyCaller,
+                string.Join(",", callerRoles));
+
+            if (isDelegatedCaller)
+            {
+                if (!FunctionAppRoleAuth.HasScope(req, FunctionAppRoleAuth.BlobReadRole))
+                {
+                    return await CreateErrorResponse(
+                        req,
+                        HttpStatusCode.Forbidden,
+                        $"Forbidden: Missing delegated scope {FunctionAppRoleAuth.BlobReadRole}");
+                }
+
+                var callerOid = FunctionAppRoleAuth.GetCallerObjectId(req);
+                if (!callerOid.HasValue)
+                {
+                    return await CreateErrorResponse(
+                        req,
+                        HttpStatusCode.Unauthorized,
+                        "Unauthorized: Delegated token is missing a valid oid claim");
+                }
+
+                var accessResult = _contactAccessGuard.CheckContactAccessByEntraOid(
+                    callerOid.Value,
+                    contactGuid);
+                if (!accessResult.IsGranted)
+                {
+                    var status = accessResult.Status == ContactAccessStatus.UserNotFound
+                        ? HttpStatusCode.NotFound
+                        : HttpStatusCode.Forbidden;
+                    return await CreateErrorResponse(req, status, accessResult.Message);
+                }
+
+                _logger.LogInformation(
+                    "Delegated user {UserId} ({UserName}) authorized for contact {ContactId}",
+                    accessResult.UserId,
+                    accessResult.UserName,
+                    contactGuid);
+            }
+            else if (isBoomiCaller)
+            {
+                if (!FunctionAppRoleAuth.IsAuthenticated(req))
+                {
+                    return await CreateErrorResponse(req, HttpStatusCode.Unauthorized,
+                        "Unauthorized: Missing or invalid authentication token");
+                }
+
+                _logger.LogInformation(
+                    "Boomi caller authenticated with {Role}. User identity will be taken from userId/oid parameters.",
+                    FunctionAppRoleAuth.BlobReadRole);
+
+                var accessResult = ValidateBoomiContactAccess(queryParams, contactGuid);
+                if (accessResult.IsMissingUserIdentity)
+                {
+                    return await CreateErrorResponse(req, HttpStatusCode.BadRequest, accessResult.Message);
+                }
+
+                if (!accessResult.IsGranted)
+                {
+                    var status = accessResult.Status == ContactAccessStatus.UserNotFound
+                        ? HttpStatusCode.NotFound
+                        : HttpStatusCode.Forbidden;
+                    return await CreateErrorResponse(req, status, accessResult.Message);
+                }
+
+                _logger.LogInformation(
+                    "Boomi request authorized for user {UserId} ({UserName}), contact {ContactId}",
+                    accessResult.UserId,
+                    accessResult.UserName,
+                    contactGuid);
+            }
+            else if (!string.IsNullOrWhiteSpace(accessToken) && !string.IsNullOrWhiteSpace(principalHeader))
+            {
+                var userPrincipal = _principalService.DecodeUserPrincipal(principalHeader);
+                if (userPrincipal == null)
+                {
+                    return await CreateErrorResponse(req, HttpStatusCode.Unauthorized,
+                        "Unauthorized: Invalid user principal");
+                }
+
+                var dataverseUrl = _configuration["DataverseUrl"];
+                if (string.IsNullOrWhiteSpace(dataverseUrl))
+                {
+                    return await CreateErrorResponse(req, HttpStatusCode.InternalServerError,
+                        "Internal Server Error: Dataverse configuration missing");
+                }
+
+                var hasAccess = await _dataverseService.ValidateContactAccessAsync(
+                    contactId,
+                    accessToken,
+                    dataverseUrl);
+                if (!hasAccess)
+                {
+                    return await CreateErrorResponse(req, HttpStatusCode.Forbidden,
+                        "Forbidden: You do not have access to this resource");
+                }
+            }
+            else
+            {
+                return await CreateErrorResponse(req, HttpStatusCode.Unauthorized,
+                    "Unauthorized: Missing or invalid authentication token");
+            }
+
+            var blobPath = _blobService.NormalizePathToBlob(rawPath);
+            if (string.IsNullOrWhiteSpace(blobPath))
+            {
+                return await CreateErrorResponse(req, HttpStatusCode.BadRequest,
+                    "Bad Request: Invalid file path");
+            }
+
+            var containerName = _configuration["BlobContainerName"] ?? "kofcext-extractions";
+            string sasUrl;
+            try
+            {
+                sasUrl = await _blobService.GenerateSasUrlAsync(containerName, blobPath);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Blob or container not found: {BlobPath}", blobPath);
+                return await CreateErrorResponse(req, HttpStatusCode.NotFound,
+                    "Not Found: The requested file does not exist");
+            }
+
+            _logger.LogInformation(
+                "Generated SAS URL for contact {ContactId}, blob {BlobPath}, format {Format}",
+                contactGuid,
+                blobPath,
+                responseFormat);
+
+            if (responseFormat == "json")
+            {
+                var jsonResponse = req.CreateResponse(HttpStatusCode.OK);
+                jsonResponse.Headers.Add("Content-Type", "application/json");
+                await jsonResponse.WriteStringAsync(JsonSerializer.Serialize(new { sasUrl }));
+                return jsonResponse;
+            }
+
+            var redirectResponse = req.CreateResponse(HttpStatusCode.Redirect);
+            redirectResponse.Headers.Add("Location", sasUrl);
+            return redirectResponse;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error processing request");
+            return await CreateErrorResponse(req, HttpStatusCode.InternalServerError,
+                "Internal Server Error: An unexpected error occurred");
+        }
+    }
+
+    private ContactAccessResult ValidateBoomiContactAccess(
+        Dictionary<string, string> queryParams,
+        Guid contactGuid)
+    {
+        var userIdParam = GetParam(queryParams, "userId");
+        var oidParam = GetParam(queryParams, "oid");
+
+        var hasUserId = Guid.TryParse(userIdParam, out var userId);
+        var hasOid = Guid.TryParse(oidParam, out var entraOid);
+
+        if (!hasUserId && !hasOid)
+        {
+            return ContactAccessResult.MissingUserIdentity(
+                "Bad Request: A valid userId or oid parameter is required. " +
+                "Boomi must pass the signed-in user's Dataverse systemuserid or Entra oid " +
+                "(extracted from the SPA token — not from the Function OAuth token).");
+        }
+
+        if (hasUserId && !hasOid)
+        {
+            return _contactAccessGuard.CheckContactAccess(userId, contactGuid);
+        }
+
+        if (hasOid && !hasUserId)
+        {
+            return _contactAccessGuard.CheckContactAccessByEntraOid(entraOid, contactGuid);
+        }
+
+        // Both supplied: resolve Entra oid → systemuserid and ensure it matches userId.
+        var resolvedFromOid = _contactAccessGuard.ResolveSystemUserIdByEntraOid(entraOid);
+        if (resolvedFromOid is null)
+        {
+            return ContactAccessResult.UserNotFound(
+                $"No enabled Dataverse user matches Entra oid '{entraOid}'.");
+        }
+
+        if (resolvedFromOid.Value != userId)
+        {
+            return ContactAccessResult.IdentityMismatch(
+                "Forbidden: userId does not match the Dataverse user resolved from oid.");
+        }
+
+        return _contactAccessGuard.CheckContactAccess(userId, contactGuid);
+    }
+
+    private static Dictionary<string, string> ParseQuery(HttpRequestData req)
+    {
+        var parsed = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string? key in parsed)
+        {
+            if (!string.IsNullOrWhiteSpace(key))
+            {
+                result[key] = parsed[key] ?? string.Empty;
+            }
+        }
+
+        return result;
+    }
+
+    private static async Task MergePostBodyAsync(HttpRequestData req, Dictionary<string, string> queryParams)
+    {
+        if (!string.Equals(req.Method, "POST", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        var body = await req.ReadAsStringAsync();
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                if (!queryParams.ContainsKey(property.Name))
+                {
+                    queryParams[property.Name] = property.Value.ToString();
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Ignore non-JSON POST bodies; query string may still be sufficient.
+        }
+    }
+
+    private static string? GetParam(Dictionary<string, string> queryParams, string name)
+    {
+        return queryParams.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
+    }
+
+    private static string? GetHeaderValue(HttpRequestData req, string headerName)
+    {
+        if (req.Headers.TryGetValues(headerName, out var values))
+        {
+            return values.FirstOrDefault();
+        }
+
+        return null;
+    }
+
+    private static async Task<HttpResponseData> CreateErrorResponse(
+        HttpRequestData req,
+        HttpStatusCode statusCode,
+        string message)
+    {
+        var response = req.CreateResponse(statusCode);
+        await response.WriteStringAsync(message);
+        return response;
+    }
+}
 
