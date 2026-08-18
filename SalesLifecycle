@@ -155,6 +155,24 @@ public class EappSSO
                 StatusCode = StatusCodes.Status403Forbidden
             };
         }
+        catch (FaultException<OrganizationServiceFault> ex)
+        {
+            _log.LogError(ex,
+                "Dataverse error for user {UserId}. ErrorCode={ErrorCode}, Message={ErrorMessage}",
+                dataverseUserId, ex.Detail.ErrorCode, ex.Detail.Message);
+            return new ObjectResult("A Dataverse error occurred. Please try again or contact support.")
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
+        }
+        catch (Exception ex)
+        {
+            _log.LogError(ex, "Unexpected error processing request for user {UserId}", dataverseUserId);
+            return new ObjectResult("An unexpected error occurred. Please try again or contact support.")
+            {
+                StatusCode = StatusCodes.Status500InternalServerError
+            };
+        }
         finally
         {
             _dataverseService.CallerId = Guid.Empty;
@@ -268,10 +286,10 @@ public class EappSSO
         }
 
         string jsonResult = JsonConvert.SerializeObject(soReq, Formatting.Indented);
-        _log.LogInformation("JSON Results:\n{JsonResult}", jsonResult);
+        _log.LogInformation("EApp SSO success response (clientId redacted):\n{JsonResult}", SerializeSoReqForLog(soReq));
 
         string base64encodedStr = Base64Encode(jsonResult);
-        _log.LogInformation("Base64 Encoded String:\n{Base64Result}", base64encodedStr);
+        _log.LogInformation("EApp SSO success: base64 payload generated ({ByteLength} bytes).", base64encodedStr.Length);
 
         return new ContentResult
         {
@@ -285,6 +303,25 @@ public class EappSSO
     {
         const int PrivilegeDeniedErrorCode = unchecked((int)0x80048303);
         return ex.Detail.ErrorCode == PrivilegeDeniedErrorCode;
+    }
+
+    private static string SerializeSoReqForLog(SoReqData soReq)
+    {
+        return JsonConvert.SerializeObject(new
+        {
+            soReq.reqAction,
+            soReq.gmtStamp,
+            soReq.agentId,
+            soReq.loginUserID,
+            soReq.clientDob,
+            soReq.isAdmin,
+            soReq.isSysAdmin,
+            soReq.isGeneralAgent,
+            soReq.isGeneralAssistant,
+            soReq.isAssistantGeneralAgent,
+            soReq.isFieldAgent,
+            soReq.isFieldAssistant
+        }, Formatting.Indented);
     }
 
     private static string Base64Encode(string jsonStr)
