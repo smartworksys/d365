@@ -2,491 +2,388 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>Auth Callback</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Opening file...</title>
+    <!--
+      kofc_blob_open.html — Timeline / ADF blob opener
+
+      Required URL format (Xrm.WebApi must be available):
+        {OrgUrl}/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html
+          &data=<uriComponent( path + "|" + contactId )>
+
+      Do NOT use /WebResources/kofc_blob_open.html directly (no Xrm.WebApi).
+
+      Env vars: kofc_TenantId, kofc_SPAClientId, kofc_BlobApiAppId,
+                kofc_EappApiKey, kofc_BlobBoomiUrl
+    -->
     <style>
-        :root {
-            --brand: #0f6cbd;          /* Fluent 2 communication blue */
-            --brand-dark: #115ea3;
-            --ink: #242424;
-            --ink-2: #616161;
-            --line: #e0e0e0;
-            --danger: #b10e1c;
-        }
-        * { box-sizing: border-box; }
-        html, body { height: 100%; margin: 0; }
         body {
-            font-family: "Segoe UI", "Segoe UI Web (West European)", -apple-system, system-ui, Arial, sans-serif;
-            color: var(--ink);
-            background: radial-gradient(1200px 600px at 50% -10%, #eaf2fb 0%, #f5f5f5 55%, #f0f0f0 100%);
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f3f2f1;
+            margin: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 24px;
-            -webkit-font-smoothing: antialiased;
+            min-height: 100vh;
+            color: #323130;
         }
         .card {
-            position: relative;
-            width: 100%;
-            max-width: 400px;
-            background: #ffffff;
-            border: 1px solid var(--line);
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10), 0 1px 2px rgba(0, 0, 0, 0.06);
-            padding: 40px 36px 34px;
+            background: #fff;
+            border: 1px solid #e1dfdd;
+            border-radius: 8px;
+            padding: 32px 28px;
+            max-width: 420px;
             text-align: center;
-            overflow: hidden;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
         }
-        .card::before {
-            content: "";
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, var(--brand), #2b88d8);
-        }
-        .badge {
-            width: 56px;
-            height: 56px;
-            margin: 4px auto 22px;
-            border-radius: 50%;
-            background: #eaf2fb;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--brand);
-        }
-        .badge svg { width: 30px; height: 30px; display: block; }
         .spinner {
-            width: 38px;
-            height: 38px;
-            margin: 0 auto 20px;
-            border: 3px solid #e6e6e6;
-            border-top-color: var(--brand);
+            width: 36px;
+            height: 36px;
+            border: 3px solid #edebe9;
+            border-top-color: #0078d4;
             border-radius: 50%;
-            animation: spin 0.85s linear infinite;
+            animation: spin 0.9s linear infinite;
+            margin: 0 auto 16px;
         }
         @keyframes spin { to { transform: rotate(360deg); } }
-        #msg {
-            font-size: 1.05rem;
-            font-weight: 600;
-            line-height: 1.35;
-            margin: 0;
-        }
-        .sub {
-            margin: 8px 0 0;
-            font-size: 0.85rem;
-            color: var(--ink-2);
-            line-height: 1.4;
-        }
-        .foot {
-            margin-top: 26px;
-            padding-top: 16px;
-            border-top: 1px solid var(--line);
-            font-size: 0.72rem;
-            letter-spacing: 0.02em;
-            color: #8a8886;
-            text-transform: uppercase;
-        }
-        .err { color: var(--danger); }
-        .err-hide { display: none; }
+        .error { color: #a4262c; white-space: pre-wrap; text-align: left; }
+        h1 { font-size: 18px; margin: 0 0 8px; }
+        p { margin: 0; color: #605e5c; font-size: 14px; }
     </style>
-    <!--
-      Generic, REUSABLE MSAL redirect URI page for kofc_authclient.js (KOFC.Auth).
-      Holds no configuration — everything is read at runtime from localStorage, which the
-      library writes before redirecting (kofc_eapp_msal_cfg + kofc_eapp_pending). The same
-      page therefore works for any button/entity/integration built on KOFC.Auth.
-
-      Two flows land here:
-        1) ssoSilent hidden iframe  -> stay blank; the parent MSAL reads the response.
-        2) full-page redirect back  -> load MSAL, run handleRedirectPromise() to read the ?code=/#code=
-           and cache the token. If a "pending" action was saved (kofc_eapp_pending), finish it:
-           call the API with the token, then open targetUrl + "?soreq=<base64>" — so the user does
-           NOT have to click the button again. Otherwise just return to the D365 form (returnUrl).
-
-      Reads localStorage keys written by KOFC.Auth: kofc_eapp_msal_cfg + kofc_eapp_pending.
-
-      Register this URL in Entra (case-sensitive, SPA platform) under EACH app registration that uses it:
-        https://<org>.crm.dynamics.com/WebResources/kofc_authcallback.html
-    -->
 </head>
 <body>
-    <div class="card" role="status" aria-live="polite">
-        <div class="badge" aria-hidden="true">
-            <!-- Fluent-style shield/lock: secure sign-in -->
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2.2 4.5 5v6.1c0 4.6 3.2 8.9 7.5 10.2 4.3-1.3 7.5-5.6 7.5-10.2V5L12 2.2Z"
-                      fill="currentColor" opacity="0.12"/>
-                <path d="M12 2.2 4.5 5v6.1c0 4.6 3.2 8.9 7.5 10.2 4.3-1.3 7.5-5.6 7.5-10.2V5L12 2.2Z"
-                      stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-                <path d="M9.6 12.2l1.7 1.7 3.3-3.6" stroke="currentColor" stroke-width="1.6"
-                      stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-        </div>
-        <div id="spinner" class="spinner"></div>
-        <p id="msg">Signing you in…</p>
-        <p class="sub">Please wait — you'll be redirected to your application automatically.</p>
-        <div class="foot">Secured by Microsoft Entra ID</div>
+    <div class="card">
+        <div class="spinner" id="loader"></div>
+        <h1 id="title">Opening file</h1>
+        <p id="message">Starting...</p>
+        <pre class="error" id="error" style="display:none;"></pre>
     </div>
+
+    <script src="/WebResources/ClientGlobalContext.js.aspx" type="text/javascript"></script>
+    <script src="/WebResources/kofc_authclient.js"></script>
+    <script src="/WebResources/kofc_blobClient.js"></script>
+    <script src="/WebResources/kofc_msalbrowsermin"></script>
     <script>
         (function () {
             "use strict";
 
-            var CFG_KEY = "kofc_eapp_msal_cfg";
-            var PENDING_KEY = "kofc_eapp_pending";
-            var POLICY_PENDING_KEY = "kofc_policy_pending";
-            var BLOB_PENDING_KEY = "kofc_blob_pending";
-            var POLICY_RESULT_KEY = "kofc_policy_result";
-            var BLOB_RESULT_KEY = "kofc_blob_result";
-            var msgEl = document.getElementById("msg");
-            var spinnerEl = document.getElementById("spinner");
+            var ENV = {
+                tenantId: "kofc_TenantId",
+                clientId: "kofc_SPAClientId",
+                apiAppId: "kofc_BlobApiAppId",
+                apiKey: "kofc_EappApiKey",
+                boomiUrl: "kofc_BlobBoomiUrl"
+            };
 
-            function setMsg(text, isErr) {
-                if (!msgEl) { return; }
-                msgEl.textContent = text;
-                msgEl.className = isErr ? "err" : "";
-                // Hide the spinner once we hit a terminal error state.
-                if (spinnerEl) {
-                    spinnerEl.className = isErr ? "spinner err-hide" : "spinner";
-                }
+            var OVERALL_TIMEOUT_MS = 60000;
+
+            function setStatus(text) {
+                var el = document.getElementById("message");
+                if (el) { el.innerText = text; }
             }
 
-            // 1) ssoSilent hidden iframe: do nothing — the parent window reads the hash.
-            if (window.self !== window.top) {
-                return;
+            function showError(message) {
+                document.getElementById("loader").style.display = "none";
+                document.getElementById("title").innerText = "Unable to open file";
+                document.getElementById("message").style.display = "none";
+                var err = document.getElementById("error");
+                err.style.display = "block";
+                err.innerText = message || "Unknown error";
             }
 
-            var hasAuthResponse = window.location.hash.indexOf("code=") >= 0
-                || window.location.hash.indexOf("error=") >= 0
-                || window.location.search.indexOf("code=") >= 0
-                || window.location.search.indexOf("error=") >= 0;
-
-            // Opened directly (no auth response): nothing to process.
-            if (!hasAuthResponse) {
-                setMsg("Auth callback page. Return to Dynamics and use the button.");
-                return;
+            function getXrm() {
+                try { if (window.Xrm && window.Xrm.WebApi) { return window.Xrm; } } catch (e0) { /* ignore */ }
+                try { if (parent.Xrm && parent.Xrm.WebApi) { return parent.Xrm; } } catch (e1) { /* ignore */ }
+                try { if (window.top && window.top.Xrm && window.top.Xrm.WebApi) { return window.top.Xrm; } } catch (e2) { /* ignore */ }
+                return null;
             }
 
-            function readJson(key) {
-                try {
-                    var raw = localStorage.getItem(key);
-                    return raw ? JSON.parse(raw) : null;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            function loadMsal() {
+            function waitForXrm(maxMs) {
                 return new Promise(function (resolve, reject) {
-                    if (typeof msal !== "undefined") {
-                        resolve();
-                        return;
-                    }
-                    var s = document.createElement("script");
-                    s.src = window.location.origin + "/WebResources/kofc_msalbrowsermin";
-                    s.onload = function () {
-                        if (typeof msal !== "undefined") {
-                            resolve();
-                        } else {
-                            reject(new Error("MSAL failed to load."));
+                    var started = Date.now();
+                    (function poll() {
+                        var x = getXrm();
+                        if (x) {
+                            resolve(x);
+                            return;
                         }
-                    };
-                    s.onerror = function () {
-                        reject(new Error("MSAL web resource not found."));
-                    };
-                    document.head.appendChild(s);
+                        if (Date.now() - started > maxMs) {
+                            reject(new Error(
+                                "Dynamics Xrm.WebApi is not available on this page.\n\n" +
+                                "Open the file using a main.aspx webresource link (not a raw /WebResources URL), " +
+                                "while signed into Dynamics:\n\n" +
+                                "{org}/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html" +
+                                "&data=" + encodeURIComponent("D:\\folder\\file.xlsx|CONTACT-GUID")
+                            ));
+                            return;
+                        }
+                        setTimeout(poll, 200);
+                    })();
                 });
             }
 
-            async function callBlobApi(pending, token) {
-                var method = (pending.httpMethod || "POST").toUpperCase();
-                var base = pending.boomiUrl;
-                var url = base;
-                var payload = {
-                    path: pending.path,
-                    contactId: pending.contactId,
-                    format: "json"
-                };
-
-                var options = {
-                    method: method,
-                    headers: {
-                        "Authorization": "Bearer " + token,
-                        "x-api-key": pending.apiKey,
-                        "Accept": "application/json"
-                    }
-                };
-
-                if (method === "GET" || method === "HEAD") {
-                    var qs = [
-                        "path=" + encodeURIComponent(payload.path),
-                        "contactId=" + encodeURIComponent(payload.contactId),
-                        "format=json"
-                    ];
-                    url = base + (base.indexOf("?") >= 0 ? "&" : "?") + qs.join("&");
-                } else {
-                    options.headers["Content-Type"] = "application/json";
-                    options.body = JSON.stringify(payload);
-                }
-
-                var response = await fetch(url, options);
-                var body = await response.text();
-                if (!response.ok) {
-                    throw new Error("Blob API returned " + response.status + ": " + body);
-                }
-                return { status: response.status, body: body };
+            function stripBraces(value) {
+                return String(value || "").replace(/[{}]/g, "").trim();
             }
 
-            async function callPolicyApi(pending, token) {
-                var method = (pending.httpMethod || "POST").toUpperCase();
-                var qs = [
-                    "source=" + encodeURIComponent(pending.source),
-                    "companyCode=" + encodeURIComponent(pending.companyCode),
-                    "policyNo=" + encodeURIComponent(pending.policyNo),
-                    "classificationCode=" + encodeURIComponent(pending.classificationCode),
-                    "userId=" + encodeURIComponent(pending.userId)
-                ];
-                if (pending.policyRecordId) {
-                    qs.push("policyRecordId=" + encodeURIComponent(pending.policyRecordId));
-                }
-                var base = pending.boomiUrl;
-                var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + qs.join("&");
-
-                var options = {
-                    method: method,
-                    headers: {
-                        "Authorization": "Bearer " + token,
-                        "x-api-key": pending.apiKey,
-                        "Accept": "application/json"
-                    }
-                };
-                if (method !== "GET" && method !== "HEAD") {
-                    options.headers["Content-Type"] = "application/json";
-                    options.body = JSON.stringify({
-                        source: pending.source,
-                        companyCode: pending.companyCode,
-                        policyNo: pending.policyNo,
-                        classificationCode: pending.classificationCode,
-                        userId: pending.userId,
-                        policyRecordId: pending.policyRecordId || undefined
-                    });
-                }
-
-                var response = await fetch(url, options);
-                var body = await response.text();
-                if (!response.ok) {
-                    throw new Error("Policy API returned " + response.status + ": " + body);
-                }
-                return { status: response.status, body: body };
-            }
-
-            async function callApi(pending, token) {
-                var method = (pending.httpMethod || "POST").toUpperCase();
-                var base = pending.boomiUrl;
-                var qs = "userId=" + encodeURIComponent(pending.userId);
-                if (pending.oppId) {
-                    qs += "&oppID=" + encodeURIComponent(pending.oppId);
-                }
-                var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + qs;
-
-                var options = {
-                    method: method,
-                    headers: {
-                        "Authorization": "Bearer " + token,
-                        "x-api-key": pending.apiKey,
-                        "Accept": "text/plain"
-                    }
-                };
-                if (method !== "GET" && method !== "HEAD") {
-                    options.headers["Content-Type"] = "application/json";
-                    options.body = JSON.stringify({
-                        userId: pending.userId,
-                        oppID: pending.oppId || undefined
-                    });
-                }
-
-                var response = await fetch(url, options);
-                var body = await response.text();
-                if (!response.ok) {
-                    throw new Error("API returned " + response.status + ": " + body);
-                }
-                return body;
-            }
-
-            function finishAction(pending, base64) {
-                var targetUrl = pending.eappUrl + "?soreq=" + base64;
-                // Prefer opening the target app in a new tab and returning this tab to the D365 form.
-                var win = null;
+            function tryDecode(value) {
+                if (!value) { return value; }
                 try {
-                    win = window.open(targetUrl, "_blank");
+                    return decodeURIComponent(value);
                 } catch (e) {
-                    win = null;
-                }
-                var cfg = readJson(CFG_KEY);
-                if (win) {
-                    setMsg("Opened in a new tab. Returning to Dynamics...");
-                    if (cfg && cfg.returnUrl) {
-                        window.location.href = cfg.returnUrl;
-                    }
-                } else {
-                    // Popup blocked — navigate this tab straight to the target app.
-                    setMsg("Opening your application...");
-                    window.location.href = targetUrl;
+                    return value;
                 }
             }
 
-            async function run() {
-                var cfg = readJson(CFG_KEY);
-                if (!cfg || !cfg.clientId || !cfg.tenantId || !cfg.redirectUri) {
-                    setMsg("Missing sign-in context. Open Dynamics and click the button again.", true);
-                    return;
+            function fullyDecode(value) {
+                if (!value) {
+                    return value;
+                }
+                var current = String(value);
+                for (var i = 0; i < 3; i++) {
+                    try {
+                        var decoded = decodeURIComponent(current.replace(/\+/g, " "));
+                        if (decoded === current) {
+                            break;
+                        }
+                        current = decoded;
+                    } catch (e) {
+                        break;
+                    }
+                }
+                return current;
+            }
+
+            function parseQueryData(data) {
+                var decoded = fullyDecode(data);
+                var nested = new URLSearchParams(decoded);
+                var nestedPath = nested.get("path");
+                var nestedContact = nested.get("contactId");
+                if (nestedPath && nestedContact) {
+                    return {
+                        path: fullyDecode(nestedPath),
+                        contactId: stripBraces(nestedContact)
+                    };
+                }
+                return null;
+            }
+
+            function parseParams(params) {
+                var path = params.get("path");
+                var contactId = params.get("contactId");
+                var data = params.get("data") || "";
+
+                if (path && contactId) {
+                    return {
+                        path: tryDecode(path),
+                        contactId: stripBraces(contactId)
+                    };
                 }
 
+                if (data) {
+                    var queryParsed = parseQueryData(data);
+                    if (queryParsed) {
+                        return queryParsed;
+                    }
+
+                    var pipe = data.lastIndexOf("|");
+                    if (pipe > 0) {
+                        var maybeId = stripBraces(data.substring(pipe + 1));
+                        if (/^[0-9a-fA-F-]{36}$/.test(maybeId)) {
+                            return {
+                                path: tryDecode(data.substring(0, pipe)),
+                                contactId: maybeId
+                            };
+                        }
+                    }
+
+                    var nested = new URLSearchParams(data);
+                    var nestedPath = nested.get("path");
+                    var nestedContact = nested.get("contactId");
+                    if (nestedPath && nestedContact) {
+                        return {
+                            path: fullyDecode(nestedPath),
+                            contactId: stripBraces(nestedContact)
+                        };
+                    }
+
+                    if (contactId) {
+                        var dataPath = fullyDecode(data);
+                        if (/^path=/i.test(dataPath)) {
+                            dataPath = dataPath.substring(dataPath.indexOf("=") + 1);
+                        }
+                        return {
+                            path: dataPath,
+                            contactId: stripBraces(contactId)
+                        };
+                    }
+                }
+
+                return {
+                    path: path ? tryDecode(path) : null,
+                    contactId: stripBraces(contactId)
+                };
+            }
+
+            function parseContext() {
+                var searches = [window.location.search];
+
+                // D365 normally forwards main.aspx data to the web-resource iframe. Some
+                // UCI routes leave it only on the shell URL, so inspect same-origin parents.
                 try {
-                    await loadMsal();
-                    var pca = new msal.PublicClientApplication({
-                        auth: {
-                            clientId: cfg.clientId,
-                            authority: "https://login.microsoftonline.com/" + cfg.tenantId,
-                            redirectUri: cfg.redirectUri
-                        },
-                        cache: {
-                            cacheLocation: "localStorage",
-                            storeAuthStateInCookie: true
+                    if (parent && parent !== window) {
+                        searches.push(parent.location.search);
+                    }
+                } catch (e0) { /* cross-origin parent */ }
+                try {
+                    if (window.top && window.top !== window && window.top !== parent) {
+                        searches.push(window.top.location.search);
+                    }
+                } catch (e1) { /* cross-origin top */ }
+
+                for (var i = 0; i < searches.length; i++) {
+                    var parsed = parseParams(new URLSearchParams(searches[i] || ""));
+                    if (parsed.path && parsed.contactId) {
+                        return parsed;
+                    }
+                }
+
+                return parseParams(new URLSearchParams(window.location.search));
+            }
+
+            function getEnvironmentVariable(xrmApi, schemaName) {
+                var escaped = schemaName.replace(/'/g, "''");
+                var query = "?$select=defaultvalue" +
+                    "&$filter=schemaname eq '" + escaped + "'" +
+                    "&$expand=environmentvariabledefinition_environmentvariablevalue($select=value)";
+                return xrmApi.WebApi.retrieveMultipleRecords("environmentvariabledefinition", query)
+                    .then(function (result) {
+                        if (!result || !result.entities || !result.entities.length) {
+                            return null;
                         }
+                        var def = result.entities[0];
+                        return def.environmentvariabledefinition_environmentvariablevalue &&
+                            def.environmentvariabledefinition_environmentvariablevalue.length
+                            ? def.environmentvariabledefinition_environmentvariablevalue[0].value
+                            : def.defaultvalue;
                     });
+            }
 
-                    await pca.initialize();
-                    // Reads the code from this page's URL, exchanges it (PKCE), and caches the token.
-                    var result = await pca.handleRedirectPromise();
+            function loadConfig(xrmApi) {
+                return Promise.all([
+                    getEnvironmentVariable(xrmApi, ENV.tenantId),
+                    getEnvironmentVariable(xrmApi, ENV.clientId),
+                    getEnvironmentVariable(xrmApi, ENV.apiAppId),
+                    getEnvironmentVariable(xrmApi, ENV.apiKey),
+                    getEnvironmentVariable(xrmApi, ENV.boomiUrl)
+                ]).then(function (values) {
+                    var missing = [];
+                    if (!values[0]) { missing.push(ENV.tenantId); }
+                    if (!values[1]) { missing.push(ENV.clientId); }
+                    if (!values[2]) { missing.push(ENV.apiAppId); }
+                    if (!values[3]) { missing.push(ENV.apiKey); }
+                    if (!values[4]) { missing.push(ENV.boomiUrl); }
+                    if (missing.length) {
+                        throw new Error("Missing configuration: " + missing.join(", "));
+                    }
+                    return {
+                        tenantId: values[0],
+                        clientId: values[1],
+                        apiAppId: values[2],
+                        apiKey: values[3],
+                        boomiUrl: values[4],
+                        scope: ".default",
+                        httpMethod: "POST",
+                        redirectWebResource: "kofc_authcallback.html",
+                        msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
+                        allowRedirect: true,
+                        debug: false
+                    };
+                });
+            }
 
-                    var pending = readJson(PENDING_KEY);
-                    var policyPending = readJson(POLICY_PENDING_KEY);
-                    var blobPending = readJson(BLOB_PENDING_KEY);
+            function withTimeout(promise, ms, label) {
+                return new Promise(function (resolve, reject) {
+                    var timer = setTimeout(function () {
+                        reject(new Error(label + " timed out after " + (ms / 1000) + "s."));
+                    }, ms);
+                    promise.then(
+                        function (v) { clearTimeout(timer); resolve(v); },
+                        function (e) { clearTimeout(timer); reject(e); }
+                    );
+                });
+            }
 
-                    // Resolve an access token: from the redirect result, or silently from cache.
-                    var token = result && result.accessToken ? result.accessToken : null;
-                    var scopesForSilent = (pending && pending.apiScopes)
-                        || (policyPending && policyPending.apiScopes)
-                        || (blobPending && blobPending.apiScopes);
-                    if (!token && scopesForSilent) {
-                        var accounts = pca.getAllAccounts();
-                        if (accounts.length > 0) {
-                            try {
-                                var silent = await pca.acquireTokenSilent({
-                                    scopes: scopesForSilent,
-                                    account: accounts[0]
-                                });
-                                token = silent.accessToken;
-                            } catch (e) {
-                                // fall through to no-token handling
-                            }
-                        }
+            async function init() {
+                try {
+                    if (!window.KOFC || !window.KOFC.Blob) {
+                        throw new Error("kofc_blobClient.js did not load (KOFC.Blob missing). Publish and hard-refresh.");
+                    }
+                    if (!window.KOFC.Auth) {
+                        throw new Error("kofc_authclient.js did not load (KOFC.Auth missing). Publish and hard-refresh.");
                     }
 
-                    if (token && blobPending && blobPending.action === "blob" && blobPending.boomiUrl) {
-                        setMsg("Sign-in complete. Opening file...");
-                        try {
-                            var blobResult = await callBlobApi(blobPending, token);
-                            var blobParsed = null;
-                            try {
-                                blobParsed = JSON.parse(blobResult.body);
-                            } catch (be) {
-                                blobParsed = { sasUrl: blobResult.body };
-                            }
-                            localStorage.setItem(BLOB_RESULT_KEY, JSON.stringify({
-                                ok: true,
-                                status: blobResult.status,
-                                data: blobParsed,
-                                raw: blobResult.body
-                            }));
-                            localStorage.removeItem(BLOB_PENDING_KEY);
-                            var blobReturnUrl = blobPending.returnUrl || (cfg && cfg.returnUrl);
-                            if (blobParsed && blobParsed.sasUrl) {
-                                window.location.href = blobParsed.sasUrl;
-                            } else if (blobReturnUrl) {
-                                window.location.href = blobReturnUrl;
-                            } else {
-                                setMsg("File access granted. You can close this tab.");
-                            }
-                        } catch (e) {
-                            localStorage.setItem(BLOB_RESULT_KEY, JSON.stringify({
-                                ok: false,
-                                status: 0,
-                                data: null,
-                                raw: e && e.message ? e.message : String(e)
-                            }));
-                            localStorage.removeItem(BLOB_PENDING_KEY);
-                            setMsg("Blob request failed: " + (e && e.message ? e.message : String(e)), true);
-                        }
+                    setStatus("Reading link parameters...");
+                    var ctx = parseContext();
+                    if (!ctx.path || !ctx.contactId) {
+                        throw new Error(
+                            "Missing path or contactId in link.\n\n" +
+                            "Use:\n" +
+                            "main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html" +
+                            "&data=<encode(path|contactId)>"
+                        );
+                    }
+
+                    var pending = KOFC.Blob.consumePendingResult();
+                    if (pending && pending.ok && pending.data && pending.data.sasUrl) {
+                        setStatus("Opening file...");
+                        window.location.href = pending.data.sasUrl;
+                        return;
+                    }
+                    if (pending && !pending.ok) {
+                        throw new Error(pending.raw || "Blob request failed after sign-in.");
+                    }
+
+                    setStatus("Connecting to Dynamics...");
+                    var xrmApi = await waitForXrm(8000);
+
+                    setStatus("Loading configuration...");
+                    var config = await withTimeout(loadConfig(xrmApi), 20000, "Loading configuration");
+                    KOFC.Blob.configure(config);
+
+                    setStatus("Signing in and requesting file access...");
+                    var result = await withTimeout(
+                        KOFC.Blob.openSaasBlob({
+                            path: ctx.path,
+                            contactId: ctx.contactId
+                        }),
+                        OVERALL_TIMEOUT_MS,
+                        "Sign-in / Boomi request"
+                    );
+
+                    if (result && result.redirecting) {
+                        setStatus("Redirecting to Microsoft sign-in...");
                         return;
                     }
 
-                    if (token && policyPending && policyPending.action === "policy" && policyPending.boomiUrl) {
-                        setMsg("Sign-in complete. Loading policy data...");
-                        try {
-                            var policyResult = await callPolicyApi(policyPending, token);
-                            var parsed = null;
-                            try {
-                                parsed = JSON.parse(policyResult.body);
-                            } catch (pe) {
-                                parsed = policyResult.body;
-                            }
-                            localStorage.setItem(POLICY_RESULT_KEY, JSON.stringify({
-                                ok: true,
-                                status: policyResult.status,
-                                data: parsed,
-                                raw: policyResult.body
-                            }));
-                            localStorage.removeItem(POLICY_PENDING_KEY);
-                            setMsg("Policy data loaded. Returning to Dynamics...");
-                            var returnUrl = policyPending.returnUrl || (cfg && cfg.returnUrl);
-                            if (returnUrl) {
-                                window.location.href = returnUrl;
-                            } else {
-                                setMsg("Policy data loaded. You can close this tab and return to Dynamics.");
-                            }
-                        } catch (e) {
-                            localStorage.setItem(POLICY_RESULT_KEY, JSON.stringify({
-                                ok: false,
-                                status: 0,
-                                data: null,
-                                raw: e && e.message ? e.message : String(e)
-                            }));
-                            localStorage.removeItem(POLICY_PENDING_KEY);
-                            setMsg("Policy request failed: " + (e && e.message ? e.message : String(e)), true);
-                        }
-                        return;
+                    if (result && !result.ok) {
+                        throw new Error(
+                            "File request failed (HTTP " + (result.status || "?") + "): " +
+                            (result.raw || JSON.stringify(result.data) || "unknown") +
+                            "\n\nPath sent: " + ctx.path +
+                            "\nContactId sent: " + ctx.contactId +
+                            "\n\nTip: compare path/contactId with the validator payload that succeeded."
+                        );
                     }
 
-                    if (token && pending && pending.eappUrl && pending.boomiUrl) {
-                        setMsg("Sign-in complete. Finishing your request...");
-                        try {
-                            var base64 = await callApi(pending, token);
-                            localStorage.removeItem(PENDING_KEY);
-                            finishAction(pending, base64);
-                        } catch (e) {
-                            setMsg("Request failed: " + (e && e.message ? e.message : String(e)), true);
-                        }
-                        return;
-                    }
-
-                    // No pending action: just cache the token and return to the form.
-                    if (token) {
-                        setMsg("Sign-in complete. Returning to Dynamics...");
-                        if (cfg.returnUrl) {
-                            window.location.href = cfg.returnUrl;
-                            return;
-                        }
-                        setMsg("Sign-in complete. You can close this tab and return to Dynamics.");
-                        return;
-                    }
-
-                    setMsg("Sign-in response received but no token was produced. Try the button again.", true);
-                } catch (e) {
-                    setMsg("Sign-in failed: " + (e && e.message ? e.message : String(e)), true);
+                    // openSaasBlob navigates to sasUrl on success; if still here, response was odd
+                    setStatus("File access granted. If the file did not open, check pop-up blocker.");
+                } catch (err) {
+                    showError(err && err.message ? err.message : String(err));
                 }
             }
 
-            run();
+            init();
         })();
     </script>
 </body>
