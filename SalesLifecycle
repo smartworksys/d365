@@ -1,35 +1,296 @@
-<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
-    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
-    <OutputType>Exe</OutputType>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-  </PropertyGroup>
-  <ItemGroup>
-    <FrameworkReference Include="Microsoft.AspNetCore.App" />
-    <PackageReference Include="Azure.Identity" Version="1.17.1" />
-    <PackageReference Include="Azure.Storage.Blobs" Version="12.27.0" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker" Version="1.21.0" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" Version="3.1.0" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="1.17.0" />
-    <PackageReference Include="Microsoft.ApplicationInsights.WorkerService" Version="2.22.0" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.ApplicationInsights" Version="1.2.0" />
-    <PackageReference Include="Microsoft.PowerPlatform.Dataverse.Client" Version="1.2.10" />
-    <PackageReference Include="System.Memory.Data" Version="8.0.1" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Update="host.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-    <None Update="local.settings.json">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
-    </None>
-  </ItemGroup>
-  <ItemGroup Condition="'$(Configuration)' == 'Release'">
-    <Compile Remove="GetSaasBlobUrl.Local.cs" />
-  </ItemGroup>
-</Project>
+# KOFC SaaS Blob — Client-Side Integration Guide
 
+> **Function:** `GetSaasBlobUrl`  
+> **Runtime:** .NET 8 (Isolated), Azure Functions v4  
+> **Pattern:** Same as EApp / Policy Non-Header — MSAL SPA token → Boomi → Function  
+> **Last updated:** 2026-08-19
+
+[[_TOC_]]
+
+---
+
+## 1. Overview
+
+Users open extracted files from the **Contact timeline** in Dynamics 365. The browser never calls the Azure Function directly. The path is:
+
+```text
+D365 timeline link
+  → kofc_blob_open.html (web resource)
+  → MSAL SPA token (scope: access_as_user)
+  → Boomi REST (forwards same Bearer token)
+  → GetSaasBlobUrl Function
+  → { sasUrl } → browser opens file
+```
+
+**Key rules**
+
+- Send **`path`** + **`contactId`** only — **no `userId`**
+- User identity comes from the SPA token **`oid`** claim
+- Boomi forwards the **same delegated token** to the Function (not client-credentials)
+- Use **`format=json`** when calling Boomi from JavaScript
+
+---
+
+## 2. Required D365 web resources
+
+| Web resource | Type | Purpose |
+|--------------|------|---------|
+| `kofc_msalbrowsermin` | Script | MSAL library |
+| `kofc_authclient.js` | Script | Shared MSAL + redirect helper |
+| `kofc_authcallback.html` | HTML | Completes sign-in after redirect |
+| `kofc_blobClient.js` | Script | `KOFC.Blob.openSaasBlob()` |
+| `kofc_blob_open.html` | HTML | Timeline link landing page |
+| `kofc_blobLinkBuilder.js` | Script | Build opener / timeline links |
+
+---
+
+## 3. Environment variables (D365)
+
+| Schema name | Purpose |
+|-------------|---------|
+| `kofc_TenantId` | Entra tenant ID |
+| `kofc_SPAClientId` | SPA app registration client ID |
+| `kofc_BlobApiAppId` | Function API app ID (for `api://{id}/access_as_user`) |
+| `kofc_EappApiKey` | Boomi `x-api-key` |
+| `kofc_BlobBoomiUrl` | Boomi REST URL (no query string) |
+
+**Entra redirect URI (SPA):**
+
+```text
+https://<org>.crm.dynamics.com/WebResources/kofc_authcallback.html
+```
+
+---
+
+## 4. Add a link to the Contact timeline
+
+**Do not** put Boomi or Function URLs in timeline HTML. Link to the D365 blob opener with **business parameters only**.
+
+### 4.1 URL shape (manual / test)
+
+```text
+{OrgUrl}/main.aspx?pagetype=webresource
+  &webresourceName=kofc_blob_open.html
+  &data={encodeURIComponent("path=" + encodeURIComponent(filePath) + "&contactId=" + contactGuid)}
+```
+
+**Alternative (pipe format)** — also supported by `kofc_blob_open.html`:
+
+```text
+{OrgUrl}/main.aspx?pagetype=webresource
+  &webresourceName=kofc_blob_open.html
+  &data={encodeURIComponent(filePath + "|" + contactGuid)}
+```
+
+**Example:**
+
+```text
+https://yourorg.crm.dynamics.com/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html&data=D%3A%5CKOFCExt%20Extractions%5C09272024%5C000554%5Cfile.xlsx%7C12345678-1234-1234-1234-123456789012
+```
+
+- **`contactId`** = Contact GUID the timeline post is regarding (required for authorization)
+- **`path`** = Windows-style path from extraction metadata, e.g. `D:\KOFCExt Extractions\...\file.xlsx`
+
+### 4.2 Timeline HTML (ADF Copy activity)
+
+Set pipeline global parameter:
+
+- `D365_OrgUrl` = `https://yourorg-dev.crm.dynamics.com`
+
+**Derived column for timeline `message`:**
+
+```text
+@concat(
+  '<a href="',
+  pipeline().globalParameters.D365_OrgUrl,
+  '/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html&data=',
+  uriComponent(
+    concat(
+      'path=', uriComponent(item().filePath),
+      '&contactId=', item().contactId
+    )
+  ),
+  '" target="_blank" rel="noopener noreferrer">View file</a>'
+)
+```
+
+Replace `item().filePath` and `item().contactId` with your source column names.
+
+**Plain-text label variant:**
+
+```text
+@concat(
+  'File available: ',
+  '<a href="',
+  pipeline().globalParameters.D365_OrgUrl,
+  '/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html&data=',
+  uriComponent(concat('path=', uriComponent(item().filePath), '&contactId=', item().contactId)),
+  '" target="_blank">View file</a>'
+)
+```
+
+### 4.3 JavaScript link builder (forms / plugins)
+
+Publish `kofc_blobLinkBuilder.js` as a web resource, then:
+
+```javascript
+// Full opener URL (opens blob flow in new tab)
+var url = KOFC.BlobLink.buildOpenerUrl({
+    filePath: "D:\\KOFCExt Extractions\\09272024\\000554\\file.xlsx",
+    contactId: "12345678-1234-1234-1234-123456789012"
+});
+window.open(url, "_blank");
+
+// Timeline post HTML (store in activity/message field)
+var html = KOFC.BlobLink.buildTimelineMessageHtml({
+    orgUrl: Xrm.Utility.getGlobalContext().getClientUrl(),
+    filePath: "D:\\KOFCExt Extractions\\09272024\\000554\\file.xlsx",
+    contactId: "12345678-1234-1234-1234-123456789012",
+    linkText: "View file"
+});
+```
+
+---
+
+## 5. Boomi call from the browser
+
+After MSAL acquires a token, `kofc_blobClient.js` calls Boomi:
+
+**GET**
+
+```text
+GET {BoomiUrl}?path={encodedPath}&contactId={guid}&format=json
+Authorization: Bearer {SPA_access_token}
+x-api-key: {Boomi API key}
+Accept: application/json
+```
+
+**POST body (alternative)**
+
+```json
+{
+  "path": "D:\\KOFCExt Extractions\\09272024\\000554\\file.xlsx",
+  "contactId": "12345678-1234-1234-1234-123456789012",
+  "format": "json"
+}
+```
+
+**Success response**
+
+```json
+{
+  "sasUrl": "https://storageaccount.blob.core.windows.net/kofcext-extractions/..."
+}
+```
+
+The client sets `window.location.href = sasUrl` to open/download the file.
+
+---
+
+## 6. Programmatic open (in D365 form script)
+
+```javascript
+KOFC.Blob.configure({
+    tenantId: "...",
+    clientId: "...",
+    apiAppId: "...",
+    apiKey: "...",
+    boomiUrl: "https://your-boomi-host/ws/rest/BlobProxy",
+    scope: "access_as_user",
+    httpMethod: "GET"
+});
+
+KOFC.Blob.openSaasBlob({
+    path: "D:\\KOFCExt Extractions\\09272024\\000554\\file.xlsx",
+    contactId: "12345678-1234-1234-1234-123456789012"
+});
+```
+
+On first visit, the user may be redirected to Microsoft sign-in; `kofc_authcallback.html` completes the Boomi call.
+
+---
+
+## 7. Test with Boomi Integration Validator
+
+Open in D365:
+
+```text
+main.aspx?pagetype=webresource&webresourceName=kofc_BoomiIntegrationValidator
+```
+
+1. Select **Blob Proxy** preset  
+2. Set JSON payload:
+
+```json
+{
+  "path": "D:\\KOFCExt Extractions\\test\\file.xlsx",
+  "contactId": "12345678-1234-1234-1234-123456789012",
+  "format": "json"
+}
+```
+
+3. Click **Call via Boomi**
+
+---
+
+## 8. Parameters reference
+
+| Parameter | Required | Source | Notes |
+|-----------|----------|--------|-------|
+| `path` | Yes | Timeline / ADF | Windows path, e.g. `D:\KOFCExt Extractions\...` |
+| `contactId` | Yes | Timeline regarding | Contact GUID, no braces |
+| `format` | No | Client → Boomi | Use `json` for API response |
+| `userId` | **No** | — | Ignored; identity from token `oid` |
+| `oid` | **No** | — | Ignored; identity from token `oid` |
+
+---
+
+## 9. Troubleshooting
+
+| Symptom | Check |
+|---------|-------|
+| Blank page / Xrm missing | Open via `main.aspx?pagetype=webresource`, not raw `/WebResources/` URL |
+| 401 from Boomi | SPA token scope, Boomi JWT validation, API key |
+| 403 from Function | Token missing `Blob.Read` or `access_as_user` scope |
+| 403 contact access | User cannot read the `contactId` in Dataverse |
+| 404 blob | Path must include `KOFCExt Extractions/` prefix as stored in storage |
+| Sign-in loop | Redirect URI registered for SPA app; callback web resource published |
+
+---
+
+## 10. Deployment checklist
+
+### Function App (TEST-01 pipeline)
+
+- [ ] Deploy `GetSaasBlobUrl` only (no local test function)
+- [ ] Easy Auth enabled; audience = Function API app
+- [ ] Managed Identity + Storage Blob Data Contributor
+- [ ] Dataverse application user for MI
+- [ ] App settings: `DataverseUrl`, `BlobContainerName`, `BlobStorageAccountName`
+
+### Boomi
+
+- [ ] REST process validates SPA JWT + `x-api-key`
+- [ ] Forwards `Authorization: Bearer` unchanged to Function
+- [ ] Does **not** use client-credentials to Function
+- [ ] Does **not** send `userId`
+
+### Dynamics 365
+
+- [ ] Publish all web resources (§2)
+- [ ] Set environment variables (§3)
+- [ ] ADF timeline copy uses opener URL (§4.2)
+- [ ] Test one timeline link end-to-end
+
+---
+
+## 11. File locations in repo
+
+```text
+TEST-01/KOFC.Azure.Functions.GetSaasBlobUrl/     Function source (deploy via pipeline)
+webresources/blob-opener/kofc_blob_open.html       Timeline landing page
+webresources/blob-opener/kofc_blobClient.js        MSAL + Boomi client
+webresources/blob-opener/kofc_blobLinkBuilder.js   Link / timeline HTML builder
+docs/KOFC-Blob-Client-Integration.wiki.md          This document
+docs/KOFC-Blob-Client-Integration.docx             Word export
+```
