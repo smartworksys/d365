@@ -1,343 +1,798 @@
-using System.Text.RegularExpressions;
-using Azure;
-using Azure.Storage.Blobs;
-using Azure.Storage.Sas;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Opening file...</title>
+    <!--
+      kofc_blob_open.html — Timeline / ADF blob opener
 
-namespace KOFC.Azure.Functions.GetSaasBlobUrl.Services;
+      Preferred URL (Blob Link Activity GUID):
+        {OrgUrl}/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html
+          &data=<activity-guid>
 
-public class BlobService : IBlobService
-{
-    private readonly ILogger<BlobService> _logger;
-    private readonly BlobServiceClient _blobServiceClient;
-    private readonly bool _useUserDelegationSas;
+      Legacy URL:
+        &data=<uriComponent( path + "|" + contactId )>
 
-    public BlobService(
-        ILogger<BlobService> logger,
-        BlobServiceClient blobServiceClient,
-        IConfiguration configuration)
-    {
-        _logger = logger;
-        _blobServiceClient = blobServiceClient;
-        _useUserDelegationSas = !string.IsNullOrWhiteSpace(configuration["BlobStorageAccountName"]);
-    }
+      Do NOT use /WebResources/kofc_blob_open.html directly (no Xrm.WebApi).
 
-    public string NormalizePathToBlob(string rawPath)
-    {
-        if (string.IsNullOrWhiteSpace(rawPath))
-        {
-            _logger.LogWarning("Raw path is null or empty");
-            return string.Empty;
+      Env vars: kofc_TenantId, kofc_SPAClientId, kofc_BlobApiAppId,
+                kofc_EappApiKey, kofc_BlobBoomiUrl
+    -->
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f3f2f1;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: #323130;
         }
-
-        var cleaned = DecodePathEncodings(rawPath);
-
-        // Remove drive letter and colon (e.g., "D:\")
-        cleaned = Regex.Replace(cleaned, @"^[A-Za-z]:\\", string.Empty);
-
-        // Replace backslashes with forward slashes
-        cleaned = cleaned.Replace("\\", "/");
-
-        // Collapse multiple consecutive slashes into a single slash
-        cleaned = Regex.Replace(cleaned, @"/+", "/");
-
-        // Remove all leading whitespace, tabs, and slashes using regex
-        cleaned = Regex.Replace(cleaned, @"^[\s/\\]+", string.Empty);
-
-        // Remove all trailing whitespace, tabs, and slashes
-        cleaned = Regex.Replace(cleaned, @"[\s/\\]+$", string.Empty);
-
-        // Keep KOFCExt Extractions/ in the blob path � blobs are stored inside the
-        // container with that folder prefix (e.g. KOFCExt Extractions/09272024/...).
-
-        _logger.LogInformation("Normalized path from '{RawPath}' to '{CleanedPath}'", rawPath, cleaned);
-
-        return cleaned;
-    }
-
-    /// <summary>
-    /// Turns + / %20 / HTML nbsp into a real space so "KOFC Extractions/..." matches storage.
-    /// </summary>
-    private static string DecodePathEncodings(string rawPath)
-    {
-        var cleaned = rawPath
-            .Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)
-            .Replace("&#160;", " ", StringComparison.Ordinal)
-            .Replace("\u00A0", " ")
-            .Replace('+', ' ');
-
-        if (cleaned.Contains('%', StringComparison.Ordinal))
-        {
-            try
-            {
-                cleaned = Uri.UnescapeDataString(cleaned.Replace("+", " "));
-            }
-            catch (UriFormatException)
-            {
-                // keep the plus-decoded value
-            }
+        .card {
+            background: #fff;
+            border: 1px solid #e1dfdd;
+            border-radius: 8px;
+            padding: 32px 28px;
+            max-width: 420px;
+            text-align: center;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
         }
-
-        return cleaned;
-    }
-
-    public async Task<string> GenerateSasUrlAsync(string containerName, string blobPath)
-    {
-        if (string.IsNullOrWhiteSpace(containerName))
-        {
-            throw new ArgumentException("Container name cannot be null or empty", nameof(containerName));
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid #edebe9;
+            border-top-color: #0078d4;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin: 0 auto 16px;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error { color: #a4262c; white-space: pre-wrap; text-align: left; }
+        h1 { font-size: 18px; margin: 0 0 8px; }
+        p { margin: 0; color: #605e5c; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner" id="loader"></div>
+        <h1 id="title">Opening file</h1>
+        <p id="message">Starting...</p>
+        <pre class="error" id="error" style="display:none;"></pre>
+    </div>
 
-        if (string.IsNullOrWhiteSpace(blobPath))
-        {
-            throw new ArgumentException("Blob path cannot be null or empty", nameof(blobPath));
-        }
+    <script src="/WebResources/ClientGlobalContext.js.aspx" type="text/javascript"></script>
+    <script src="/WebResources/kofc_authclient.js"></script>
+    <script src="/WebResources/kofc_blobClient.js"></script>
+    <script src="/WebResources/kofc_msalbrowsermin"></script>
+    <script>
+        (function () {
+            "use strict";
 
-        // Trim any remaining whitespace from the blob path
-        blobPath = blobPath.Trim();
-
-        try
-        {
-            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
-
-            // Verify container exists
-            if (!await containerClient.ExistsAsync())
-            {
-                _logger.LogError("Container '{ContainerName}' does not exist", containerName);
-                throw new InvalidOperationException($"Container '{containerName}' does not exist");
-            }
-
-            var blobClient = containerClient.GetBlobClient(blobPath);
-
-            // Verify blob exists
-            if (!await blobClient.ExistsAsync())
-            {
-                _logger.LogError("Blob '{BlobPath}' does not exist in container '{ContainerName}'", blobPath, containerName);
-                throw new InvalidOperationException($"Blob '{blobPath}' does not exist in container '{containerName}'");
-            }
-
-            // Create SAS builder with read-only permissions
-            var sasBuilder = new BlobSasBuilder
-            {
-                BlobContainerName = containerName,
-                BlobName = blobPath,
-                Resource = "b",
-                StartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
-                ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(15)
+            var ENV = {
+                tenantId: "kofc_TenantId",
+                clientId: "kofc_SPAClientId",
+                apiAppId: "kofc_BlobApiAppId",
+                apiKey: "kofc_EappApiKey",
+                boomiUrl: "kofc_BlobBoomiUrl"
             };
 
-            sasBuilder.SetPermissions(BlobSasPermissions.Read);
+            var OVERALL_TIMEOUT_MS = 60000;
+            var BLOB_LINK_ACTIVITY = "kofc_bloblinkactivity";
+            var GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-            Uri sasUri;
-            if (_useUserDelegationSas)
-            {
-                var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
-                    sasBuilder.StartsOn,
-                    sasBuilder.ExpiresOn);
-                var sasQuery = sasBuilder.ToSasQueryParameters(
-                    delegationKey.Value,
-                    _blobServiceClient.AccountName);
-                var builder = new UriBuilder(blobClient.Uri) { Query = sasQuery.ToString() };
-                sasUri = builder.Uri;
-            }
-            else
-            {
-                sasUri = blobClient.GenerateSasUri(sasBuilder);
+            function setStatus(text) {
+                var el = document.getElementById("message");
+                if (el) { el.innerText = text; }
             }
 
-            _logger.LogInformation(
-                "Generated SAS URL for blob '{BlobPath}' in container '{ContainerName}', expires at {ExpiresOn}",
-                blobPath,
-                containerName,
-                sasBuilder.ExpiresOn);
+            function showError(message) {
+                document.getElementById("loader").style.display = "none";
+                document.getElementById("title").innerText = "Unable to open file";
+                document.getElementById("message").style.display = "none";
+                var err = document.getElementById("error");
+                err.style.display = "block";
+                err.innerText = message || "Unknown error";
+            }
 
-            return sasUri.ToString();
+            function getXrm() {
+                try { if (window.Xrm && window.Xrm.WebApi) { return window.Xrm; } } catch (e0) { /* ignore */ }
+                try { if (parent.Xrm && parent.Xrm.WebApi) { return parent.Xrm; } } catch (e1) { /* ignore */ }
+                try { if (window.top && window.top.Xrm && window.top.Xrm.WebApi) { return window.top.Xrm; } } catch (e2) { /* ignore */ }
+                return null;
+            }
+
+            function waitForXrm(maxMs) {
+                return new Promise(function (resolve, reject) {
+                    var started = Date.now();
+                    (function poll() {
+                        var x = getXrm();
+                        if (x) {
+                            resolve(x);
+                            return;
+                        }
+                        if (Date.now() - started > maxMs) {
+                            reject(new Error(
+                                "Dynamics Xrm.WebApi is not available on this page.\n\n" +
+                                "Open the file using a main.aspx webresource link (not a raw /WebResources URL), " +
+                                "while signed into Dynamics:\n\n" +
+                                "{org}/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html" +
+                                "&data=" + encodeURIComponent("D:\\folder\\file.xlsx|CONTACT-GUID")
+                            ));
+                            return;
+                        }
+                        setTimeout(poll, 200);
+                    })();
+                });
+            }
+
+            function stripBraces(value) {
+                return String(value || "").replace(/[{}]/g, "").trim();
+            }
+
+            function tryDecode(value) {
+                if (!value) { return value; }
+                try {
+                    return decodeURIComponent(value);
+                } catch (e) {
+                    return value;
+                }
+            }
+
+            function fullyDecode(value) {
+                if (!value) {
+                    return value;
+                }
+                var current = String(value);
+                for (var i = 0; i < 3; i++) {
+                    try {
+                        var decoded = decodeURIComponent(current.replace(/\+/g, " "));
+                        if (decoded === current) {
+                            break;
+                        }
+                        current = decoded;
+                    } catch (e) {
+                        break;
+                    }
+                }
+                return current;
+            }
+
+            function isGuid(value) {
+                return GUID_RE.test(stripBraces(value));
+            }
+
+            function parseActivityId(data) {
+                var decoded = fullyDecode(data);
+                if (!decoded) {
+                    return null;
+                }
+                var id = stripBraces(decoded);
+                if (isGuid(id)) {
+                    return id;
+                }
+                var nested = new URLSearchParams(decoded);
+                var fromQuery = nested.get("activityId") || nested.get("recordId");
+                if (fromQuery && isGuid(fromQuery)) {
+                    return stripBraces(fromQuery);
+                }
+                var pipe = decoded.lastIndexOf("|");
+                if (pipe > 0) {
+                    var left = decoded.substring(0, pipe).toLowerCase();
+                    var right = stripBraces(decoded.substring(pipe + 1));
+                    if (isGuid(right) && (left === BLOB_LINK_ACTIVITY || left === "activity")) {
+                        return right;
+                    }
+                }
+                return null;
+            }
+
+            function normalizeBlobPath(value) {
+                var path = String(value || "");
+                path = path.replace(/&nbsp;/gi, " ").replace(/&#160;/g, " ").replace(/\u00a0/g, " ");
+                path = path.replace(/<br\s*\/?>/gi, "");
+                path = path.replace(/<[^>]+>/g, "");
+                path = path.replace(/\+/g, " ");
+                if (/%[0-9A-Fa-f]{2}/.test(path)) {
+                    try {
+                        path = decodeURIComponent(path);
+                    } catch (e) { /* keep plus-decoded value */ }
+                }
+                return path.replace(/[\t\r\n]+/g, " ").trim();
+            }
+
+            function resolveActivity(xrmApi, activityId) {
+                var query = "?$select=subject,description,_regardingobjectid_value";
+                return xrmApi.WebApi.retrieveRecord(BLOB_LINK_ACTIVITY, activityId, query)
+                    .then(function (record) {
+                        var path = normalizeBlobPath(record && record.description);
+                        var contactId = stripBraces(record && record._regardingobjectid_value);
+                        if (!path || !contactId) {
+                            throw new Error(
+                                "Blob Link Activity is missing Description (path) or Regarding (Contact).\n" +
+                                "Activity: " + activityId
+                            );
+                        }
+                        return {
+                            path: path,
+                            contactId: contactId,
+                            activityId: activityId,
+                            subject: record.subject || ""
+                        };
+                    }, function (err) {
+                        var msg = err && err.message ? err.message : String(err);
+                        throw new Error(
+                            "Could not load Blob Link Activity " + activityId + ".\n" +
+                            "Confirm the table logical name is " + BLOB_LINK_ACTIVITY + ".\n\n" +
+                            msg
+                        );
+                    });
+            }
+
+            function parseQueryData(data) {
+                var decoded = fullyDecode(data);
+                var nested = new URLSearchParams(decoded);
+                var nestedPath = nested.get("path");
+                var nestedContact = nested.get("contactId");
+                if (nestedPath && nestedContact) {
+                    return {
+                        path: fullyDecode(nestedPath),
+                        contactId: stripBraces(nestedContact)
+                    };
+                }
+                return null;
+            }
+
+            function parseParams(params) {
+                var path = params.get("path");
+                var contactId = params.get("contactId");
+                var data = params.get("data") || "";
+                var directActivity = params.get("activityId") || params.get("recordId");
+
+                if (directActivity && isGuid(directActivity)) {
+                    return { activityId: stripBraces(directActivity) };
+                }
+
+                if (path && contactId) {
+                    return {
+                        path: tryDecode(path),
+                        contactId: stripBraces(contactId)
+                    };
+                }
+
+                if (data) {
+                    var activityId = parseActivityId(data);
+                    if (activityId) {
+                        return { activityId: activityId };
+                    }
+
+                    var queryParsed = parseQueryData(data);
+                    if (queryParsed) {
+                        return queryParsed;
+                    }
+
+                    var pipe = data.lastIndexOf("|");
+                    if (pipe > 0) {
+                        var maybeId = stripBraces(data.substring(pipe + 1));
+                        if (/^[0-9a-fA-F-]{36}$/.test(maybeId)) {
+                            return {
+                                path: tryDecode(data.substring(0, pipe)),
+                                contactId: maybeId
+                            };
+                        }
+                    }
+
+                    var nested = new URLSearchParams(data);
+                    var nestedPath = nested.get("path");
+                    var nestedContact = nested.get("contactId");
+                    if (nestedPath && nestedContact) {
+                        return {
+                            path: fullyDecode(nestedPath),
+                            contactId: stripBraces(nestedContact)
+                        };
+                    }
+
+                    if (contactId) {
+                        var dataPath = fullyDecode(data);
+                        if (/^path=/i.test(dataPath)) {
+                            dataPath = dataPath.substring(dataPath.indexOf("=") + 1);
+                        }
+                        return {
+                            path: dataPath,
+                            contactId: stripBraces(contactId)
+                        };
+                    }
+                }
+
+                return {
+                    path: path ? tryDecode(path) : null,
+                    contactId: stripBraces(contactId)
+                };
+            }
+
+            function parseContext() {
+                var searches = [window.location.search];
+
+                // D365 normally forwards main.aspx data to the web-resource iframe. Some
+                // UCI routes leave it only on the shell URL, so inspect same-origin parents.
+                try {
+                    if (parent && parent !== window) {
+                        searches.push(parent.location.search);
+                    }
+                } catch (e0) { /* cross-origin parent */ }
+                try {
+                    if (window.top && window.top !== window && window.top !== parent) {
+                        searches.push(window.top.location.search);
+                    }
+                } catch (e1) { /* cross-origin top */ }
+
+                for (var i = 0; i < searches.length; i++) {
+                    var parsed = parseParams(new URLSearchParams(searches[i] || ""));
+                    if ((parsed.path && parsed.contactId) || parsed.activityId) {
+                        return parsed;
+                    }
+                }
+
+                return parseParams(new URLSearchParams(window.location.search));
+            }
+
+            function getEnvironmentVariable(xrmApi, schemaName) {
+                var escaped = schemaName.replace(/'/g, "''");
+                var definitionQuery =
+                    "?$select=environmentvariabledefinitionid,defaultvalue" +
+                    "&$filter=schemaname eq '" + escaped + "'";
+
+                return xrmApi.WebApi.retrieveMultipleRecords(
+                    "environmentvariabledefinition",
+                    definitionQuery
+                ).then(function (definitions) {
+                    if (!definitions || !definitions.entities || !definitions.entities.length ||
+                        !definitions.entities[0]) {
+                        return null;
+                    }
+
+                    var definition = definitions.entities[0];
+                    var definitionId = stripBraces(definition.environmentvariabledefinitionid);
+                    if (!definitionId) {
+                        return definition.defaultvalue || null;
+                    }
+
+                    var valueQuery =
+                        "?$select=value,createdon" +
+                        "&$filter=_environmentvariabledefinitionid_value eq " + definitionId +
+                        " and statecode eq 0" +
+                        "&$orderby=createdon desc" +
+                        "&$top=1";
+
+                    return xrmApi.WebApi.retrieveMultipleRecords(
+                        "environmentvariablevalue",
+                        valueQuery
+                    ).then(function (values) {
+                        var currentValue = values && values.entities && values.entities.length &&
+                            values.entities[0]
+                            ? values.entities[0].value
+                            : null;
+                        return currentValue || definition.defaultvalue || null;
+                    });
+                });
+            }
+
+            function loadConfig(xrmApi) {
+                return Promise.all([
+                    getEnvironmentVariable(xrmApi, ENV.tenantId),
+                    getEnvironmentVariable(xrmApi, ENV.clientId),
+                    getEnvironmentVariable(xrmApi, ENV.apiAppId),
+                    getEnvironmentVariable(xrmApi, ENV.apiKey),
+                    getEnvironmentVariable(xrmApi, ENV.boomiUrl)
+                ]).then(function (values) {
+                    var missing = [];
+                    if (!values[0]) { missing.push(ENV.tenantId); }
+                    if (!values[1]) { missing.push(ENV.clientId); }
+                    if (!values[2]) { missing.push(ENV.apiAppId); }
+                    if (!values[3]) { missing.push(ENV.apiKey); }
+                    if (!values[4]) { missing.push(ENV.boomiUrl); }
+                    if (missing.length) {
+                        throw new Error("Missing configuration: " + missing.join(", "));
+                    }
+                    return {
+                        tenantId: values[0],
+                        clientId: values[1],
+                        apiAppId: values[2],
+                        apiKey: values[3],
+                        boomiUrl: values[4],
+                        scope: ".default",
+                        httpMethod: "POST",
+                        redirectWebResource: "kofc_authcallback.html",
+                        msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
+                        allowRedirect: true,
+                        debug: false
+                    };
+                });
+            }
+
+            function withTimeout(promise, ms, label) {
+                return new Promise(function (resolve, reject) {
+                    var timer = setTimeout(function () {
+                        reject(new Error(label + " timed out after " + (ms / 1000) + "s."));
+                    }, ms);
+                    promise.then(
+                        function (v) { clearTimeout(timer); resolve(v); },
+                        function (e) { clearTimeout(timer); reject(e); }
+                    );
+                });
+            }
+
+            async function init() {
+                try {
+                    if (!window.KOFC || !window.KOFC.Blob) {
+                        throw new Error("kofc_blobClient.js did not load (KOFC.Blob missing). Publish and hard-refresh.");
+                    }
+                    if (!window.KOFC.Auth) {
+                        throw new Error("kofc_authclient.js did not load (KOFC.Auth missing). Publish and hard-refresh.");
+                    }
+
+                    setStatus("Reading link parameters...");
+                    var ctx = parseContext();
+                    if (!ctx.activityId && (!ctx.path || !ctx.contactId)) {
+                        throw new Error(
+                            "Missing Blob Link Activity id, or path/contactId, in the link.\n\n" +
+                            "Preferred:\n" +
+                            "main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html" +
+                            "&data=<activity-guid>"
+                        );
+                    }
+
+                    var pending = KOFC.Blob.consumePendingResult();
+                    if (pending && pending.ok && pending.data && pending.data.sasUrl) {
+                        setStatus("Opening file...");
+                        window.location.href = pending.data.sasUrl;
+                        return;
+                    }
+                    if (pending && !pending.ok) {
+                        throw new Error(pending.raw || "Blob request failed after sign-in.");
+                    }
+
+                    setStatus("Connecting to Dynamics...");
+                    var xrmApi = await waitForXrm(8000);
+
+                    if (ctx.activityId && (!ctx.path || !ctx.contactId)) {
+                        setStatus("Loading document details...");
+                        ctx = await withTimeout(
+                            resolveActivity(xrmApi, ctx.activityId),
+                            15000,
+                            "Loading Blob Link Activity"
+                        );
+                    }
+
+                    setStatus("Loading configuration...");
+                    var config = await withTimeout(loadConfig(xrmApi), 20000, "Loading configuration");
+                    KOFC.Blob.configure(config);
+
+                    setStatus("Signing in and requesting file access...");
+                    var result = await withTimeout(
+                        KOFC.Blob.openSaasBlob({
+                            path: ctx.path,
+                            contactId: ctx.contactId
+                        }),
+                        OVERALL_TIMEOUT_MS,
+                        "Sign-in / Boomi request"
+                    );
+
+                    if (result && result.redirecting) {
+                        setStatus("Redirecting to Microsoft sign-in...");
+                        return;
+                    }
+
+                    if (result && !result.ok) {
+                        throw new Error(
+                            "File request failed (HTTP " + (result.status || "?") + "): " +
+                            (result.raw || JSON.stringify(result.data) || "unknown") +
+                            "\n\nPath sent: " + ctx.path +
+                            "\nContactId sent: " + ctx.contactId +
+                            "\n\nTip: compare path/contactId with the validator payload that succeeded."
+                        );
+                    }
+
+                    // openSaasBlob navigates to sasUrl on success; if still here, response was odd
+                    setStatus("File access granted. If the file did not open, check pop-up blocker.");
+                } catch (err) {
+                    showError(err && err.message ? err.message : String(err));
+                }
+            }
+
+            init();
+        })();
+    </script>
+</body>
+</html>
+
+
+/*
+ * kofc_blobClient.js — SaaS blob opener (MSAL + Boomi + GetSaasBlobUrl)
+ *
+ * Browser sends path + contactId to Boomi (no userId — Boomi derives user from token oid).
+ * Boomi calls Function with client-credentials token + userId/oid.
+ * Returns { sasUrl } and opens the file.
+ */
+(function (global) {
+    "use strict";
+
+    var AUTH_LIBRARY = "/WebResources/kofc_authclient.js";
+    var PENDING_KEY = "kofc_blob_pending";
+    var RESULT_KEY = "kofc_blob_result";
+
+    var CONFIG = {
+        tenantId: null,
+        clientId: null,
+        apiAppId: null,
+        apiKey: null,
+        boomiUrl: null,
+        scope: ".default",
+        httpMethod: "POST",
+        redirectWebResource: "kofc_authcallback.html",
+        msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
+        allowRedirect: true,
+        debug: false
+    };
+
+    function log() {
+        if (!CONFIG.debug) {
+            return;
         }
-        catch (RequestFailedException ex)
-        {
-            _logger.LogError(ex, "Azure Storage error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'",
-                blobPath, containerName);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'",
-                blobPath, containerName);
-            throw;
+        var args = ["[KOFC.Blob]"].concat(Array.prototype.slice.call(arguments));
+        if (typeof console !== "undefined" && console.log) {
+            console.log.apply(console, args);
         }
     }
-}
 
-
-using System.Text.RegularExpressions;
-using Azure;
-using Azure.Storage.Blobs;
-using Azure.Storage.Sas;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-
-namespace KOFC.Azure.Functions.GetSaasBlobUrl.Services;
-
-public class BlobService : IBlobService
-{
-    private readonly ILogger<BlobService> _logger;
-    private readonly BlobServiceClient _blobServiceClient;
-    private readonly bool _useUserDelegationSas;
-
-    public BlobService(
-        ILogger<BlobService> logger,
-        BlobServiceClient blobServiceClient,
-        IConfiguration configuration)
-    {
-        _logger = logger;
-        _blobServiceClient = blobServiceClient;
-        _useUserDelegationSas = !string.IsNullOrWhiteSpace(configuration["BlobStorageAccountName"]);
+    function clientUrl() {
+        try {
+            if (typeof Xrm !== "undefined" && Xrm.Utility) {
+                return Xrm.Utility.getGlobalContext().getClientUrl();
+            }
+        } catch (e) {
+            // ignore
+        }
+        try {
+            if (typeof parent !== "undefined" && parent.Xrm && parent.Xrm.Utility) {
+                return parent.Xrm.Utility.getGlobalContext().getClientUrl();
+            }
+        } catch (e2) {
+            // ignore
+        }
+        return window.location.origin;
     }
 
-    public string NormalizePathToBlob(string rawPath)
-    {
-        if (string.IsNullOrWhiteSpace(rawPath))
-        {
-            _logger.LogWarning("Raw path is null or empty");
-            return string.Empty;
-        }
-
-        var cleaned = DecodePathEncodings(rawPath);
-
-        // Remove drive letter and colon (e.g., "D:\")
-        cleaned = Regex.Replace(cleaned, @"^[A-Za-z]:\\", string.Empty);
-        
-        // Replace backslashes with forward slashes
-        cleaned = cleaned.Replace("\\", "/");
-        
-        // Collapse multiple consecutive slashes into a single slash
-        cleaned = Regex.Replace(cleaned, @"/+", "/");
-        
-        // Remove all leading whitespace, tabs, and slashes using regex
-        cleaned = Regex.Replace(cleaned, @"^[\s/\\]+", string.Empty);
-        
-        // Remove all trailing whitespace, tabs, and slashes
-        cleaned = Regex.Replace(cleaned, @"[\s/\\]+$", string.Empty);
-
-        // Keep KOFCExt Extractions/ in the blob path — blobs are stored inside the
-        // container with that folder prefix (e.g. KOFCExt Extractions/09272024/...).
-
-        _logger.LogInformation("Normalized path from '{RawPath}' to '{CleanedPath}'", rawPath, cleaned);
-        
-        return cleaned;
+    function apiScopes() {
+        return ["api://" + CONFIG.apiAppId + "/" + CONFIG.scope];
     }
 
-    /// <summary>
-    /// Turns + / %20 / HTML nbsp into a real space so "KOFC Extractions/..." matches storage.
-    /// </summary>
-    private static string DecodePathEncodings(string rawPath)
-    {
-        var cleaned = rawPath
-            .Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)
-            .Replace("&#160;", " ", StringComparison.Ordinal)
-            .Replace("\u00A0", " ")
-            .Replace('+', ' ');
-
-        if (cleaned.Contains('%', StringComparison.Ordinal))
-        {
-            try
-            {
-                cleaned = Uri.UnescapeDataString(cleaned.Replace("+", " "));
-            }
-            catch (UriFormatException)
-            {
-                // keep the plus-decoded value
-            }
+    function requireConfig() {
+        var missing = [];
+        if (!CONFIG.tenantId) { missing.push("tenantId"); }
+        if (!CONFIG.clientId) { missing.push("clientId"); }
+        if (!CONFIG.apiAppId) { missing.push("apiAppId"); }
+        if (!CONFIG.boomiUrl) { missing.push("boomiUrl"); }
+        if (!CONFIG.apiKey) { missing.push("apiKey"); }
+        if (missing.length > 0) {
+            throw new Error("KOFC.Blob is not configured. Missing: " + missing.join(", "));
         }
-
-        return cleaned;
     }
 
-    public async Task<string> GenerateSasUrlAsync(string containerName, string blobPath)
-    {
-        if (string.IsNullOrWhiteSpace(containerName))
-        {
-            throw new ArgumentException("Container name cannot be null or empty", nameof(containerName));
-        }
-
-        if (string.IsNullOrWhiteSpace(blobPath))
-        {
-            throw new ArgumentException("Blob path cannot be null or empty", nameof(blobPath));
-        }
-
-        // Trim any remaining whitespace from the blob path
-        blobPath = blobPath.Trim();
-
-        try
-        {
-            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
-            
-            // Verify container exists
-            if (!await containerClient.ExistsAsync())
-            {
-                _logger.LogError("Container '{ContainerName}' does not exist", containerName);
-                throw new InvalidOperationException($"Container '{containerName}' does not exist");
+    function ensureAuthClient() {
+        return new Promise(function (resolve, reject) {
+            if (global.KOFC && global.KOFC.Auth) {
+                resolve();
+                return;
             }
-
-            var blobClient = containerClient.GetBlobClient(blobPath);
-            
-            // Verify blob exists
-            if (!await blobClient.ExistsAsync())
-            {
-                _logger.LogError("Blob '{BlobPath}' does not exist in container '{ContainerName}'", blobPath, containerName);
-                throw new InvalidOperationException($"Blob '{blobPath}' does not exist in container '{containerName}'");
-            }
-
-            // Create SAS builder with read-only permissions
-            var sasBuilder = new BlobSasBuilder
-            {
-                BlobContainerName = containerName,
-                BlobName = blobPath,
-                Resource = "b",
-                StartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
-                ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(15)
+            var script = document.createElement("script");
+            script.src = clientUrl() + AUTH_LIBRARY;
+            script.onload = function () {
+                if (global.KOFC && global.KOFC.Auth) {
+                    resolve();
+                } else {
+                    reject(new Error("Auth client loaded but KOFC.Auth is undefined."));
+                }
             };
+            script.onerror = function () {
+                reject(new Error("Failed to load auth client: " + script.src));
+            };
+            document.head.appendChild(script);
+        });
+    }
 
-            sasBuilder.SetPermissions(BlobSasPermissions.Read);
+    function applyAuthConfig() {
+        global.KOFC.Auth.configure({
+            tenantId: CONFIG.tenantId,
+            clientId: CONFIG.clientId,
+            apiAppId: CONFIG.apiAppId,
+            apiKey: CONFIG.apiKey,
+            boomiUrl: CONFIG.boomiUrl,
+            scope: CONFIG.scope,
+            httpMethod: CONFIG.httpMethod,
+            redirectWebResource: CONFIG.redirectWebResource,
+            msalWebResourcePath: CONFIG.msalWebResourcePath,
+            allowRedirect: CONFIG.allowRedirect,
+            debug: CONFIG.debug
+        });
+    }
 
-            Uri sasUri;
-            if (_useUserDelegationSas)
-            {
-                var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
-                    sasBuilder.StartsOn,
-                    sasBuilder.ExpiresOn);
-                var sasQuery = sasBuilder.ToSasQueryParameters(
-                    delegationKey.Value,
-                    _blobServiceClient.AccountName);
-                var builder = new UriBuilder(blobClient.Uri) { Query = sasQuery.ToString() };
-                sasUri = builder.Uri;
-            }
-            else
-            {
-                sasUri = blobClient.GenerateSasUri(sasBuilder);
-            }
-
-            _logger.LogInformation(
-                "Generated SAS URL for blob '{BlobPath}' in container '{ContainerName}', expires at {ExpiresOn}",
-                blobPath,
-                containerName,
-                sasBuilder.ExpiresOn);
-
-            return sasUri.ToString();
-        }
-        catch (RequestFailedException ex)
-        {
-            _logger.LogError(ex, "Azure Storage error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'", 
-                blobPath, containerName);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unexpected error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'", 
-                blobPath, containerName);
-            throw;
+    function getReturnUrl() {
+        try {
+            return window.top.location.href;
+        } catch (e) {
+            return window.location.href;
         }
     }
-}
 
+    function stripBraces(value) {
+        return String(value || "").replace(/[{}]/g, "");
+    }
+
+    function normalizeBlobPath(value) {
+        var path = String(value || "");
+        path = path.replace(/&nbsp;/gi, " ").replace(/&#160;/g, " ").replace(/\u00a0/g, " ");
+        path = path.replace(/<br\s*\/?>/gi, "");
+        path = path.replace(/<[^>]+>/g, "");
+        path = path.replace(/\+/g, " ");
+        if (/%[0-9A-Fa-f]{2}/.test(path)) {
+            try {
+                path = decodeURIComponent(path);
+            } catch (e) { /* keep plus-decoded value */ }
+        }
+        return path.replace(/[\t\r\n]+/g, " ").trim();
+    }
+
+    function persistPending(params) {
+        try {
+            localStorage.setItem(PENDING_KEY, JSON.stringify({
+                action: "blob",
+                path: normalizeBlobPath(params.path),
+                contactId: stripBraces(params.contactId),
+                boomiUrl: CONFIG.boomiUrl,
+                apiKey: CONFIG.apiKey,
+                httpMethod: "POST",
+                apiScopes: apiScopes(),
+                returnUrl: getReturnUrl()
+            }));
+        } catch (e) {
+            log("Failed to persist pending blob request", e);
+        }
+    }
+
+    function clearPending() {
+        try {
+            localStorage.removeItem(PENDING_KEY);
+        } catch (e) {
+            // ignore
+        }
+    }
+
+    function buildBlobUrl(params) {
+        var base = CONFIG.boomiUrl;
+        var parts = [
+            "path=" + encodeURIComponent(params.path),
+            "contactId=" + encodeURIComponent(stripBraces(params.contactId)),
+            "format=json"
+        ];
+        return base + (base.indexOf("?") >= 0 ? "&" : "?") + parts.join("&");
+    }
+
+    function parseResponseBody(text) {
+        if (!text) {
+            return null;
+        }
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            return { sasUrl: text };
+        }
+    }
+
+    function callBlobBoomi(token, params) {
+        // The Blob Boomi operation is POST-only. Do not allow stale/shared
+        // configuration to switch this request back to GET.
+        var method = "POST";
+        var base = CONFIG.boomiUrl;
+        var url = base;
+        var options = {
+            method: method,
+            headers: {
+                "Authorization": "Bearer " + token,
+                "x-api-key": CONFIG.apiKey,
+                "Accept": "application/json"
+            }
+        };
+
+        var payload = {
+            path: normalizeBlobPath(params.path),
+            contactId: stripBraces(params.contactId),
+            format: "json"
+        };
+
+        if (method === "GET" || method === "HEAD") {
+            var parts = [
+                "path=" + encodeURIComponent(payload.path),
+                "contactId=" + encodeURIComponent(payload.contactId),
+                "format=json"
+            ];
+            url = base + (base.indexOf("?") >= 0 ? "&" : "?") + parts.join("&");
+        } else {
+            options.headers["Content-Type"] = "application/json";
+            options.body = JSON.stringify(payload);
+        }
+
+        return fetch(url, options).then(function (response) {
+            return response.text().then(function (text) {
+                return {
+                    ok: response.ok,
+                    status: response.status,
+                    data: parseResponseBody(text),
+                    raw: text,
+                    redirecting: false
+                };
+            });
+        });
+    }
+
+    function configure(options) {
+        if (!options || typeof options !== "object") {
+            throw new Error("KOFC.Blob.configure(options) requires an object.");
+        }
+        Object.keys(options).forEach(function (key) {
+            if (options[key] !== undefined) {
+                CONFIG[key] = options[key];
+            }
+        });
+    }
+
+    function consumePendingResult() {
+        try {
+            var raw = localStorage.getItem(RESULT_KEY);
+            if (!raw) {
+                return null;
+            }
+            localStorage.removeItem(RESULT_KEY);
+            return JSON.parse(raw);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function openSaasBlob(params) {
+        requireConfig();
+        if (!params || !params.path || !params.contactId) {
+            return Promise.reject(new Error("openSaasBlob requires path and contactId."));
+        }
+
+        return ensureAuthClient().then(function () {
+            applyAuthConfig();
+            persistPending(params);
+            return global.KOFC.Auth.getAccessToken();
+        }).then(function (token) {
+            if (!token) {
+                return { ok: false, status: 0, data: null, raw: "", redirecting: true };
+            }
+            return callBlobBoomi(token, params).then(function (result) {
+                clearPending();
+                if (!result.ok) {
+                    return result;
+                }
+                var sasUrl = result.data && (result.data.sasUrl || result.data.SasUrl);
+                if (!sasUrl) {
+                    throw new Error("Boomi response did not include sasUrl.");
+                }
+                window.location.href = sasUrl;
+                return result;
+            });
+        });
+    }
+
+    global.KOFC = global.KOFC || {};
+    global.KOFC.Blob = {
+        configure: configure,
+        openSaasBlob: openSaasBlob,
+        consumePendingResult: consumePendingResult
+    };
+})(typeof window !== "undefined" ? window : this);
