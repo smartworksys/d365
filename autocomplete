@@ -1,4 +1,343 @@
-Xrm.WebApi.retrieveMultipleRecords(
-  "environmentvariabledefinition",
-  "?$select=schemaname&$top=1"
-).then(r => console.log("OK", r)).catch(e => console.error("FAIL", e));
+using System.Text.RegularExpressions;
+using Azure;
+using Azure.Storage.Blobs;
+using Azure.Storage.Sas;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+namespace KOFC.Azure.Functions.GetSaasBlobUrl.Services;
+
+public class BlobService : IBlobService
+{
+    private readonly ILogger<BlobService> _logger;
+    private readonly BlobServiceClient _blobServiceClient;
+    private readonly bool _useUserDelegationSas;
+
+    public BlobService(
+        ILogger<BlobService> logger,
+        BlobServiceClient blobServiceClient,
+        IConfiguration configuration)
+    {
+        _logger = logger;
+        _blobServiceClient = blobServiceClient;
+        _useUserDelegationSas = !string.IsNullOrWhiteSpace(configuration["BlobStorageAccountName"]);
+    }
+
+    public string NormalizePathToBlob(string rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            _logger.LogWarning("Raw path is null or empty");
+            return string.Empty;
+        }
+
+        var cleaned = DecodePathEncodings(rawPath);
+
+        // Remove drive letter and colon (e.g., "D:\")
+        cleaned = Regex.Replace(cleaned, @"^[A-Za-z]:\\", string.Empty);
+
+        // Replace backslashes with forward slashes
+        cleaned = cleaned.Replace("\\", "/");
+
+        // Collapse multiple consecutive slashes into a single slash
+        cleaned = Regex.Replace(cleaned, @"/+", "/");
+
+        // Remove all leading whitespace, tabs, and slashes using regex
+        cleaned = Regex.Replace(cleaned, @"^[\s/\\]+", string.Empty);
+
+        // Remove all trailing whitespace, tabs, and slashes
+        cleaned = Regex.Replace(cleaned, @"[\s/\\]+$", string.Empty);
+
+        // Keep KOFCExt Extractions/ in the blob path � blobs are stored inside the
+        // container with that folder prefix (e.g. KOFCExt Extractions/09272024/...).
+
+        _logger.LogInformation("Normalized path from '{RawPath}' to '{CleanedPath}'", rawPath, cleaned);
+
+        return cleaned;
+    }
+
+    /// <summary>
+    /// Turns + / %20 / HTML nbsp into a real space so "KOFC Extractions/..." matches storage.
+    /// </summary>
+    private static string DecodePathEncodings(string rawPath)
+    {
+        var cleaned = rawPath
+            .Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)
+            .Replace("&#160;", " ", StringComparison.Ordinal)
+            .Replace("\u00A0", " ")
+            .Replace('+', ' ');
+
+        if (cleaned.Contains('%', StringComparison.Ordinal))
+        {
+            try
+            {
+                cleaned = Uri.UnescapeDataString(cleaned.Replace("+", " "));
+            }
+            catch (UriFormatException)
+            {
+                // keep the plus-decoded value
+            }
+        }
+
+        return cleaned;
+    }
+
+    public async Task<string> GenerateSasUrlAsync(string containerName, string blobPath)
+    {
+        if (string.IsNullOrWhiteSpace(containerName))
+        {
+            throw new ArgumentException("Container name cannot be null or empty", nameof(containerName));
+        }
+
+        if (string.IsNullOrWhiteSpace(blobPath))
+        {
+            throw new ArgumentException("Blob path cannot be null or empty", nameof(blobPath));
+        }
+
+        // Trim any remaining whitespace from the blob path
+        blobPath = blobPath.Trim();
+
+        try
+        {
+            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+
+            // Verify container exists
+            if (!await containerClient.ExistsAsync())
+            {
+                _logger.LogError("Container '{ContainerName}' does not exist", containerName);
+                throw new InvalidOperationException($"Container '{containerName}' does not exist");
+            }
+
+            var blobClient = containerClient.GetBlobClient(blobPath);
+
+            // Verify blob exists
+            if (!await blobClient.ExistsAsync())
+            {
+                _logger.LogError("Blob '{BlobPath}' does not exist in container '{ContainerName}'", blobPath, containerName);
+                throw new InvalidOperationException($"Blob '{blobPath}' does not exist in container '{containerName}'");
+            }
+
+            // Create SAS builder with read-only permissions
+            var sasBuilder = new BlobSasBuilder
+            {
+                BlobContainerName = containerName,
+                BlobName = blobPath,
+                Resource = "b",
+                StartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
+                ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(15)
+            };
+
+            sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+            Uri sasUri;
+            if (_useUserDelegationSas)
+            {
+                var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
+                    sasBuilder.StartsOn,
+                    sasBuilder.ExpiresOn);
+                var sasQuery = sasBuilder.ToSasQueryParameters(
+                    delegationKey.Value,
+                    _blobServiceClient.AccountName);
+                var builder = new UriBuilder(blobClient.Uri) { Query = sasQuery.ToString() };
+                sasUri = builder.Uri;
+            }
+            else
+            {
+                sasUri = blobClient.GenerateSasUri(sasBuilder);
+            }
+
+            _logger.LogInformation(
+                "Generated SAS URL for blob '{BlobPath}' in container '{ContainerName}', expires at {ExpiresOn}",
+                blobPath,
+                containerName,
+                sasBuilder.ExpiresOn);
+
+            return sasUri.ToString();
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "Azure Storage error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'",
+                blobPath, containerName);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'",
+                blobPath, containerName);
+            throw;
+        }
+    }
+}
+
+
+using System.Text.RegularExpressions;
+using Azure;
+using Azure.Storage.Blobs;
+using Azure.Storage.Sas;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+
+namespace KOFC.Azure.Functions.GetSaasBlobUrl.Services;
+
+public class BlobService : IBlobService
+{
+    private readonly ILogger<BlobService> _logger;
+    private readonly BlobServiceClient _blobServiceClient;
+    private readonly bool _useUserDelegationSas;
+
+    public BlobService(
+        ILogger<BlobService> logger,
+        BlobServiceClient blobServiceClient,
+        IConfiguration configuration)
+    {
+        _logger = logger;
+        _blobServiceClient = blobServiceClient;
+        _useUserDelegationSas = !string.IsNullOrWhiteSpace(configuration["BlobStorageAccountName"]);
+    }
+
+    public string NormalizePathToBlob(string rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            _logger.LogWarning("Raw path is null or empty");
+            return string.Empty;
+        }
+
+        var cleaned = DecodePathEncodings(rawPath);
+
+        // Remove drive letter and colon (e.g., "D:\")
+        cleaned = Regex.Replace(cleaned, @"^[A-Za-z]:\\", string.Empty);
+        
+        // Replace backslashes with forward slashes
+        cleaned = cleaned.Replace("\\", "/");
+        
+        // Collapse multiple consecutive slashes into a single slash
+        cleaned = Regex.Replace(cleaned, @"/+", "/");
+        
+        // Remove all leading whitespace, tabs, and slashes using regex
+        cleaned = Regex.Replace(cleaned, @"^[\s/\\]+", string.Empty);
+        
+        // Remove all trailing whitespace, tabs, and slashes
+        cleaned = Regex.Replace(cleaned, @"[\s/\\]+$", string.Empty);
+
+        // Keep KOFCExt Extractions/ in the blob path — blobs are stored inside the
+        // container with that folder prefix (e.g. KOFCExt Extractions/09272024/...).
+
+        _logger.LogInformation("Normalized path from '{RawPath}' to '{CleanedPath}'", rawPath, cleaned);
+        
+        return cleaned;
+    }
+
+    /// <summary>
+    /// Turns + / %20 / HTML nbsp into a real space so "KOFC Extractions/..." matches storage.
+    /// </summary>
+    private static string DecodePathEncodings(string rawPath)
+    {
+        var cleaned = rawPath
+            .Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)
+            .Replace("&#160;", " ", StringComparison.Ordinal)
+            .Replace("\u00A0", " ")
+            .Replace('+', ' ');
+
+        if (cleaned.Contains('%', StringComparison.Ordinal))
+        {
+            try
+            {
+                cleaned = Uri.UnescapeDataString(cleaned.Replace("+", " "));
+            }
+            catch (UriFormatException)
+            {
+                // keep the plus-decoded value
+            }
+        }
+
+        return cleaned;
+    }
+
+    public async Task<string> GenerateSasUrlAsync(string containerName, string blobPath)
+    {
+        if (string.IsNullOrWhiteSpace(containerName))
+        {
+            throw new ArgumentException("Container name cannot be null or empty", nameof(containerName));
+        }
+
+        if (string.IsNullOrWhiteSpace(blobPath))
+        {
+            throw new ArgumentException("Blob path cannot be null or empty", nameof(blobPath));
+        }
+
+        // Trim any remaining whitespace from the blob path
+        blobPath = blobPath.Trim();
+
+        try
+        {
+            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+            
+            // Verify container exists
+            if (!await containerClient.ExistsAsync())
+            {
+                _logger.LogError("Container '{ContainerName}' does not exist", containerName);
+                throw new InvalidOperationException($"Container '{containerName}' does not exist");
+            }
+
+            var blobClient = containerClient.GetBlobClient(blobPath);
+            
+            // Verify blob exists
+            if (!await blobClient.ExistsAsync())
+            {
+                _logger.LogError("Blob '{BlobPath}' does not exist in container '{ContainerName}'", blobPath, containerName);
+                throw new InvalidOperationException($"Blob '{blobPath}' does not exist in container '{containerName}'");
+            }
+
+            // Create SAS builder with read-only permissions
+            var sasBuilder = new BlobSasBuilder
+            {
+                BlobContainerName = containerName,
+                BlobName = blobPath,
+                Resource = "b",
+                StartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
+                ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(15)
+            };
+
+            sasBuilder.SetPermissions(BlobSasPermissions.Read);
+
+            Uri sasUri;
+            if (_useUserDelegationSas)
+            {
+                var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
+                    sasBuilder.StartsOn,
+                    sasBuilder.ExpiresOn);
+                var sasQuery = sasBuilder.ToSasQueryParameters(
+                    delegationKey.Value,
+                    _blobServiceClient.AccountName);
+                var builder = new UriBuilder(blobClient.Uri) { Query = sasQuery.ToString() };
+                sasUri = builder.Uri;
+            }
+            else
+            {
+                sasUri = blobClient.GenerateSasUri(sasBuilder);
+            }
+
+            _logger.LogInformation(
+                "Generated SAS URL for blob '{BlobPath}' in container '{ContainerName}', expires at {ExpiresOn}",
+                blobPath,
+                containerName,
+                sasBuilder.ExpiresOn);
+
+            return sasUri.ToString();
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "Azure Storage error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'", 
+                blobPath, containerName);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'", 
+                blobPath, containerName);
+            throw;
+        }
+    }
+}
+
