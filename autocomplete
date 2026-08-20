@@ -1,785 +1,172 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8" />
-    <title>Auth Callback</title>
-    <style>
-        :root {
-            --brand: #0f6cbd;          /* Fluent 2 communication blue */
-            --brand-dark: #115ea3;
-            --ink: #242424;
-            --ink-2: #616161;
-            --line: #e0e0e0;
-            --danger: #b10e1c;
-        }
-        * { box-sizing: border-box; }
-        html, body { height: 100%; margin: 0; }
-        body {
-            font-family: "Segoe UI", "Segoe UI Web (West European)", -apple-system, system-ui, Arial, sans-serif;
-            color: var(--ink);
-            background: radial-gradient(1200px 600px at 50% -10%, #eaf2fb 0%, #f5f5f5 55%, #f0f0f0 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 24px;
-            -webkit-font-smoothing: antialiased;
-        }
-        .card {
-            position: relative;
-            width: 100%;
-            max-width: 400px;
-            background: #ffffff;
-            border: 1px solid var(--line);
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.10), 0 1px 2px rgba(0, 0, 0, 0.06);
-            padding: 40px 36px 34px;
-            text-align: center;
-            overflow: hidden;
-        }
-        .card::before {
-            content: "";
-            position: absolute;
-            top: 0; left: 0; right: 0;
-            height: 4px;
-            background: linear-gradient(90deg, var(--brand), #2b88d8);
-        }
-        .badge {
-            width: 56px;
-            height: 56px;
-            margin: 4px auto 22px;
-            border-radius: 50%;
-            background: #eaf2fb;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--brand);
-        }
-        .badge svg { width: 30px; height: 30px; display: block; }
-        .spinner {
-            width: 38px;
-            height: 38px;
-            margin: 0 auto 20px;
-            border: 3px solid #e6e6e6;
-            border-top-color: var(--brand);
-            border-radius: 50%;
-            animation: spin 0.85s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        #msg {
-            font-size: 1.05rem;
-            font-weight: 600;
-            line-height: 1.35;
-            margin: 0;
-        }
-        .sub {
-            margin: 8px 0 0;
-            font-size: 0.85rem;
-            color: var(--ink-2);
-            line-height: 1.4;
-        }
-        .foot {
-            margin-top: 26px;
-            padding-top: 16px;
-            border-top: 1px solid var(--line);
-            font-size: 0.72rem;
-            letter-spacing: 0.02em;
-            color: #8a8886;
-            text-transform: uppercase;
-        }
-        .err { color: var(--danger); }
-        .err-hide { display: none; }
-    </style>
-    <!--
-      Generic, REUSABLE MSAL redirect URI page for kofc_authclient.js (KOFC.Auth).
-      Holds no configuration — everything is read at runtime from localStorage, which the
-      library writes before redirecting (kofc_eapp_msal_cfg + kofc_eapp_pending). The same
-      page therefore works for any button/entity/integration built on KOFC.Auth.
+using System.Text.RegularExpressions;
+using Azure;
+using Azure.Storage.Blobs;
+using Azure.Storage.Sas;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
-      Two flows land here:
-        1) ssoSilent hidden iframe  -> stay blank; the parent MSAL reads the response.
-        2) full-page redirect back  -> load MSAL, run handleRedirectPromise() to read the ?code=/#code=
-           and cache the token. If a "pending" action was saved (kofc_eapp_pending), finish it:
-           call the API with the token, then open targetUrl + "?soreq=<base64>" — so the user does
-           NOT have to click the button again. Otherwise just return to the D365 form (returnUrl).
+namespace KOFC.Azure.Functions.GetSaasBlobUrl.Services;
 
-      Reads localStorage keys written by KOFC.Auth: kofc_eapp_msal_cfg + kofc_eapp_pending.
+public class BlobService : IBlobService
+{
+    private readonly ILogger<BlobService> _logger;
+    private readonly BlobServiceClient _blobServiceClient;
+    private readonly bool _useUserDelegationSas;
 
-      Register this URL in Entra (case-sensitive, SPA platform) under EACH app registration that uses it:
-        https://<org>.crm.dynamics.com/WebResources/kofc_authcallback.html
-    -->
-</head>
-<body>
-    <div class="card" role="status" aria-live="polite">
-        <div class="badge" aria-hidden="true">
-            <!-- Fluent-style shield/lock: secure sign-in -->
-            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M12 2.2 4.5 5v6.1c0 4.6 3.2 8.9 7.5 10.2 4.3-1.3 7.5-5.6 7.5-10.2V5L12 2.2Z"
-                      fill="currentColor" opacity="0.12"/>
-                <path d="M12 2.2 4.5 5v6.1c0 4.6 3.2 8.9 7.5 10.2 4.3-1.3 7.5-5.6 7.5-10.2V5L12 2.2Z"
-                      stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
-                <path d="M9.6 12.2l1.7 1.7 3.3-3.6" stroke="currentColor" stroke-width="1.6"
-                      stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-        </div>
-        <div id="spinner" class="spinner"></div>
-        <p id="msg">Signing you in…</p>
-        <p class="sub">Please wait — you'll be redirected to your application automatically.</p>
-        <div class="foot">Secured by Microsoft Entra ID</div>
-    </div>
-    <script>
-        (function () {
-            "use strict";
-
-            var CFG_KEY = "kofc_eapp_msal_cfg";
-            var PENDING_KEY = "kofc_eapp_pending";
-            var POLICY_PENDING_KEY = "kofc_policy_pending";
-            var BLOB_PENDING_KEY = "kofc_blob_pending";
-            var POLICY_RESULT_KEY = "kofc_policy_result";
-            var BLOB_RESULT_KEY = "kofc_blob_result";
-            var msgEl = document.getElementById("msg");
-            var spinnerEl = document.getElementById("spinner");
-
-            function setMsg(text, isErr) {
-                if (!msgEl) { return; }
-                msgEl.textContent = text;
-                msgEl.className = isErr ? "err" : "";
-                // Hide the spinner once we hit a terminal error state.
-                if (spinnerEl) {
-                    spinnerEl.className = isErr ? "spinner err-hide" : "spinner";
-                }
-            }
-
-            // 1) ssoSilent hidden iframe: do nothing — the parent window reads the hash.
-            if (window.self !== window.top) {
-                return;
-            }
-
-            var hasAuthResponse = window.location.hash.indexOf("code=") >= 0
-                || window.location.hash.indexOf("error=") >= 0
-                || window.location.search.indexOf("code=") >= 0
-                || window.location.search.indexOf("error=") >= 0;
-
-            // Opened directly (no auth response): nothing to process.
-            if (!hasAuthResponse) {
-                setMsg("Auth callback page. Return to Dynamics and use the button.");
-                return;
-            }
-
-            function readJson(key) {
-                try {
-                    var raw = localStorage.getItem(key);
-                    return raw ? JSON.parse(raw) : null;
-                } catch (e) {
-                    return null;
-                }
-            }
-
-            function loadMsal() {
-                return new Promise(function (resolve, reject) {
-                    if (typeof msal !== "undefined") {
-                        resolve();
-                        return;
-                    }
-                    var s = document.createElement("script");
-                    s.src = window.location.origin + "/WebResources/kofc_msalbrowsermin";
-                    s.onload = function () {
-                        if (typeof msal !== "undefined") {
-                            resolve();
-                        } else {
-                            reject(new Error("MSAL failed to load."));
-                        }
-                    };
-                    s.onerror = function () {
-                        reject(new Error("MSAL web resource not found."));
-                    };
-                    document.head.appendChild(s);
-                });
-            }
-
-            async function callBlobApi(pending, token) {
-                // BlobProxy is POST-only; ignore stale pending data that requested GET.
-                var method = "POST";
-                var base = pending.boomiUrl;
-                var url = base;
-                var payload = {
-                    path: encodeURI(String(pending.path || "").trim()),
-                    contactId: pending.contactId,
-                    format: "json"
-                };
-
-                var options = {
-                    method: method,
-                    headers: {
-                        "Authorization": "Bearer " + token,
-                        "Accept": "application/json"
-                    }
-                };
-
-                if (method === "GET" || method === "HEAD") {
-                    var qs = [
-                        "path=" + encodeURIComponent(payload.path),
-                        "contactId=" + encodeURIComponent(payload.contactId),
-                        "format=json"
-                    ];
-                    url = base + (base.indexOf("?") >= 0 ? "&" : "?") + qs.join("&");
-                } else {
-                    options.headers["Content-Type"] = "application/json";
-                    options.body = JSON.stringify(payload);
-                }
-
-                var response = await fetch(url, options);
-                var body = await response.text();
-                if (!response.ok) {
-                    throw new Error("Blob API returned " + response.status + ": " + body);
-                }
-                return { status: response.status, body: body };
-            }
-
-            async function callPolicyApi(pending, token) {
-                var method = (pending.httpMethod || "POST").toUpperCase();
-                var qs = [
-                    "source=" + encodeURIComponent(pending.source),
-                    "companyCode=" + encodeURIComponent(pending.companyCode),
-                    "policyNo=" + encodeURIComponent(pending.policyNo),
-                    "classificationCode=" + encodeURIComponent(pending.classificationCode),
-                    "userId=" + encodeURIComponent(pending.userId)
-                ];
-                if (pending.policyRecordId) {
-                    qs.push("policyRecordId=" + encodeURIComponent(pending.policyRecordId));
-                }
-                var base = pending.boomiUrl;
-                var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + qs.join("&");
-
-                var options = {
-                    method: method,
-                    headers: {
-                        "Authorization": "Bearer " + token,
-                        "x-api-key": pending.apiKey,
-                        "Accept": "application/json"
-                    }
-                };
-                if (method !== "GET" && method !== "HEAD") {
-                    options.headers["Content-Type"] = "application/json";
-                    options.body = JSON.stringify({
-                        source: pending.source,
-                        companyCode: pending.companyCode,
-                        policyNo: pending.policyNo,
-                        classificationCode: pending.classificationCode,
-                        userId: pending.userId,
-                        policyRecordId: pending.policyRecordId || undefined
-                    });
-                }
-
-                var response = await fetch(url, options);
-                var body = await response.text();
-                if (!response.ok) {
-                    throw new Error("Policy API returned " + response.status + ": " + body);
-                }
-                return { status: response.status, body: body };
-            }
-
-            async function callApi(pending, token) {
-                var method = (pending.httpMethod || "POST").toUpperCase();
-                var base = pending.boomiUrl;
-                var qs = "userId=" + encodeURIComponent(pending.userId);
-                if (pending.oppId) {
-                    qs += "&oppID=" + encodeURIComponent(pending.oppId);
-                }
-                var url = base + (base.indexOf("?") >= 0 ? "&" : "?") + qs;
-
-                var options = {
-                    method: method,
-                    headers: {
-                        "Authorization": "Bearer " + token,
-                        "x-api-key": pending.apiKey,
-                        "Accept": "text/plain"
-                    }
-                };
-                if (method !== "GET" && method !== "HEAD") {
-                    options.headers["Content-Type"] = "application/json";
-                    options.body = JSON.stringify({
-                        userId: pending.userId,
-                        oppID: pending.oppId || undefined
-                    });
-                }
-
-                var response = await fetch(url, options);
-                var body = await response.text();
-                if (!response.ok) {
-                    throw new Error("API returned " + response.status + ": " + body);
-                }
-                return body;
-            }
-
-            function finishAction(pending, base64) {
-                var targetUrl = pending.eappUrl + "?soreq=" + base64;
-                // Prefer opening the target app in a new tab and returning this tab to the D365 form.
-                var win = null;
-                try {
-                    win = window.open(targetUrl, "_blank");
-                } catch (e) {
-                    win = null;
-                }
-                var cfg = readJson(CFG_KEY);
-                if (win) {
-                    setMsg("Opened in a new tab. Returning to Dynamics...");
-                    if (cfg && cfg.returnUrl) {
-                        window.location.href = cfg.returnUrl;
-                    }
-                } else {
-                    // Popup blocked — navigate this tab straight to the target app.
-                    setMsg("Opening your application...");
-                    window.location.href = targetUrl;
-                }
-            }
-
-            async function run() {
-                var cfg = readJson(CFG_KEY);
-                if (!cfg || !cfg.clientId || !cfg.tenantId || !cfg.redirectUri) {
-                    setMsg("Missing sign-in context. Open Dynamics and click the button again.", true);
-                    return;
-                }
-
-                try {
-                    await loadMsal();
-                    var pca = new msal.PublicClientApplication({
-                        auth: {
-                            clientId: cfg.clientId,
-                            authority: "https://login.microsoftonline.com/" + cfg.tenantId,
-                            redirectUri: cfg.redirectUri
-                        },
-                        cache: {
-                            cacheLocation: "localStorage",
-                            storeAuthStateInCookie: true
-                        }
-                    });
-
-                    await pca.initialize();
-                    // Reads the code from this page's URL, exchanges it (PKCE), and caches the token.
-                    var result = await pca.handleRedirectPromise();
-
-                    var pending = readJson(PENDING_KEY);
-                    var policyPending = readJson(POLICY_PENDING_KEY);
-                    var blobPending = readJson(BLOB_PENDING_KEY);
-
-                    // Resolve an access token: from the redirect result, or silently from cache.
-                    var token = result && result.accessToken ? result.accessToken : null;
-                    var scopesForSilent = (pending && pending.apiScopes)
-                        || (policyPending && policyPending.apiScopes)
-                        || (blobPending && blobPending.apiScopes);
-                    if (!token && scopesForSilent) {
-                        var accounts = pca.getAllAccounts();
-                        if (accounts.length > 0) {
-                            try {
-                                var silent = await pca.acquireTokenSilent({
-                                    scopes: scopesForSilent,
-                                    account: accounts[0]
-                                });
-                                token = silent.accessToken;
-                            } catch (e) {
-                                // fall through to no-token handling
-                            }
-                        }
-                    }
-
-                    if (token && blobPending && blobPending.action === "blob" && blobPending.boomiUrl) {
-                        setMsg("Sign-in complete. Opening file...");
-                        try {
-                            var blobResult = await callBlobApi(blobPending, token);
-                            var blobParsed = null;
-                            try {
-                                blobParsed = JSON.parse(blobResult.body);
-                            } catch (be) {
-                                blobParsed = { sasUrl: blobResult.body };
-                            }
-                            localStorage.setItem(BLOB_RESULT_KEY, JSON.stringify({
-                                ok: true,
-                                status: blobResult.status,
-                                data: blobParsed,
-                                raw: blobResult.body
-                            }));
-                            localStorage.removeItem(BLOB_PENDING_KEY);
-                            var blobReturnUrl = blobPending.returnUrl || (cfg && cfg.returnUrl);
-                            if (blobParsed && blobParsed.sasUrl) {
-                                window.location.href = blobParsed.sasUrl;
-                            } else if (blobReturnUrl) {
-                                window.location.href = blobReturnUrl;
-                            } else {
-                                setMsg("File access granted. You can close this tab.");
-                            }
-                        } catch (e) {
-                            localStorage.setItem(BLOB_RESULT_KEY, JSON.stringify({
-                                ok: false,
-                                status: 0,
-                                data: null,
-                                raw: e && e.message ? e.message : String(e)
-                            }));
-                            localStorage.removeItem(BLOB_PENDING_KEY);
-                            setMsg("Blob request failed: " + (e && e.message ? e.message : String(e)), true);
-                        }
-                        return;
-                    }
-
-                    if (token && policyPending && policyPending.action === "policy" && policyPending.boomiUrl) {
-                        setMsg("Sign-in complete. Loading policy data...");
-                        try {
-                            var policyResult = await callPolicyApi(policyPending, token);
-                            var parsed = null;
-                            try {
-                                parsed = JSON.parse(policyResult.body);
-                            } catch (pe) {
-                                parsed = policyResult.body;
-                            }
-                            localStorage.setItem(POLICY_RESULT_KEY, JSON.stringify({
-                                ok: true,
-                                status: policyResult.status,
-                                data: parsed,
-                                raw: policyResult.body
-                            }));
-                            localStorage.removeItem(POLICY_PENDING_KEY);
-                            setMsg("Policy data loaded. Returning to Dynamics...");
-                            var returnUrl = policyPending.returnUrl || (cfg && cfg.returnUrl);
-                            if (returnUrl) {
-                                window.location.href = returnUrl;
-                            } else {
-                                setMsg("Policy data loaded. You can close this tab and return to Dynamics.");
-                            }
-                        } catch (e) {
-                            localStorage.setItem(POLICY_RESULT_KEY, JSON.stringify({
-                                ok: false,
-                                status: 0,
-                                data: null,
-                                raw: e && e.message ? e.message : String(e)
-                            }));
-                            localStorage.removeItem(POLICY_PENDING_KEY);
-                            setMsg("Policy request failed: " + (e && e.message ? e.message : String(e)), true);
-                        }
-                        return;
-                    }
-
-                    if (token && pending && pending.eappUrl && pending.boomiUrl) {
-                        setMsg("Sign-in complete. Finishing your request...");
-                        try {
-                            var base64 = await callApi(pending, token);
-                            localStorage.removeItem(PENDING_KEY);
-                            finishAction(pending, base64);
-                        } catch (e) {
-                            setMsg("Request failed: " + (e && e.message ? e.message : String(e)), true);
-                        }
-                        return;
-                    }
-
-                    // No pending action: just cache the token and return to the form.
-                    if (token) {
-                        setMsg("Sign-in complete. Returning to Dynamics...");
-                        if (cfg.returnUrl) {
-                            window.location.href = cfg.returnUrl;
-                            return;
-                        }
-                        setMsg("Sign-in complete. You can close this tab and return to Dynamics.");
-                        return;
-                    }
-
-                    setMsg("Sign-in response received but no token was produced. Try the button again.", true);
-                } catch (e) {
-                    setMsg("Sign-in failed: " + (e && e.message ? e.message : String(e)), true);
-                }
-            }
-
-            run();
-        })();
-    </script>
-</body>
-</html>
-
-
-
-/*
- * kofc_blobClient.js — SaaS blob opener (MSAL + Boomi + GetSaasBlobUrl)
- *
- * Browser sends path + contactId to Boomi (no userId — Boomi derives user from token oid).
- * Boomi calls Function with client-credentials token + userId/oid.
- * Returns { sasUrl } and opens the file.
- */
-(function (global) {
-    "use strict";
-
-    var AUTH_LIBRARY = "/WebResources/kofc_authclient.js";
-    var PENDING_KEY = "kofc_blob_pending";
-    var RESULT_KEY = "kofc_blob_result";
-
-    var CONFIG = {
-        tenantId: null,
-        clientId: null,
-        apiAppId: null,
-        boomiUrl: null,
-        scope: ".default",
-        httpMethod: "POST",
-        redirectWebResource: "kofc_authcallback.html",
-        msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
-        allowRedirect: true,
-        debug: false
-    };
-
-    function log() {
-        if (!CONFIG.debug) {
-            return;
-        }
-        var args = ["[KOFC.Blob]"].concat(Array.prototype.slice.call(arguments));
-        if (typeof console !== "undefined" && console.log) {
-            console.log.apply(console, args);
-        }
+    public BlobService(
+        ILogger<BlobService> logger,
+        BlobServiceClient blobServiceClient,
+        IConfiguration configuration)
+    {
+        _logger = logger;
+        _blobServiceClient = blobServiceClient;
+        _useUserDelegationSas = !string.IsNullOrWhiteSpace(configuration["BlobStorageAccountName"]);
     }
 
-    function clientUrl() {
-        try {
-            if (typeof Xrm !== "undefined" && Xrm.Utility) {
-                return Xrm.Utility.getGlobalContext().getClientUrl();
-            }
-        } catch (e) {
-            // ignore
+    public string NormalizePathToBlob(string rawPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawPath))
+        {
+            _logger.LogWarning("Raw path is null or empty");
+            return string.Empty;
         }
-        try {
-            if (typeof parent !== "undefined" && parent.Xrm && parent.Xrm.Utility) {
-                return parent.Xrm.Utility.getGlobalContext().getClientUrl();
-            }
-        } catch (e2) {
-            // ignore
-        }
-        return window.location.origin;
+
+        var cleaned = DecodePathEncodings(rawPath);
+
+        // Remove drive letter and colon (e.g., "D:\")
+        cleaned = Regex.Replace(cleaned, @"^[A-Za-z]:\\", string.Empty);
+
+        // Replace backslashes with forward slashes
+        cleaned = cleaned.Replace("\\", "/");
+
+        // Collapse multiple consecutive slashes into a single slash
+        cleaned = Regex.Replace(cleaned, @"/+", "/");
+
+        // Remove all leading whitespace, tabs, and slashes using regex
+        cleaned = Regex.Replace(cleaned, @"^[\s/\\]+", string.Empty);
+
+        // Remove all trailing whitespace, tabs, and slashes
+        cleaned = Regex.Replace(cleaned, @"[\s/\\]+$", string.Empty);
+
+        // Keep KOFCExt Extractions/ in the blob path � blobs are stored inside the
+        // container with that folder prefix (e.g. KOFCExt Extractions/09272024/...).
+
+        _logger.LogInformation("Normalized path from '{RawPath}' to '{CleanedPath}'", rawPath, cleaned);
+
+        return cleaned;
     }
 
-    function apiScopes() {
-        return ["api://" + CONFIG.apiAppId + "/" + CONFIG.scope];
-    }
+    /// <summary>
+    /// Turns + / %20 / HTML nbsp into a real space so "KOFC Extractions/..." matches storage.
+    /// </summary>
+    private static string DecodePathEncodings(string rawPath)
+    {
+        var cleaned = rawPath
+            .Replace("&nbsp;", " ", StringComparison.OrdinalIgnoreCase)
+            .Replace("&#160;", " ", StringComparison.Ordinal)
+            .Replace("\u00A0", " ")
+            .Replace('+', ' ');
 
-    function requireConfig() {
-        var missing = [];
-        if (!CONFIG.tenantId) { missing.push("tenantId"); }
-        if (!CONFIG.clientId) { missing.push("clientId"); }
-        if (!CONFIG.apiAppId) { missing.push("apiAppId"); }
-        if (!CONFIG.boomiUrl) { missing.push("boomiUrl"); }
-        if (missing.length > 0) {
-            throw new Error("KOFC.Blob is not configured. Missing: " + missing.join(", "));
-        }
-    }
-
-    function ensureAuthClient() {
-        return new Promise(function (resolve, reject) {
-            if (global.KOFC && global.KOFC.Auth) {
-                resolve();
-                return;
+        if (cleaned.Contains('%', StringComparison.Ordinal))
+        {
+            try
+            {
+                cleaned = Uri.UnescapeDataString(cleaned.Replace("+", " "));
             }
-            var script = document.createElement("script");
-            script.src = clientUrl() + AUTH_LIBRARY;
-            script.onload = function () {
-                if (global.KOFC && global.KOFC.Auth) {
-                    resolve();
-                } else {
-                    reject(new Error("Auth client loaded but KOFC.Auth is undefined."));
-                }
+            catch (UriFormatException)
+            {
+                // keep the plus-decoded value
+            }
+        }
+
+        return cleaned;
+    }
+
+    public async Task<string> GenerateSasUrlAsync(string containerName, string blobPath)
+    {
+        if (string.IsNullOrWhiteSpace(containerName))
+        {
+            throw new ArgumentException("Container name cannot be null or empty", nameof(containerName));
+        }
+
+        if (string.IsNullOrWhiteSpace(blobPath))
+        {
+            throw new ArgumentException("Blob path cannot be null or empty", nameof(blobPath));
+        }
+
+        // Trim any remaining whitespace from the blob path
+        blobPath = blobPath.Trim();
+
+        try
+        {
+            var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+
+            // Verify container exists
+            if (!await containerClient.ExistsAsync())
+            {
+                _logger.LogError("Container '{ContainerName}' does not exist", containerName);
+                throw new InvalidOperationException($"Container '{containerName}' does not exist");
+            }
+
+            var blobClient = containerClient.GetBlobClient(blobPath);
+
+            // Verify blob exists
+            if (!await blobClient.ExistsAsync())
+            {
+                _logger.LogError("Blob '{BlobPath}' does not exist in container '{ContainerName}'", blobPath, containerName);
+                throw new InvalidOperationException($"Blob '{blobPath}' does not exist in container '{containerName}'");
+            }
+
+            // Create SAS builder with read-only permissions
+            var sasBuilder = new BlobSasBuilder
+            {
+                BlobContainerName = containerName,
+                BlobName = blobPath,
+                Resource = "b",
+                StartsOn = DateTimeOffset.UtcNow.AddMinutes(-5),
+                ExpiresOn = DateTimeOffset.UtcNow.AddMinutes(15)
             };
-            script.onerror = function () {
-                reject(new Error("Failed to load auth client: " + script.src));
-            };
-            document.head.appendChild(script);
-        });
-    }
 
-    function applyAuthConfig() {
-        global.KOFC.Auth.configure({
-            tenantId: CONFIG.tenantId,
-            clientId: CONFIG.clientId,
-            apiAppId: CONFIG.apiAppId,
-            boomiUrl: CONFIG.boomiUrl,
-            scope: CONFIG.scope,
-            httpMethod: CONFIG.httpMethod,
-            redirectWebResource: CONFIG.redirectWebResource,
-            msalWebResourcePath: CONFIG.msalWebResourcePath,
-            allowRedirect: CONFIG.allowRedirect,
-            debug: CONFIG.debug
-        });
-    }
+            sasBuilder.SetPermissions(BlobSasPermissions.Read);
 
-    function getReturnUrl() {
-        try {
-            return window.top.location.href;
-        } catch (e) {
-            return window.location.href;
-        }
-    }
-
-    function stripBraces(value) {
-        return String(value || "").replace(/[{}]/g, "");
-    }
-
-    function normalizeBlobPath(value) {
-        var path = String(value || "");
-        path = path.replace(/&nbsp;/gi, " ").replace(/&#160;/g, " ").replace(/\u00a0/g, " ");
-        path = path.replace(/<br\s*\/?>/gi, "");
-        path = path.replace(/<[^>]+>/g, "");
-        path = path.replace(/\+/g, " ");
-        if (/%[0-9A-Fa-f]{2}/.test(path)) {
-            try {
-                path = decodeURIComponent(path);
-            } catch (e) { /* keep plus-decoded value */ }
-        }
-        return path.replace(/[\t\r\n]+/g, " ").trim();
-    }
-
-    // Match the Boomi Integration Validator: encodeURI (not encodeURIComponent).
-    // "D:\KOFCEXT Extractions\..." → "D:%5CKOFCEXT%20Extractions%5C..."
-    function encodePathForBoomi(value) {
-        return encodeURI(normalizeBlobPath(value));
-    }
-
-    function persistPending(params) {
-        try {
-            localStorage.setItem(PENDING_KEY, JSON.stringify({
-                action: "blob",
-                path: normalizeBlobPath(params.path),
-                contactId: stripBraces(params.contactId),
-                boomiUrl: CONFIG.boomiUrl,
-                httpMethod: "POST",
-                apiScopes: apiScopes(),
-                returnUrl: getReturnUrl()
-            }));
-        } catch (e) {
-            log("Failed to persist pending blob request", e);
-        }
-    }
-
-    function clearPending() {
-        try {
-            localStorage.removeItem(PENDING_KEY);
-        } catch (e) {
-            // ignore
-        }
-    }
-
-    function buildBlobUrl(params) {
-        var base = CONFIG.boomiUrl;
-        var parts = [
-            "path=" + encodeURIComponent(params.path),
-            "contactId=" + encodeURIComponent(stripBraces(params.contactId)),
-            "format=json"
-        ];
-        return base + (base.indexOf("?") >= 0 ? "&" : "?") + parts.join("&");
-    }
-
-    function parseResponseBody(text) {
-        if (!text) {
-            return null;
-        }
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            return { sasUrl: text };
-        }
-    }
-
-    function callBlobBoomi(token, params) {
-        // The Blob Boomi operation is POST-only. Do not allow stale/shared
-        // configuration to switch this request back to GET.
-        var method = "POST";
-        var base = CONFIG.boomiUrl;
-        var url = base;
-        var options = {
-            method: method,
-            headers: {
-                "Authorization": "Bearer " + token,
-                "Accept": "application/json"
+            Uri sasUri;
+            if (_useUserDelegationSas)
+            {
+                var delegationKey = await _blobServiceClient.GetUserDelegationKeyAsync(
+                    sasBuilder.StartsOn,
+                    sasBuilder.ExpiresOn);
+                var sasQuery = sasBuilder.ToSasQueryParameters(
+                    delegationKey.Value,
+                    _blobServiceClient.AccountName);
+                var builder = new UriBuilder(blobClient.Uri) { Query = sasQuery.ToString() };
+                sasUri = builder.Uri;
             }
-        };
-
-        var payload = {
-            path: encodePathForBoomi(params.path),
-            contactId: stripBraces(params.contactId),
-            format: "json"
-        };
-
-        if (method === "GET" || method === "HEAD") {
-            var parts = [
-                "path=" + encodeURIComponent(payload.path),
-                "contactId=" + encodeURIComponent(payload.contactId),
-                "format=json"
-            ];
-            url = base + (base.indexOf("?") >= 0 ? "&" : "?") + parts.join("&");
-        } else {
-            options.headers["Content-Type"] = "application/json";
-            options.body = JSON.stringify(payload);
-        }
-
-        return fetch(url, options).then(function (response) {
-            return response.text().then(function (text) {
-                return {
-                    ok: response.ok,
-                    status: response.status,
-                    data: parseResponseBody(text),
-                    raw: text,
-                    redirecting: false
-                };
-            });
-        });
-    }
-
-    function configure(options) {
-        if (!options || typeof options !== "object") {
-            throw new Error("KOFC.Blob.configure(options) requires an object.");
-        }
-        Object.keys(options).forEach(function (key) {
-            if (options[key] !== undefined) {
-                CONFIG[key] = options[key];
+            else
+            {
+                sasUri = blobClient.GenerateSasUri(sasBuilder);
             }
-        });
-    }
 
-    function consumePendingResult() {
-        try {
-            var raw = localStorage.getItem(RESULT_KEY);
-            if (!raw) {
-                return null;
-            }
-            localStorage.removeItem(RESULT_KEY);
-            return JSON.parse(raw);
-        } catch (e) {
-            return null;
+            _logger.LogInformation(
+                "Generated SAS URL for blob '{BlobPath}' in container '{ContainerName}', expires at {ExpiresOn}",
+                blobPath,
+                containerName,
+                sasBuilder.ExpiresOn);
+
+            // AbsoluteUri keeps %20 in "KOFCEXT Extractions". ToString() unescapes
+            // the space and Azure then rejects the SAS (AuthorizationFailure).
+            return sasUri.AbsoluteUri;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(ex, "Azure Storage error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'",
+                blobPath, containerName);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error generating SAS URL for blob '{BlobPath}' in container '{ContainerName}'",
+                blobPath, containerName);
+            throw;
         }
     }
-
-    function openSaasBlob(params) {
-        requireConfig();
-        if (!params || !params.path || !params.contactId) {
-            return Promise.reject(new Error("openSaasBlob requires path and contactId."));
-        }
-
-        return ensureAuthClient().then(function () {
-            applyAuthConfig();
-            persistPending(params);
-            return global.KOFC.Auth.getAccessToken();
-        }).then(function (token) {
-            if (!token) {
-                return { ok: false, status: 0, data: null, raw: "", redirecting: true };
-            }
-            return callBlobBoomi(token, params).then(function (result) {
-                clearPending();
-                if (!result.ok) {
-                    return result;
-                }
-                var sasUrl = result.data && (result.data.sasUrl || result.data.SasUrl);
-                if (!sasUrl) {
-                    throw new Error("Boomi response did not include sasUrl.");
-                }
-                window.location.href = sasUrl;
-                return result;
-            });
-        });
-    }
-
-    global.KOFC = global.KOFC || {};
-    global.KOFC.Blob = {
-        configure: configure,
-        openSaasBlob: openSaasBlob,
-        consumePendingResult: consumePendingResult
-    };
-})(typeof window !== "undefined" ? window : this);
+}
