@@ -1,118 +1,649 @@
-/*
- * kofc_blobLinkActivity.js — Blob Link Activity form OnLoad
- *
- * Register on the Blob Link Activity main form OnLoad event:
- *   Library: kofc_blobLinkActivity.js
- *   Function: KOFC.BlobLinkActivity.onLoad
- *
- * Clicking the timeline Subject opens this form; OnLoad opens
- * kofc_blob_open.html in a new tab, then returns to the previous page.
- */
-(function (global) {
-    "use strict";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Opening file...</title>
+    <!--
+      kofc_blob_open.html — Timeline / ADF blob opener
 
-    var OPENER_WEB_RESOURCE = "kofc_blob_open.html";
-    var OPEN_CTX_KEY = "kofc_blob_open_ctx";
+      Preferred URL (Blob Link Activity GUID):
+        {OrgUrl}/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html
+          &data=<activity-guid>
 
-    function stripBraces(value) {
-        return String(value || "").replace(/[{}]/g, "").trim();
-    }
+      Legacy URL:
+        &data=<uriComponent( path + "|" + contactId )>
 
-    function getClientUrl(formContext) {
-        try {
-            if (formContext && formContext.context) {
-                return formContext.context.getClientUrl();
+      Do NOT use /WebResources/kofc_blob_open.html directly (no Xrm.WebApi).
+
+      Env vars: kofc_TenantId, kofc_SPAClientId, kofc_BlobApiAppId,
+                kofc_BlobBoomiUrl
+    -->
+    <style>
+        body {
+            font-family: "Segoe UI", Arial, sans-serif;
+            background: #f3f2f1;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            color: #323130;
+        }
+        .card {
+            background: #fff;
+            border: 1px solid #e1dfdd;
+            border-radius: 8px;
+            padding: 32px 28px;
+            max-width: 420px;
+            text-align: center;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+        }
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid #edebe9;
+            border-top-color: #0078d4;
+            border-radius: 50%;
+            animation: spin 0.9s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error { color: #a4262c; white-space: pre-wrap; text-align: left; }
+        h1 { font-size: 18px; margin: 0 0 8px; }
+        p { margin: 0; color: #605e5c; font-size: 14px; }
+        .done #loader { display: none; }
+        .done h1 { color: #107c10; }
+        .close-btn {
+            display: none;
+            margin-top: 18px;
+            background: #0078d4;
+            color: #fff;
+            border: 0;
+            border-radius: 4px;
+            padding: 8px 16px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="spinner" id="loader"></div>
+        <h1 id="title">Opening file</h1>
+        <p id="message">Starting...</p>
+        <pre class="error" id="error" style="display:none;"></pre>
+        <button type="button" class="close-btn" id="closeBtn">Close tab</button>
+    </div>
+
+    <script src="/WebResources/ClientGlobalContext.js.aspx" type="text/javascript"></script>
+    <script src="/WebResources/kofc_authclient.js"></script>
+    <script src="/WebResources/kofc_blobClient.js"></script>
+    <script src="/WebResources/kofc_msalbrowsermin"></script>
+    <script>
+        (function () {
+            "use strict";
+
+            var ENV = {
+                tenantId: "kofc_TenantId",
+                clientId: "kofc_SPAClientId",
+                apiAppId: "kofc_BlobApiAppId",
+                boomiUrl: "kofc_BlobBoomiUrl"
+            };
+
+            var OVERALL_TIMEOUT_MS = 60000;
+            var BLOB_LINK_ACTIVITY = "kofc_bloblinkactivity";
+            var OPEN_CTX_KEY = "kofc_blob_open_ctx";
+            var GUID_RE = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+            function setStatus(text) {
+                var el = document.getElementById("message");
+                if (el) { el.innerText = text; }
             }
-        } catch (e0) { /* ignore */ }
-        try {
-            return Xrm.Utility.getGlobalContext().getClientUrl();
-        } catch (e1) {
-            return window.location.origin;
-        }
-    }
 
-    function persistOpenContext(formContext, activityId) {
-        var path = null;
-        try {
-            var descAttr = formContext.getAttribute("description");
-            if (descAttr && descAttr.getValue()) {
-                path = String(descAttr.getValue());
+            function showError(message) {
+                document.body.classList.add("done");
+                document.getElementById("loader").style.display = "none";
+                document.title = "Unable to open file";
+                document.getElementById("title").innerText = "Unable to open file";
+                document.getElementById("message").style.display = "none";
+                var err = document.getElementById("error");
+                err.style.display = "block";
+                err.innerText = message || "Unknown error";
             }
-        } catch (e0) { /* ignore */ }
 
-        var contactId = null;
-        try {
-            var regardingAttr = formContext.getAttribute("regardingobjectid");
-            var regarding = regardingAttr && regardingAttr.getValue();
-            if (regarding && regarding.length && regarding[0] && regarding[0].id) {
-                contactId = stripBraces(regarding[0].id);
+            function showSuccess(fileName) {
+                document.body.classList.add("done");
+                document.getElementById("loader").style.display = "none";
+                document.title = "File downloaded";
+                document.getElementById("title").innerText = "File downloaded";
+                var message = fileName
+                    ? fileName + " was saved. Check your Downloads folder, then close this tab."
+                    : "The file was saved. Check your Downloads folder, then close this tab.";
+                var el = document.getElementById("message");
+                el.style.display = "block";
+                el.innerText = message;
+                var closeBtn = document.getElementById("closeBtn");
+                closeBtn.style.display = "inline-block";
+                closeBtn.onclick = function () {
+                    window.close();
+                };
             }
-        } catch (e1) { /* ignore */ }
 
-        var entityName = null;
-        try {
-            entityName = formContext.data.entity.getEntityName();
-        } catch (e2) { /* ignore */ }
+            function getXrm() {
+                try { if (window.Xrm && window.Xrm.WebApi) { return window.Xrm; } } catch (e0) { /* ignore */ }
+                try { if (parent.Xrm && parent.Xrm.WebApi) { return parent.Xrm; } } catch (e1) { /* ignore */ }
+                try { if (window.top && window.top.Xrm && window.top.Xrm.WebApi) { return window.top.Xrm; } } catch (e2) { /* ignore */ }
+                return null;
+            }
 
-        try {
-            localStorage.setItem(OPEN_CTX_KEY, JSON.stringify({
-                activityId: activityId,
-                path: path,
-                contactId: contactId,
-                entityName: entityName,
-                ts: Date.now()
-            }));
-        } catch (e3) { /* ignore */ }
-    }
+            function waitForXrm(maxMs) {
+                return new Promise(function (resolve, reject) {
+                    var started = Date.now();
+                    (function poll() {
+                        var x = getXrm();
+                        if (x) {
+                            resolve(x);
+                            return;
+                        }
+                        if (Date.now() - started > maxMs) {
+                            reject(new Error(
+                                "Dynamics Xrm.WebApi is not available on this page.\n\n" +
+                                "Open the file using a main.aspx webresource link (not a raw /WebResources URL), " +
+                                "while signed into Dynamics:\n\n" +
+                                "{org}/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html" +
+                                "&data=" + encodeURIComponent("D:\\folder\\file.xlsx|CONTACT-GUID")
+                            ));
+                            return;
+                        }
+                        setTimeout(poll, 200);
+                    })();
+                });
+            }
 
-    function buildOpenerUrl(orgUrl, activityId) {
-        return orgUrl.replace(/\/$/, "") +
-            "/main.aspx?pagetype=webresource" +
-            "&webresourceName=" + encodeURIComponent(OPENER_WEB_RESOURCE) +
-            "&data=" + encodeURIComponent(activityId) +
-            "&forceUCI=1";
-    }
+            function stripBraces(value) {
+                return String(value || "").replace(/[{}]/g, "").trim();
+            }
 
-    /**
-     * Form OnLoad handler. Skip Create forms so ADF/users can still save a new record.
-     */
-    function onLoad(executionContext) {
-        var formContext = executionContext.getFormContext();
-        var formType = formContext.ui.getFormType();
-        // 1 = Create — stay on the form
-        if (formType === 1) {
-            return;
-        }
+            function tryDecode(value) {
+                if (!value) { return value; }
+                try {
+                    return decodeURIComponent(value);
+                } catch (e) {
+                    return value;
+                }
+            }
 
-        var activityId = stripBraces(formContext.data.entity.getId());
-        if (!activityId) {
-            return;
-        }
+            function fullyDecode(value) {
+                if (!value) {
+                    return value;
+                }
+                var current = String(value);
+                for (var i = 0; i < 3; i++) {
+                    try {
+                        var decoded = decodeURIComponent(current.replace(/\+/g, " "));
+                        if (decoded === current) {
+                            break;
+                        }
+                        current = decoded;
+                    } catch (e) {
+                        break;
+                    }
+                }
+                return current;
+            }
 
-        // The form already loaded this record. Pass Description + Regarding to the
-        // opener so it does not call Xrm.WebApi.retrieveRecord again (that call
-        // fails when the user can open the form but Web API Read is denied).
-        persistOpenContext(formContext, activityId);
+            function isGuid(value) {
+                return GUID_RE.test(stripBraces(value));
+            }
 
-        var url = buildOpenerUrl(getClientUrl(formContext), activityId);
-        var opened = window.open(url, "_blank", "noopener");
-        if (!opened) {
-            window.location.replace(url);
-            return;
-        }
+            function parseActivityId(data) {
+                var decoded = fullyDecode(data);
+                if (!decoded) {
+                    return null;
+                }
+                var id = stripBraces(decoded);
+                if (isGuid(id)) {
+                    return id;
+                }
+                var nested = new URLSearchParams(decoded);
+                var fromQuery = nested.get("activityId") || nested.get("recordId");
+                if (fromQuery && isGuid(fromQuery)) {
+                    return stripBraces(fromQuery);
+                }
+                var pipe = decoded.lastIndexOf("|");
+                if (pipe > 0) {
+                    var left = decoded.substring(0, pipe).toLowerCase();
+                    var right = stripBraces(decoded.substring(pipe + 1));
+                    if (isGuid(right) && (left === BLOB_LINK_ACTIVITY || left === "activity")) {
+                        return right;
+                    }
+                }
+                return null;
+            }
 
-        try {
-            Xrm.Navigation.navigateBack();
-        } catch (e) {
-            try {
-                formContext.ui.close();
-            } catch (e2) { /* leave the activity form open */ }
-        }
-    }
+            function normalizeBlobPath(value) {
+                var path = String(value || "");
+                path = path.replace(/&nbsp;/gi, " ").replace(/&#160;/g, " ").replace(/\u00a0/g, " ");
+                path = path.replace(/<br\s*\/?>/gi, "");
+                path = path.replace(/<[^>]+>/g, "");
+                path = path.replace(/\+/g, " ");
+                if (/%[0-9A-Fa-f]{2}/.test(path)) {
+                    try {
+                        path = decodeURIComponent(path);
+                    } catch (e) { /* keep plus-decoded value */ }
+                }
+                return path.replace(/[\t\r\n]+/g, " ").trim();
+            }
 
-    global.KOFC = global.KOFC || {};
-    global.KOFC.BlobLinkActivity = {
-        onLoad: onLoad,
-        buildOpenerUrl: buildOpenerUrl
-    };
-})(typeof window !== "undefined" ? window : this);
+            function consumeFormContext(activityId) {
+                try {
+                    var raw = localStorage.getItem(OPEN_CTX_KEY);
+                    if (!raw) {
+                        return null;
+                    }
+                    var saved = JSON.parse(raw);
+                    if (!saved || stripBraces(saved.activityId) !== stripBraces(activityId)) {
+                        return null;
+                    }
+                    localStorage.removeItem(OPEN_CTX_KEY);
+                    return saved;
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function currentUserId() {
+                try {
+                    var x = getXrm();
+                    if (x && x.Utility) {
+                        return stripBraces(x.Utility.getGlobalContext().userSettings.userId);
+                    }
+                } catch (e) { /* ignore */ }
+                return "";
+            }
+
+            function collectDynamicsMessages(err) {
+                var parts = [];
+                function add(value) {
+                    if (!value || typeof value !== "string") {
+                        return;
+                    }
+                    var text = value.trim();
+                    if (!text || parts.indexOf(text) >= 0) {
+                        return;
+                    }
+                    parts.push(text);
+                }
+                function walk(obj, depth) {
+                    if (!obj || depth > 5) {
+                        return;
+                    }
+                    if (typeof obj === "string") {
+                        add(obj);
+                        return;
+                    }
+                    if (typeof obj !== "object") {
+                        return;
+                    }
+                    add(obj.message);
+                    add(obj.errorMessage);
+                    add(obj.debugmessage);
+                    add(obj.debugMessage);
+                    add(obj.description);
+                    add(obj.exceptionMessage);
+                    add(obj.ExceptionMessage);
+                    if (obj.innererror) {
+                        walk(obj.innererror, depth + 1);
+                    }
+                    if (obj.innerError) {
+                        walk(obj.innerError, depth + 1);
+                    }
+                    if (obj.error && obj.error !== obj) {
+                        walk(obj.error, depth + 1);
+                    }
+                    Object.keys(obj).forEach(function (key) {
+                        if (key.indexOf("ErrorDetails") >= 0 || key.indexOf("ApiException") >= 0) {
+                            add(String(obj[key]));
+                        }
+                    });
+                }
+                walk(err, 0);
+                return parts;
+            }
+
+            function formatWebApiError(err, activityId) {
+                var parts = collectDynamicsMessages(err);
+                var filled = parts.filter(function (text) {
+                    return !/\{\d+\}/.test(text);
+                });
+                var raw = filled[0] || parts[0] || (err ? String(err) : "Unknown error");
+                var userId = currentUserId();
+                if (/\{\d+\}/.test(raw)) {
+                    raw = raw
+                        .replace(/\{0\}/g, "Current user")
+                        .replace(/\{1\}/g, userId || "(current user id)")
+                        .replace(/\{2\}/g, "Read")
+                        .replace(/\{3\}/g, activityId)
+                        .replace(/\{4\}/g, BLOB_LINK_ACTIVITY)
+                        .replace(/\{5\}/g, "Blob Link Activity")
+                        .replace(/\{6\}/g, "missing Read privilege on this record");
+                }
+                return raw;
+            }
+
+            function resolveActivity(xrmApi, activityId) {
+                var query = "?$select=subject,description,_regardingobjectid_value";
+                return xrmApi.WebApi.retrieveRecord(BLOB_LINK_ACTIVITY, activityId, query)
+                    .then(function (record) {
+                        var path = normalizeBlobPath(record && record.description);
+                        var contactId = stripBraces(record && record._regardingobjectid_value);
+                        if (!path || !contactId) {
+                            throw new Error(
+                                "Blob Link Activity is missing Description (path) or Regarding (Contact).\n" +
+                                "Activity: " + activityId
+                            );
+                        }
+                        return {
+                            path: path,
+                            contactId: contactId,
+                            activityId: activityId,
+                            subject: record.subject || ""
+                        };
+                    }, function (err) {
+                        throw new Error(
+                            "Could not load Blob Link Activity. The signed-in user does not have Read rights on this record.\n" +
+                            "User ({0}/{1}): " + (currentUserId() || "(unknown)") + "\n" +
+                            "Right ({2}): Read\n" +
+                            "Record id ({3}): " + activityId + "\n" +
+                            "Entity ({4}): " + BLOB_LINK_ACTIVITY + "\n" +
+                            "Entity name ({5}): Blob Link Activity\n" +
+                            "Details ({6}): missing Read privilege on this record\n\n" +
+                            formatWebApiError(err, activityId)
+                        );
+                    });
+            }
+
+            function parseQueryData(data) {
+                var decoded = fullyDecode(data);
+                var nested = new URLSearchParams(decoded);
+                var nestedPath = nested.get("path");
+                var nestedContact = nested.get("contactId");
+                if (nestedPath && nestedContact) {
+                    return {
+                        path: fullyDecode(nestedPath),
+                        contactId: stripBraces(nestedContact)
+                    };
+                }
+                return null;
+            }
+
+            function parseParams(params) {
+                var path = params.get("path");
+                var contactId = params.get("contactId");
+                var data = params.get("data") || "";
+                var directActivity = params.get("activityId") || params.get("recordId");
+
+                if (directActivity && isGuid(directActivity)) {
+                    return { activityId: stripBraces(directActivity) };
+                }
+
+                if (path && contactId) {
+                    return {
+                        path: tryDecode(path),
+                        contactId: stripBraces(contactId)
+                    };
+                }
+
+                if (data) {
+                    var activityId = parseActivityId(data);
+                    if (activityId) {
+                        return { activityId: activityId };
+                    }
+
+                    var queryParsed = parseQueryData(data);
+                    if (queryParsed) {
+                        return queryParsed;
+                    }
+
+                    var pipe = data.lastIndexOf("|");
+                    if (pipe > 0) {
+                        var maybeId = stripBraces(data.substring(pipe + 1));
+                        if (/^[0-9a-fA-F-]{36}$/.test(maybeId)) {
+                            return {
+                                path: tryDecode(data.substring(0, pipe)),
+                                contactId: maybeId
+                            };
+                        }
+                    }
+
+                    var nested = new URLSearchParams(data);
+                    var nestedPath = nested.get("path");
+                    var nestedContact = nested.get("contactId");
+                    if (nestedPath && nestedContact) {
+                        return {
+                            path: fullyDecode(nestedPath),
+                            contactId: stripBraces(nestedContact)
+                        };
+                    }
+
+                    if (contactId) {
+                        var dataPath = fullyDecode(data);
+                        if (/^path=/i.test(dataPath)) {
+                            dataPath = dataPath.substring(dataPath.indexOf("=") + 1);
+                        }
+                        return {
+                            path: dataPath,
+                            contactId: stripBraces(contactId)
+                        };
+                    }
+                }
+
+                return {
+                    path: path ? tryDecode(path) : null,
+                    contactId: stripBraces(contactId)
+                };
+            }
+
+            function parseContext() {
+                var searches = [window.location.search];
+
+                // D365 normally forwards main.aspx data to the web-resource iframe. Some
+                // UCI routes leave it only on the shell URL, so inspect same-origin parents.
+                try {
+                    if (parent && parent !== window) {
+                        searches.push(parent.location.search);
+                    }
+                } catch (e0) { /* cross-origin parent */ }
+                try {
+                    if (window.top && window.top !== window && window.top !== parent) {
+                        searches.push(window.top.location.search);
+                    }
+                } catch (e1) { /* cross-origin top */ }
+
+                for (var i = 0; i < searches.length; i++) {
+                    var parsed = parseParams(new URLSearchParams(searches[i] || ""));
+                    if ((parsed.path && parsed.contactId) || parsed.activityId) {
+                        return parsed;
+                    }
+                }
+
+                return parseParams(new URLSearchParams(window.location.search));
+            }
+
+            function getEnvironmentVariable(xrmApi, schemaName) {
+                var escaped = schemaName.replace(/'/g, "''");
+                var definitionQuery =
+                    "?$select=environmentvariabledefinitionid,defaultvalue" +
+                    "&$filter=schemaname eq '" + escaped + "'";
+
+                return xrmApi.WebApi.retrieveMultipleRecords(
+                    "environmentvariabledefinition",
+                    definitionQuery
+                ).then(function (definitions) {
+                    if (!definitions || !definitions.entities || !definitions.entities.length ||
+                        !definitions.entities[0]) {
+                        return null;
+                    }
+
+                    var definition = definitions.entities[0];
+                    var definitionId = stripBraces(definition.environmentvariabledefinitionid);
+                    if (!definitionId) {
+                        return definition.defaultvalue || null;
+                    }
+
+                    var valueQuery =
+                        "?$select=value,createdon" +
+                        "&$filter=_environmentvariabledefinitionid_value eq " + definitionId +
+                        " and statecode eq 0" +
+                        "&$orderby=createdon desc" +
+                        "&$top=1";
+
+                    return xrmApi.WebApi.retrieveMultipleRecords(
+                        "environmentvariablevalue",
+                        valueQuery
+                    ).then(function (values) {
+                        var currentValue = values && values.entities && values.entities.length &&
+                            values.entities[0]
+                            ? values.entities[0].value
+                            : null;
+                        return currentValue || definition.defaultvalue || null;
+                    });
+                });
+            }
+
+            function loadConfig(xrmApi) {
+                return Promise.all([
+                    getEnvironmentVariable(xrmApi, ENV.tenantId),
+                    getEnvironmentVariable(xrmApi, ENV.clientId),
+                    getEnvironmentVariable(xrmApi, ENV.apiAppId),
+                    getEnvironmentVariable(xrmApi, ENV.boomiUrl)
+                ]).then(function (values) {
+                    var missing = [];
+                    if (!values[0]) { missing.push(ENV.tenantId); }
+                    if (!values[1]) { missing.push(ENV.clientId); }
+                    if (!values[2]) { missing.push(ENV.apiAppId); }
+                    if (!values[3]) { missing.push(ENV.boomiUrl); }
+                    if (missing.length) {
+                        throw new Error("Missing configuration: " + missing.join(", "));
+                    }
+                    return {
+                        tenantId: values[0],
+                        clientId: values[1],
+                        apiAppId: values[2],
+                        boomiUrl: values[3],
+                        scope: ".default",
+                        httpMethod: "POST",
+                        redirectWebResource: "kofc_authcallback.html",
+                        msalWebResourcePath: "/WebResources/kofc_msalbrowsermin",
+                        allowRedirect: true,
+                        debug: false
+                    };
+                });
+            }
+
+            function withTimeout(promise, ms, label) {
+                return new Promise(function (resolve, reject) {
+                    var timer = setTimeout(function () {
+                        reject(new Error(label + " timed out after " + (ms / 1000) + "s."));
+                    }, ms);
+                    promise.then(
+                        function (v) { clearTimeout(timer); resolve(v); },
+                        function (e) { clearTimeout(timer); reject(e); }
+                    );
+                });
+            }
+
+            async function init() {
+                try {
+                    if (!window.KOFC || !window.KOFC.Blob) {
+                        throw new Error("kofc_blobClient.js did not load (KOFC.Blob missing). Publish and hard-refresh.");
+                    }
+                    if (!window.KOFC.Auth) {
+                        throw new Error("kofc_authclient.js did not load (KOFC.Auth missing). Publish and hard-refresh.");
+                    }
+
+                    setStatus("Reading link parameters...");
+                    var ctx = parseContext();
+                    if (!ctx.activityId && (!ctx.path || !ctx.contactId)) {
+                        throw new Error(
+                            "Missing Blob Link Activity id, or path/contactId, in the link.\n\n" +
+                            "Preferred:\n" +
+                            "main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html" +
+                            "&data=<activity-guid>"
+                        );
+                    }
+
+                    var pending = KOFC.Blob.consumePendingResult();
+                    if (pending && pending.ok && pending.data) {
+                        setStatus("Saving file...");
+                        if (KOFC.Blob.openFilePayload(pending.data)) {
+                            showSuccess(pending.data.fileName);
+                            return;
+                        }
+                    }
+                    if (pending && !pending.ok) {
+                        throw new Error(pending.raw || "Blob request failed after sign-in.");
+                    }
+
+                    setStatus("Connecting to Dynamics...");
+                    var xrmApi = await waitForXrm(8000);
+
+                    if (ctx.activityId && (!ctx.path || !ctx.contactId)) {
+                        var fromForm = consumeFormContext(ctx.activityId);
+                        if (fromForm && fromForm.entityName) {
+                            BLOB_LINK_ACTIVITY = fromForm.entityName;
+                        }
+                        if (fromForm && fromForm.path && fromForm.contactId) {
+                            ctx.path = normalizeBlobPath(fromForm.path);
+                            ctx.contactId = stripBraces(fromForm.contactId);
+                        } else {
+                            setStatus("Loading document details...");
+                            ctx = await withTimeout(
+                                resolveActivity(xrmApi, ctx.activityId),
+                                15000,
+                                "Loading Blob Link Activity"
+                            );
+                        }
+                    }
+
+                    setStatus("Loading configuration...");
+                    var config = await withTimeout(loadConfig(xrmApi), 20000, "Loading configuration");
+                    KOFC.Blob.configure(config);
+
+                    setStatus("Signing in and requesting file access...");
+                    var result = await withTimeout(
+                        KOFC.Blob.openSaasBlob({
+                            path: ctx.path,
+                            contactId: ctx.contactId
+                        }),
+                        OVERALL_TIMEOUT_MS,
+                        "Sign-in / Boomi request"
+                    );
+
+                    if (result && result.redirecting) {
+                        setStatus("Redirecting to Microsoft sign-in...");
+                        return;
+                    }
+
+                    if (result && !result.ok) {
+                        throw new Error(
+                            "File request failed (HTTP " + (result.status || "?") + "): " +
+                            (result.raw || JSON.stringify(result.data) || "unknown") +
+                            "\n\nPath sent: " + ctx.path +
+                            "\nContactId sent: " + ctx.contactId +
+                            "\n\nTip: compare path/contactId with the validator payload that succeeded."
+                        );
+                    }
+
+                    showSuccess(result && result.data && result.data.fileName);
+                } catch (err) {
+                    showError(err && err.message ? err.message : String(err));
+                }
+            }
+
+            init();
+        })();
+    </script>
+</body>
+</html>
