@@ -39,7 +39,6 @@ public class GetSaasBlobUrl
 
     public async Task<IActionResult> RunCoreAsync(HttpRequest req, ILogger log)
     {
-        var callerRoles = FunctionAppRoleAuth.GetCallerRoles(req);
         var callerScopes = FunctionAppRoleAuth.GetCallerScopes(req);
         var callerOid = FunctionAppRoleAuth.GetCallerObjectId(req);
         var isDelegatedCaller = FunctionAppRoleAuth.IsDelegatedCaller(req);
@@ -60,7 +59,6 @@ public class GetSaasBlobUrl
             UserName = FirstNonEmpty(tokenName, principalName),
             AuthMode = isDelegatedCaller ? "delegated" : "app",
             ClientIp = forwardedFor,
-            Roles = string.Join(", ", callerRoles),
             Scopes = string.Join(", ", callerScopes)
         };
 
@@ -334,7 +332,7 @@ public class GetSaasBlobUrl
         audit.Outcome = outcome;
         audit.StatusCode = statusCode;
         audit.Reason = reason;
-        audit.ExceptionType = exception?.GetType().Name;
+        audit.ExceptionType = exception?.GetType().Name ?? outcome;
         LogOutcome(log, success: false, audit, exception);
         return statusCode switch
         {
@@ -347,16 +345,15 @@ public class GetSaasBlobUrl
 
     private static void LogOutcome(ILogger log, bool success, RequestAudit audit, Exception? exception = null)
     {
-        const string template =
-            "Blob request {Result}. Outcome={Outcome} Status={StatusCode} Reason={Reason} " +
+        const string shared =
+            "Outcome={Outcome} Status={StatusCode} Reason={Reason} " +
             "ContactId={ContactId} Path={Path} BlobPath={BlobPath} Container={Container} " +
             "FileName={FileName} ContentType={ContentType} Bytes={Bytes} Format={Format} Method={Method} " +
             "UserId={UserId} UserEmail={UserEmail} UserName={UserName} EntraOid={EntraOid} " +
-            "AuthMode={AuthMode} ClientIP={ClientIP} Roles={Roles} Scopes={Scopes} ExceptionType={ExceptionType}";
+            "AuthMode={AuthMode} ClientIP={ClientIP} Scopes={Scopes}";
 
-        object?[] args =
+        object?[] sharedArgs =
         [
-            success ? "succeeded" : "failed",
             audit.Outcome,
             audit.StatusCode,
             audit.Reason ?? "",
@@ -375,24 +372,25 @@ public class GetSaasBlobUrl
             audit.EntraOid,
             audit.AuthMode ?? "",
             audit.ClientIp ?? "",
-            audit.Roles ?? "",
-            audit.Scopes ?? "",
-            audit.ExceptionType ?? ""
+            audit.Scopes ?? ""
         ];
 
         if (success)
         {
-            log.LogInformation(template, args);
+            log.LogInformation("Blob request succeeded. " + shared, sharedArgs);
             return;
         }
+
+        var failTemplate = "Blob request failed. " + shared + " ExceptionType={ExceptionType}";
+        var failArgs = sharedArgs.Concat(new object?[] { audit.ExceptionType ?? audit.Outcome ?? "Unknown" }).ToArray();
 
         if (audit.StatusCode >= 500)
         {
-            log.LogError(exception, template, args);
+            log.LogError(exception, failTemplate, failArgs);
             return;
         }
 
-        log.LogWarning(exception, template, args);
+        log.LogWarning(exception, failTemplate, failArgs);
     }
 
     private sealed class RequestAudit
@@ -415,7 +413,6 @@ public class GetSaasBlobUrl
         public string? UserName { get; set; }
         public string? AuthMode { get; set; }
         public string? ClientIp { get; set; }
-        public string? Roles { get; set; }
         public string? Scopes { get; set; }
         public string? ExceptionType { get; set; }
     }
