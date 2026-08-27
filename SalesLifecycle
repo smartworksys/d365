@@ -1,296 +1,309 @@
-# KOFC SaaS Blob — Client-Side Integration Guide
+using System.Security.Claims;
+using System.Text;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json;
 
-> **Function:** `GetSaasBlobUrl`  
-> **Runtime:** .NET 8 (Isolated), Azure Functions v4  
-> **Pattern:** Same as EApp / Policy Non-Header — MSAL SPA token → Boomi → Function  
-> **Last updated:** 2026-08-19
+namespace KOFC.Azure.Functions.GetSaasBlobUrl.Helpers;
 
-[[_TOC_]]
-
----
-
-## 1. Overview
-
-Users open extracted files from the **Contact timeline** in Dynamics 365. The browser never calls the Azure Function directly. The path is:
-
-```text
-D365 timeline link
-  → kofc_blob_open.html (web resource)
-  → MSAL SPA token (scope: access_as_user)
-  → Boomi REST (forwards same Bearer token)
-  → GetSaasBlobUrl Function
-  → { sasUrl } → browser opens file
-```
-
-**Key rules**
-
-- Send **`path`** + **`contactId`** only — **no `userId`**
-- User identity comes from the SPA token **`oid`** claim
-- Boomi forwards the **same delegated token** to the Function (not client-credentials)
-- Use **`format=json`** when calling Boomi from JavaScript
-
----
-
-## 2. Required D365 web resources
-
-| Web resource | Type | Purpose |
-|--------------|------|---------|
-| `kofc_msalbrowsermin` | Script | MSAL library |
-| `kofc_authclient.js` | Script | Shared MSAL + redirect helper |
-| `kofc_authcallback.html` | HTML | Completes sign-in after redirect |
-| `kofc_blobClient.js` | Script | `KOFC.Blob.openSaasBlob()` |
-| `kofc_blob_open.html` | HTML | Timeline link landing page |
-| `kofc_blobLinkBuilder.js` | Script | Build opener / timeline links |
-
----
-
-## 3. Environment variables (D365)
-
-| Schema name | Purpose |
-|-------------|---------|
-| `kofc_TenantId` | Entra tenant ID |
-| `kofc_SPAClientId` | SPA app registration client ID |
-| `kofc_BlobApiAppId` | Function API app ID (for `api://{id}/access_as_user`) |
-| `kofc_EappApiKey` | Boomi `x-api-key` |
-| `kofc_BlobBoomiUrl` | Boomi REST URL (no query string) |
-
-**Entra redirect URI (SPA):**
-
-```text
-https://<org>.crm.dynamics.com/WebResources/kofc_authcallback.html
-```
-
----
-
-## 4. Add a link to the Contact timeline
-
-**Do not** put Boomi or Function URLs in timeline HTML. Link to the D365 blob opener with **business parameters only**.
-
-### 4.1 URL shape (manual / test)
-
-```text
-{OrgUrl}/main.aspx?pagetype=webresource
-  &webresourceName=kofc_blob_open.html
-  &data={encodeURIComponent("path=" + encodeURIComponent(filePath) + "&contactId=" + contactGuid)}
-```
-
-**Alternative (pipe format)** — also supported by `kofc_blob_open.html`:
-
-```text
-{OrgUrl}/main.aspx?pagetype=webresource
-  &webresourceName=kofc_blob_open.html
-  &data={encodeURIComponent(filePath + "|" + contactGuid)}
-```
-
-**Example:**
-
-```text
-https://yourorg.crm.dynamics.com/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html&data=D%3A%5CKOFCExt%20Extractions%5C09272024%5C000554%5Cfile.xlsx%7C12345678-1234-1234-1234-123456789012
-```
-
-- **`contactId`** = Contact GUID the timeline post is regarding (required for authorization)
-- **`path`** = Windows-style path from extraction metadata, e.g. `D:\KOFCExt Extractions\...\file.xlsx`
-
-### 4.2 Timeline HTML (ADF Copy activity)
-
-Set pipeline global parameter:
-
-- `D365_OrgUrl` = `https://yourorg-dev.crm.dynamics.com`
-
-**Derived column for timeline `message`:**
-
-```text
-@concat(
-  '<a href="',
-  pipeline().globalParameters.D365_OrgUrl,
-  '/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html&data=',
-  uriComponent(
-    concat(
-      'path=', uriComponent(item().filePath),
-      '&contactId=', item().contactId
-    )
-  ),
-  '" target="_blank" rel="noopener noreferrer">View file</a>'
-)
-```
-
-Replace `item().filePath` and `item().contactId` with your source column names.
-
-**Plain-text label variant:**
-
-```text
-@concat(
-  'File available: ',
-  '<a href="',
-  pipeline().globalParameters.D365_OrgUrl,
-  '/main.aspx?pagetype=webresource&webresourceName=kofc_blob_open.html&data=',
-  uriComponent(concat('path=', uriComponent(item().filePath), '&contactId=', item().contactId)),
-  '" target="_blank">View file</a>'
-)
-```
-
-### 4.3 JavaScript link builder (forms / plugins)
-
-Publish `kofc_blobLinkBuilder.js` as a web resource, then:
-
-```javascript
-// Full opener URL (opens blob flow in new tab)
-var url = KOFC.BlobLink.buildOpenerUrl({
-    filePath: "D:\\KOFCExt Extractions\\09272024\\000554\\file.xlsx",
-    contactId: "12345678-1234-1234-1234-123456789012"
-});
-window.open(url, "_blank");
-
-// Timeline post HTML (store in activity/message field)
-var html = KOFC.BlobLink.buildTimelineMessageHtml({
-    orgUrl: Xrm.Utility.getGlobalContext().getClientUrl(),
-    filePath: "D:\\KOFCExt Extractions\\09272024\\000554\\file.xlsx",
-    contactId: "12345678-1234-1234-1234-123456789012",
-    linkText: "View file"
-});
-```
-
----
-
-## 5. Boomi call from the browser
-
-After MSAL acquires a token, `kofc_blobClient.js` calls Boomi:
-
-**GET**
-
-```text
-GET {BoomiUrl}?path={encodedPath}&contactId={guid}&format=json
-Authorization: Bearer {SPA_access_token}
-x-api-key: {Boomi API key}
-Accept: application/json
-```
-
-**POST body (alternative)**
-
-```json
+/// <summary>
+/// Validates Easy Auth tokens on inbound requests (mirrors EApp / Policy non-header).
+/// Production path: Boomi forwards delegated SPA token with Blob.Read or access_as_user scope.
+/// </summary>
+public static class FunctionAppRoleAuth
 {
-  "path": "D:\\KOFCExt Extractions\\09272024\\000554\\file.xlsx",
-  "contactId": "12345678-1234-1234-1234-123456789012",
-  "format": "json"
+    public const string BlobReadRole = "Blob.Read";
+    public const string AccessAsUserScope = "access_as_user";
+
+    public static bool IsAuthenticated(HttpRequest req)
+    {
+        if (req.HttpContext.User.Identity?.IsAuthenticated == true)
+        {
+            return true;
+        }
+
+        if (!IsRunningInAzure())
+        {
+            return true;
+        }
+
+        return HasHeader(req, "X-MS-CLIENT-PRINCIPAL")
+            || HasHeader(req, "X-MS-CLIENT-PRINCIPAL-ID")
+            || HasHeader(req, "X-MS-TOKEN-AAD-ACCESS-TOKEN")
+            || HasBearerAuthorization(req);
+    }
+
+    public static IReadOnlyCollection<string> GetCallerRoles(HttpRequest req)
+    {
+        if (!IsRunningInAzure())
+        {
+            return new[] { BlobReadRole };
+        }
+
+        var roles = GetClaimValues(
+            req,
+            "roles",
+            ClaimTypes.Role,
+            "http://schemas.microsoft.com/ws/2008/06/identity/claims/role");
+
+        return roles.Count > 0 ? roles : GetJwtClaimValues(req, "roles");
+    }
+
+    public static IReadOnlyCollection<string> GetCallerScopes(HttpRequest req)
+    {
+        if (!IsRunningInAzure())
+        {
+            return new[] { BlobReadRole };
+        }
+
+        var scopes = GetClaimValues(
+                req,
+                "scp",
+                "http://schemas.microsoft.com/identity/claims/scope")
+            .SelectMany(value => value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (scopes.Count > 0)
+        {
+            return scopes;
+        }
+
+        return GetJwtClaimValues(req, "scp")
+            .SelectMany(value => value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    public static bool HasScope(HttpRequest req, string scope) =>
+        GetCallerScopes(req).Contains(scope, StringComparer.OrdinalIgnoreCase);
+
+    public static bool HasDelegatedBlobAccess(HttpRequest req) =>
+        HasScope(req, BlobReadRole) || HasScope(req, AccessAsUserScope);
+
+    public static string? GetCallerEmail(HttpRequest req) =>
+        GetFirstClaim(
+            req,
+            "preferred_username",
+            "upn",
+            "email",
+            "unique_name",
+            ClaimTypes.Email,
+            ClaimTypes.Upn);
+
+    public static string? GetCallerDisplayName(HttpRequest req) =>
+        GetFirstClaim(req, "name", "given_name", ClaimTypes.Name, ClaimTypes.GivenName);
+
+    public static Guid? GetCallerObjectId(HttpRequest req)
+    {
+        var value = GetClaimValues(
+                req,
+                "oid",
+                "http://schemas.microsoft.com/identity/claims/objectidentifier")
+            .FirstOrDefault();
+
+        if (Guid.TryParse(value, out var objectId))
+        {
+            return objectId;
+        }
+
+        if (req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL-ID", out var principalIdHeader)
+            && Guid.TryParse(principalIdHeader.FirstOrDefault(), out objectId))
+        {
+            return objectId;
+        }
+
+        value = GetJwtClaimValues(req, "oid").FirstOrDefault();
+        return Guid.TryParse(value, out objectId) ? objectId : null;
+    }
+
+    public static bool IsDelegatedCaller(HttpRequest req)
+    {
+        if (!IsRunningInAzure())
+        {
+            return false;
+        }
+
+        return GetCallerObjectId(req).HasValue && HasDelegatedBlobAccess(req);
+    }
+
+    public static bool HasAppRole(IReadOnlyCollection<string> callerRoles, string role) =>
+        callerRoles.Contains(role, StringComparer.OrdinalIgnoreCase);
+
+    public static bool IsRunningInAzure() =>
+        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
+
+    private static bool HasHeader(HttpRequest req, string headerName) =>
+        req.Headers.TryGetValue(headerName, out var values)
+        && !string.IsNullOrWhiteSpace(values.FirstOrDefault());
+
+    private static bool HasBearerAuthorization(HttpRequest req)
+    {
+        if (!req.Headers.TryGetValue("Authorization", out var authorizationHeader))
+        {
+            return false;
+        }
+
+        var authorization = authorizationHeader.FirstOrDefault();
+        return !string.IsNullOrWhiteSpace(authorization)
+            && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? GetFirstClaim(HttpRequest req, params string[] claimTypes)
+    {
+        var fromPrincipal = GetClaimValues(req, claimTypes).FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(fromPrincipal))
+        {
+            return fromPrincipal;
+        }
+
+        foreach (var claimType in claimTypes)
+        {
+            var fromJwt = GetJwtClaimValues(req, claimType).FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(fromJwt))
+            {
+                return fromJwt;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyCollection<string> GetClaimValues(HttpRequest req, params string[] claimTypes)
+    {
+        var values = req.HttpContext.User.Claims
+            .Where(c => claimTypes.Contains(c.Type, StringComparer.OrdinalIgnoreCase))
+            .Select(c => c.Value)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToList();
+
+        if (values.Count > 0)
+        {
+            return values;
+        }
+
+        if (!req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var header)
+            || string.IsNullOrWhiteSpace(header.FirstOrDefault()))
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var json = Encoding.UTF8.GetString(Convert.FromBase64String(header.First()!));
+            var principal = JsonConvert.DeserializeObject<ClientPrincipal>(json);
+
+            return principal?.Claims?
+                .Where(c => claimTypes.Contains(c.Typ, StringComparer.OrdinalIgnoreCase))
+                .Select(c => c.Val)
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .ToList() ?? [];
+        }
+        catch (FormatException)
+        {
+            return Array.Empty<string>();
+        }
+        catch (Newtonsoft.Json.JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static IReadOnlyCollection<string> GetJwtClaimValues(HttpRequest req, string claimName)
+    {
+        var token = GetAccessToken(req);
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return Array.Empty<string>();
+        }
+
+        var parts = token.Split('.');
+        if (parts.Length < 2)
+        {
+            return Array.Empty<string>();
+        }
+
+        try
+        {
+            var json = Encoding.UTF8.GetString(Base64UrlDecode(parts[1]));
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty(claimName, out var claimElement))
+            {
+                return Array.Empty<string>();
+            }
+
+            return claimElement.ValueKind switch
+            {
+                JsonValueKind.String => new[] { claimElement.GetString() ?? string.Empty },
+                JsonValueKind.Array => claimElement.EnumerateArray()
+                    .Select(item => item.GetString() ?? string.Empty)
+                    .Where(value => !string.IsNullOrWhiteSpace(value))
+                    .ToList(),
+                _ => Array.Empty<string>()
+            };
+        }
+        catch (FormatException)
+        {
+            return Array.Empty<string>();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Array.Empty<string>();
+        }
+    }
+
+    private static string? GetAccessToken(HttpRequest req)
+    {
+        if (req.Headers.TryGetValue("X-MS-TOKEN-AAD-ACCESS-TOKEN", out var accessTokenHeader))
+        {
+            var accessToken = accessTokenHeader.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(accessToken))
+            {
+                return accessToken;
+            }
+        }
+
+        if (req.Headers.TryGetValue("Authorization", out var authorizationHeader))
+        {
+            var authorization = authorizationHeader.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(authorization)
+                && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            {
+                return authorization["Bearer ".Length..].Trim();
+            }
+        }
+
+        return null;
+    }
+
+    private static byte[] Base64UrlDecode(string input)
+    {
+        var padded = input.Replace('-', '+').Replace('_', '/');
+        switch (padded.Length % 4)
+        {
+            case 2:
+                padded += "==";
+                break;
+            case 3:
+                padded += "=";
+                break;
+        }
+
+        return Convert.FromBase64String(padded);
+    }
+
+    private sealed class ClientPrincipal
+    {
+        [JsonProperty("claims")]
+        public List<ClientPrincipalClaim>? Claims { get; set; }
+    }
+
+    private sealed class ClientPrincipalClaim
+    {
+        [JsonProperty("typ")]
+        public string Typ { get; set; } = "";
+
+        [JsonProperty("val")]
+        public string Val { get; set; } = "";
+    }
 }
-```
-
-**Success response**
-
-```json
-{
-  "sasUrl": "https://storageaccount.blob.core.windows.net/kofcext-extractions/..."
-}
-```
-
-The client sets `window.location.href = sasUrl` to open/download the file.
-
----
-
-## 6. Programmatic open (in D365 form script)
-
-```javascript
-KOFC.Blob.configure({
-    tenantId: "...",
-    clientId: "...",
-    apiAppId: "...",
-    apiKey: "...",
-    boomiUrl: "https://your-boomi-host/ws/rest/BlobProxy",
-    scope: "access_as_user",
-    httpMethod: "GET"
-});
-
-KOFC.Blob.openSaasBlob({
-    path: "D:\\KOFCExt Extractions\\09272024\\000554\\file.xlsx",
-    contactId: "12345678-1234-1234-1234-123456789012"
-});
-```
-
-On first visit, the user may be redirected to Microsoft sign-in; `kofc_authcallback.html` completes the Boomi call.
-
----
-
-## 7. Test with Boomi Integration Validator
-
-Open in D365:
-
-```text
-main.aspx?pagetype=webresource&webresourceName=kofc_BoomiIntegrationValidator
-```
-
-1. Select **Blob Proxy** preset  
-2. Set JSON payload:
-
-```json
-{
-  "path": "D:\\KOFCExt Extractions\\test\\file.xlsx",
-  "contactId": "12345678-1234-1234-1234-123456789012",
-  "format": "json"
-}
-```
-
-3. Click **Call via Boomi**
-
----
-
-## 8. Parameters reference
-
-| Parameter | Required | Source | Notes |
-|-----------|----------|--------|-------|
-| `path` | Yes | Timeline / ADF | Windows path, e.g. `D:\KOFCExt Extractions\...` |
-| `contactId` | Yes | Timeline regarding | Contact GUID, no braces |
-| `format` | No | Client → Boomi | Use `json` for API response |
-| `userId` | **No** | — | Ignored; identity from token `oid` |
-| `oid` | **No** | — | Ignored; identity from token `oid` |
-
----
-
-## 9. Troubleshooting
-
-| Symptom | Check |
-|---------|-------|
-| Blank page / Xrm missing | Open via `main.aspx?pagetype=webresource`, not raw `/WebResources/` URL |
-| 401 from Boomi | SPA token scope, Boomi JWT validation, API key |
-| 403 from Function | Token missing `Blob.Read` or `access_as_user` scope |
-| 403 contact access | User cannot read the `contactId` in Dataverse |
-| 404 blob | Path must include `KOFCExt Extractions/` prefix as stored in storage |
-| Sign-in loop | Redirect URI registered for SPA app; callback web resource published |
-
----
-
-## 10. Deployment checklist
-
-### Function App (TEST-01 pipeline)
-
-- [ ] Deploy `GetSaasBlobUrl` only (no local test function)
-- [ ] Easy Auth enabled; audience = Function API app
-- [ ] Managed Identity + Storage Blob Data Contributor
-- [ ] Dataverse application user for MI
-- [ ] App settings: `DataverseUrl`, `BlobContainerName`, `BlobStorageAccountName`
-
-### Boomi
-
-- [ ] REST process validates SPA JWT + `x-api-key`
-- [ ] Forwards `Authorization: Bearer` unchanged to Function
-- [ ] Does **not** use client-credentials to Function
-- [ ] Does **not** send `userId`
-
-### Dynamics 365
-
-- [ ] Publish all web resources (§2)
-- [ ] Set environment variables (§3)
-- [ ] ADF timeline copy uses opener URL (§4.2)
-- [ ] Test one timeline link end-to-end
-
----
-
-## 11. File locations in repo
-
-```text
-TEST-01/KOFC.Azure.Functions.GetSaasBlobUrl/     Function source (deploy via pipeline)
-webresources/blob-opener/kofc_blob_open.html       Timeline landing page
-webresources/blob-opener/kofc_blobClient.js        MSAL + Boomi client
-webresources/blob-opener/kofc_blobLinkBuilder.js   Link / timeline HTML builder
-docs/KOFC-Blob-Client-Integration.wiki.md          This document
-docs/KOFC-Blob-Client-Integration.docx             Word export
-```
