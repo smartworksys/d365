@@ -1,309 +1,422 @@
-using System.Security.Claims;
-using System.Text;
+using System.Diagnostics;
 using System.Text.Json;
+using Azure;
+using KOFC.Azure.Functions.GetSaasBlobUrl.Helpers;
+using KOFC.Azure.Functions.GetSaasBlobUrl.Services;
 using Microsoft.AspNetCore.Http;
-using Newtonsoft.Json;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 
-namespace KOFC.Azure.Functions.GetSaasBlobUrl.Helpers;
+namespace KOFC.Azure.Functions.GetSaasBlobUrl;
 
-/// <summary>
-/// Validates Easy Auth tokens on inbound requests (mirrors EApp / Policy non-header).
-/// Production path: Boomi forwards delegated SPA token with Blob.Read or access_as_user scope.
-/// </summary>
-public static class FunctionAppRoleAuth
+public class GetSaasBlobUrl
 {
-    public const string BlobReadRole = "Blob.Read";
-    public const string AccessAsUserScope = "access_as_user";
+    private readonly IContactAccessGuard _contactAccessGuard;
+    private readonly IBlobService _blobService;
+    private readonly IConfiguration _configuration;
 
-    public static bool IsAuthenticated(HttpRequest req)
+    public GetSaasBlobUrl(
+        IContactAccessGuard contactAccessGuard,
+        IBlobService blobService,
+        IConfiguration configuration)
     {
-        if (req.HttpContext.User.Identity?.IsAuthenticated == true)
-        {
-            return true;
-        }
-
-        if (!IsRunningInAzure())
-        {
-            return true;
-        }
-
-        return HasHeader(req, "X-MS-CLIENT-PRINCIPAL")
-            || HasHeader(req, "X-MS-CLIENT-PRINCIPAL-ID")
-            || HasHeader(req, "X-MS-TOKEN-AAD-ACCESS-TOKEN")
-            || HasBearerAuthorization(req);
+        _contactAccessGuard = contactAccessGuard;
+        _blobService = blobService;
+        _configuration = configuration;
     }
 
-    public static IReadOnlyCollection<string> GetCallerRoles(HttpRequest req)
+    [Function("GetSaasBlobUrl")]
+    public Task<IActionResult> RunAsync(
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequest req,
+        FunctionContext context)
     {
-        if (!IsRunningInAzure())
-        {
-            return new[] { BlobReadRole };
-        }
-
-        var roles = GetClaimValues(
-            req,
-            "roles",
-            ClaimTypes.Role,
-            "http://schemas.microsoft.com/ws/2008/06/identity/claims/role");
-
-        return roles.Count > 0 ? roles : GetJwtClaimValues(req, "roles");
+        // Category must match the function name so logs correlate with the Invocations blade.
+        var log = context.GetLogger("GetSaasBlobUrl");
+        return RunCoreAsync(req, log);
     }
 
-    public static IReadOnlyCollection<string> GetCallerScopes(HttpRequest req)
+    public async Task<IActionResult> RunCoreAsync(HttpRequest req, ILogger log)
     {
-        if (!IsRunningInAzure())
+        var callerRoles = FunctionAppRoleAuth.GetCallerRoles(req);
+        var callerScopes = FunctionAppRoleAuth.GetCallerScopes(req);
+        var callerOid = FunctionAppRoleAuth.GetCallerObjectId(req);
+        var isDelegatedCaller = FunctionAppRoleAuth.IsDelegatedCaller(req);
+        var tokenEmail = FunctionAppRoleAuth.GetCallerEmail(req);
+        var tokenName = FunctionAppRoleAuth.GetCallerDisplayName(req);
+        var principalName = req.Headers.ContainsKey("X-MS-CLIENT-PRINCIPAL-NAME")
+            ? req.Headers["X-MS-CLIENT-PRINCIPAL-NAME"].ToString()
+            : null;
+        var forwardedFor = req.Headers.ContainsKey("X-Forwarded-For")
+            ? req.Headers["X-Forwarded-For"].ToString()
+            : req.HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        var audit = new RequestAudit
         {
-            return new[] { BlobReadRole };
+            Method = req.Method,
+            EntraOid = callerOid,
+            UserEmail = FirstNonEmpty(tokenEmail, principalName),
+            UserName = FirstNonEmpty(tokenName, principalName),
+            AuthMode = isDelegatedCaller ? "delegated" : "app",
+            ClientIp = forwardedFor,
+            Roles = string.Join(", ", callerRoles),
+            Scopes = string.Join(", ", callerScopes)
+        };
+
+        using var scope = log.BeginScope(new Dictionary<string, object?>
+        {
+            ["oid"] = callerOid?.ToString() ?? "",
+            ["userEmail"] = audit.UserEmail ?? "",
+            ["userName"] = audit.UserName ?? "",
+            ["authMode"] = audit.AuthMode ?? "",
+            ["clientIP"] = forwardedFor ?? ""
+        });
+        Activity.Current?.SetTag("oid", callerOid?.ToString() ?? "");
+        Activity.Current?.SetTag("userEmail", audit.UserEmail ?? "");
+        Activity.Current?.SetTag("userName", audit.UserName ?? "");
+        Activity.Current?.SetTag("authMode", audit.AuthMode ?? "");
+        Activity.Current?.SetTag("clientIP", forwardedFor ?? "");
+
+        if (!FunctionAppRoleAuth.IsAuthenticated(req))
+        {
+            return Fail(
+                log,
+                audit,
+                StatusCodes.Status401Unauthorized,
+                "Authentication required.",
+                "Unauthenticated",
+                "Request is not authenticated.");
         }
 
-        var scopes = GetClaimValues(
-                req,
-                "scp",
-                "http://schemas.microsoft.com/identity/claims/scope")
-            .SelectMany(value => value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        if (scopes.Count > 0)
+        if (!isDelegatedCaller)
         {
-            return scopes;
+            return Fail(
+                log,
+                audit,
+                StatusCodes.Status403Forbidden,
+                $"Missing required delegated scope: {FunctionAppRoleAuth.BlobReadRole} or {FunctionAppRoleAuth.AccessAsUserScope}.",
+                "DelegatedScopeMissing",
+                "Caller is not a delegated SPA user with Blob.Read or access_as_user.");
         }
 
-        return GetJwtClaimValues(req, "scp")
-            .SelectMany(value => value.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
-    }
-
-    public static bool HasScope(HttpRequest req, string scope) =>
-        GetCallerScopes(req).Contains(scope, StringComparer.OrdinalIgnoreCase);
-
-    public static bool HasDelegatedBlobAccess(HttpRequest req) =>
-        HasScope(req, BlobReadRole) || HasScope(req, AccessAsUserScope);
-
-    public static string? GetCallerEmail(HttpRequest req) =>
-        GetFirstClaim(
-            req,
-            "preferred_username",
-            "upn",
-            "email",
-            "unique_name",
-            ClaimTypes.Email,
-            ClaimTypes.Upn);
-
-    public static string? GetCallerDisplayName(HttpRequest req) =>
-        GetFirstClaim(req, "name", "given_name", ClaimTypes.Name, ClaimTypes.GivenName);
-
-    public static Guid? GetCallerObjectId(HttpRequest req)
-    {
-        var value = GetClaimValues(
-                req,
-                "oid",
-                "http://schemas.microsoft.com/identity/claims/objectidentifier")
-            .FirstOrDefault();
-
-        if (Guid.TryParse(value, out var objectId))
+        if (!callerOid.HasValue)
         {
-            return objectId;
-        }
-
-        if (req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL-ID", out var principalIdHeader)
-            && Guid.TryParse(principalIdHeader.FirstOrDefault(), out objectId))
-        {
-            return objectId;
-        }
-
-        value = GetJwtClaimValues(req, "oid").FirstOrDefault();
-        return Guid.TryParse(value, out objectId) ? objectId : null;
-    }
-
-    public static bool IsDelegatedCaller(HttpRequest req)
-    {
-        if (!IsRunningInAzure())
-        {
-            return false;
-        }
-
-        return GetCallerObjectId(req).HasValue && HasDelegatedBlobAccess(req);
-    }
-
-    public static bool HasAppRole(IReadOnlyCollection<string> callerRoles, string role) =>
-        callerRoles.Contains(role, StringComparer.OrdinalIgnoreCase);
-
-    public static bool IsRunningInAzure() =>
-        !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("WEBSITE_SITE_NAME"));
-
-    private static bool HasHeader(HttpRequest req, string headerName) =>
-        req.Headers.TryGetValue(headerName, out var values)
-        && !string.IsNullOrWhiteSpace(values.FirstOrDefault());
-
-    private static bool HasBearerAuthorization(HttpRequest req)
-    {
-        if (!req.Headers.TryGetValue("Authorization", out var authorizationHeader))
-        {
-            return false;
-        }
-
-        var authorization = authorizationHeader.FirstOrDefault();
-        return !string.IsNullOrWhiteSpace(authorization)
-            && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string? GetFirstClaim(HttpRequest req, params string[] claimTypes)
-    {
-        var fromPrincipal = GetClaimValues(req, claimTypes).FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(fromPrincipal))
-        {
-            return fromPrincipal;
-        }
-
-        foreach (var claimType in claimTypes)
-        {
-            var fromJwt = GetJwtClaimValues(req, claimType).FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(fromJwt))
-            {
-                return fromJwt;
-            }
-        }
-
-        return null;
-    }
-
-    private static IReadOnlyCollection<string> GetClaimValues(HttpRequest req, params string[] claimTypes)
-    {
-        var values = req.HttpContext.User.Claims
-            .Where(c => claimTypes.Contains(c.Type, StringComparer.OrdinalIgnoreCase))
-            .Select(c => c.Value)
-            .Where(value => !string.IsNullOrWhiteSpace(value))
-            .ToList();
-
-        if (values.Count > 0)
-        {
-            return values;
-        }
-
-        if (!req.Headers.TryGetValue("X-MS-CLIENT-PRINCIPAL", out var header)
-            || string.IsNullOrWhiteSpace(header.FirstOrDefault()))
-        {
-            return Array.Empty<string>();
+            return Fail(
+                log,
+                audit,
+                StatusCodes.Status401Unauthorized,
+                "The delegated token does not contain a valid oid claim.",
+                "MissingOid",
+                "Delegated token has no oid claim.");
         }
 
         try
         {
-            var json = Encoding.UTF8.GetString(Convert.FromBase64String(header.First()!));
-            var principal = JsonConvert.DeserializeObject<ClientPrincipal>(json);
+            var queryParams = ParseQuery(req);
+            await MergePostBodyAsync(req, queryParams);
 
-            return principal?.Claims?
-                .Where(c => claimTypes.Contains(c.Typ, StringComparer.OrdinalIgnoreCase))
-                .Select(c => c.Val)
-                .Where(value => !string.IsNullOrWhiteSpace(value))
-                .ToList() ?? [];
-        }
-        catch (FormatException)
-        {
-            return Array.Empty<string>();
-        }
-        catch (Newtonsoft.Json.JsonException)
-        {
-            return Array.Empty<string>();
-        }
-    }
+            var rawPath = GetParam(queryParams, "path");
+            var contactId = GetParam(queryParams, "contactId");
+            var responseFormat = (GetParam(queryParams, "format") ?? "redirect").ToLowerInvariant();
+            audit.RawPath = rawPath;
+            audit.ContactId = contactId;
+            audit.Format = responseFormat;
 
-    private static IReadOnlyCollection<string> GetJwtClaimValues(HttpRequest req, string claimName)
-    {
-        var token = GetAccessToken(req);
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return Array.Empty<string>();
-        }
-
-        var parts = token.Split('.');
-        if (parts.Length < 2)
-        {
-            return Array.Empty<string>();
-        }
-
-        try
-        {
-            var json = Encoding.UTF8.GetString(Base64UrlDecode(parts[1]));
-            using var document = JsonDocument.Parse(json);
-            if (!document.RootElement.TryGetProperty(claimName, out var claimElement))
+            if (string.IsNullOrWhiteSpace(rawPath))
             {
-                return Array.Empty<string>();
+                return Fail(
+                    log,
+                    audit,
+                    StatusCodes.Status400BadRequest,
+                    "Bad Request: Missing 'path' parameter",
+                    "MissingPath",
+                    "path is missing.");
             }
 
-            return claimElement.ValueKind switch
+            if (string.IsNullOrWhiteSpace(contactId) || !Guid.TryParse(contactId, out var contactGuid))
             {
-                JsonValueKind.String => new[] { claimElement.GetString() ?? string.Empty },
-                JsonValueKind.Array => claimElement.EnumerateArray()
-                    .Select(item => item.GetString() ?? string.Empty)
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .ToList(),
-                _ => Array.Empty<string>()
-            };
+                return Fail(
+                    log,
+                    audit,
+                    StatusCodes.Status400BadRequest,
+                    "Bad Request: Missing or invalid 'contactId' parameter",
+                    "InvalidContactId",
+                    "contactId is missing or not a GUID.");
+            }
+
+            var accessResult = _contactAccessGuard.CheckContactAccessByEntraOid(
+                callerOid.Value,
+                contactGuid);
+            audit.DataverseUserId = accessResult.UserId;
+            audit.UserName = FirstNonEmpty(accessResult.UserName, audit.UserName);
+            audit.UserEmail = FirstNonEmpty(accessResult.UserName, audit.UserEmail);
+
+            if (!accessResult.IsGranted)
+            {
+                var status = accessResult.Status == ContactAccessStatus.UserNotFound
+                    ? StatusCodes.Status404NotFound
+                    : StatusCodes.Status403Forbidden;
+                var clientMessage = accessResult.Status == ContactAccessStatus.UserNotFound
+                    ? "User not found."
+                    : "Access denied.";
+                return Fail(
+                    log,
+                    audit,
+                    status,
+                    clientMessage,
+                    accessResult.Status.ToString(),
+                    accessResult.Message);
+            }
+
+            var blobPath = _blobService.NormalizePathToBlob(rawPath);
+            audit.BlobPath = blobPath;
+            if (string.IsNullOrWhiteSpace(blobPath))
+            {
+                return Fail(
+                    log,
+                    audit,
+                    StatusCodes.Status400BadRequest,
+                    "Bad Request: Invalid file path",
+                    "InvalidPath",
+                    "Normalized blob path is empty.");
+            }
+
+            var containerName = _configuration["BlobContainerName"] ?? "kofcext-extractions";
+            audit.Container = containerName;
+            try
+            {
+                if (responseFormat is "file" or "proxy")
+                {
+                    var file = await _blobService.DownloadAsync(containerName, blobPath);
+                    audit.FileName = file.FileName;
+                    audit.ContentType = file.ContentType;
+                    audit.ByteLength = file.Content.Length;
+                    return Succeed(
+                        log,
+                        audit,
+                        new OkObjectResult(new
+                        {
+                            fileName = file.FileName,
+                            contentType = file.ContentType,
+                            contentBase64 = Convert.ToBase64String(file.Content)
+                        }),
+                        "FileDownload");
+                }
+
+                var sasUrl = await _blobService.GenerateSasUrlAsync(containerName, blobPath);
+                audit.FileName = Path.GetFileName(blobPath.Replace('\\', '/'));
+                if (responseFormat == "json")
+                {
+                    return Succeed(log, audit, new OkObjectResult(new { sasUrl }), "SasJson");
+                }
+
+                return Succeed(log, audit, new RedirectResult(sasUrl), "SasRedirect", StatusCodes.Status302Found);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Fail(
+                    log,
+                    audit,
+                    StatusCodes.Status404NotFound,
+                    "Not Found: The requested file does not exist",
+                    "BlobNotFound",
+                    ex.Message,
+                    ex);
+            }
+            catch (RequestFailedException ex)
+            {
+                return Fail(
+                    log,
+                    audit,
+                    StatusCodes.Status500InternalServerError,
+                    "Internal Server Error: Unable to access blob storage.",
+                    "StorageError",
+                    $"Azure Storage status {ex.Status}: {ex.ErrorCode}",
+                    ex);
+            }
         }
-        catch (FormatException)
+        catch (JsonException ex)
         {
-            return Array.Empty<string>();
+            return Fail(
+                log,
+                audit,
+                StatusCodes.Status400BadRequest,
+                "Request body is not valid JSON.",
+                "InvalidJson",
+                ex.Message,
+                ex);
         }
-        catch (System.Text.Json.JsonException)
+        catch (Exception ex)
         {
-            return Array.Empty<string>();
+            return Fail(
+                log,
+                audit,
+                StatusCodes.Status500InternalServerError,
+                "Internal Server Error: An unexpected error occurred.",
+                "UnhandledException",
+                ex.Message,
+                ex);
         }
     }
 
-    private static string? GetAccessToken(HttpRequest req)
+    private static Dictionary<string, string> ParseQuery(HttpRequest req)
     {
-        if (req.Headers.TryGetValue("X-MS-TOKEN-AAD-ACCESS-TOKEN", out var accessTokenHeader))
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in req.Query)
         {
-            var accessToken = accessTokenHeader.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(accessToken))
+            if (!string.IsNullOrWhiteSpace(pair.Key))
             {
-                return accessToken;
+                result[pair.Key] = pair.Value.ToString();
             }
         }
 
-        if (req.Headers.TryGetValue("Authorization", out var authorizationHeader))
+        return result;
+    }
+
+    private static async Task MergePostBodyAsync(HttpRequest req, Dictionary<string, string> queryParams)
+    {
+        if (!HttpMethods.IsPost(req.Method))
         {
-            var authorization = authorizationHeader.FirstOrDefault();
-            if (!string.IsNullOrWhiteSpace(authorization)
-                && authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+            return;
+        }
+
+        req.EnableBuffering();
+        using var reader = new StreamReader(req.Body, leaveOpen: true);
+        var body = await reader.ReadToEndAsync();
+        req.Body.Position = 0;
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return;
+        }
+
+        using var document = JsonDocument.Parse(body);
+        foreach (var property in document.RootElement.EnumerateObject())
+        {
+            if (!queryParams.ContainsKey(property.Name))
             {
-                return authorization["Bearer ".Length..].Trim();
+                queryParams[property.Name] = property.Value.ToString();
             }
         }
-
-        return null;
     }
 
-    private static byte[] Base64UrlDecode(string input)
+    private static string? GetParam(Dictionary<string, string> queryParams, string name) =>
+        queryParams.TryGetValue(name, out var value) && !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
+
+    private static string? FirstNonEmpty(params string?[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+    private static IActionResult Succeed(
+        ILogger log,
+        RequestAudit audit,
+        IActionResult result,
+        string outcome,
+        int statusCode = StatusCodes.Status200OK)
     {
-        var padded = input.Replace('-', '+').Replace('_', '/');
-        switch (padded.Length % 4)
+        audit.Outcome = outcome;
+        audit.StatusCode = statusCode;
+        LogOutcome(log, success: true, audit);
+        return result;
+    }
+
+    private static IActionResult Fail(
+        ILogger log,
+        RequestAudit audit,
+        int statusCode,
+        string clientMessage,
+        string outcome,
+        string reason,
+        Exception? exception = null)
+    {
+        audit.Outcome = outcome;
+        audit.StatusCode = statusCode;
+        audit.Reason = reason;
+        audit.ExceptionType = exception?.GetType().Name;
+        LogOutcome(log, success: false, audit, exception);
+        return statusCode switch
         {
-            case 2:
-                padded += "==";
-                break;
-            case 3:
-                padded += "=";
-                break;
+            StatusCodes.Status400BadRequest => new BadRequestObjectResult(clientMessage),
+            StatusCodes.Status401Unauthorized => new UnauthorizedObjectResult(clientMessage),
+            StatusCodes.Status404NotFound => new NotFoundObjectResult(clientMessage),
+            _ => new ObjectResult(clientMessage) { StatusCode = statusCode }
+        };
+    }
+
+    private static void LogOutcome(ILogger log, bool success, RequestAudit audit, Exception? exception = null)
+    {
+        const string template =
+            "Blob request {Result}. Outcome={Outcome} Status={StatusCode} Reason={Reason} " +
+            "ContactId={ContactId} Path={Path} BlobPath={BlobPath} Container={Container} " +
+            "FileName={FileName} ContentType={ContentType} Bytes={Bytes} Format={Format} Method={Method} " +
+            "UserId={UserId} UserEmail={UserEmail} UserName={UserName} EntraOid={EntraOid} " +
+            "AuthMode={AuthMode} ClientIP={ClientIP} Roles={Roles} Scopes={Scopes} ExceptionType={ExceptionType}";
+
+        object?[] args =
+        [
+            success ? "succeeded" : "failed",
+            audit.Outcome,
+            audit.StatusCode,
+            audit.Reason ?? "",
+            audit.ContactId ?? "",
+            audit.RawPath ?? "",
+            audit.BlobPath ?? "",
+            audit.Container ?? "",
+            audit.FileName ?? "",
+            audit.ContentType ?? "",
+            audit.ByteLength,
+            audit.Format ?? "",
+            audit.Method ?? "",
+            audit.DataverseUserId,
+            audit.UserEmail ?? "",
+            audit.UserName ?? "",
+            audit.EntraOid,
+            audit.AuthMode ?? "",
+            audit.ClientIp ?? "",
+            audit.Roles ?? "",
+            audit.Scopes ?? "",
+            audit.ExceptionType ?? ""
+        ];
+
+        if (success)
+        {
+            log.LogInformation(template, args);
+            return;
         }
 
-        return Convert.FromBase64String(padded);
+        if (audit.StatusCode >= 500)
+        {
+            log.LogError(exception, template, args);
+            return;
+        }
+
+        log.LogWarning(exception, template, args);
     }
 
-    private sealed class ClientPrincipal
+    private sealed class RequestAudit
     {
-        [JsonProperty("claims")]
-        public List<ClientPrincipalClaim>? Claims { get; set; }
-    }
-
-    private sealed class ClientPrincipalClaim
-    {
-        [JsonProperty("typ")]
-        public string Typ { get; set; } = "";
-
-        [JsonProperty("val")]
-        public string Val { get; set; } = "";
+        public string? Outcome { get; set; }
+        public int StatusCode { get; set; }
+        public string? Reason { get; set; }
+        public string? Method { get; set; }
+        public string? Format { get; set; }
+        public string? ContactId { get; set; }
+        public string? RawPath { get; set; }
+        public string? BlobPath { get; set; }
+        public string? Container { get; set; }
+        public string? FileName { get; set; }
+        public string? ContentType { get; set; }
+        public int? ByteLength { get; set; }
+        public Guid? EntraOid { get; set; }
+        public Guid? DataverseUserId { get; set; }
+        public string? UserEmail { get; set; }
+        public string? UserName { get; set; }
+        public string? AuthMode { get; set; }
+        public string? ClientIp { get; set; }
+        public string? Roles { get; set; }
+        public string? Scopes { get; set; }
+        public string? ExceptionType { get; set; }
     }
 }
